@@ -1,0 +1,17 @@
+{
+  "name": "ngio-object-model-generator",
+  "version": "1.0.0",
+  "description": "A framework for building client-side object and component classes for the Newgrounds.io API",
+  "main": "build.js",
+  "scripts": {
+    "test": "echo \"Do, or do not, there is no test!\" && exit 1"
+  },
+  "keywords": [
+    "newgrounds",
+    "newgrounds-api",
+    "newgrounds.io",
+    "ngio"
+  ],
+  "author": "Josh Tuttle",
+  "license": "MIT"
+}

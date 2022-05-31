@@ -1,0 +1,736 @@
+{
+    "objects": {
+        "input": {
+            "description": "A top-level wrapper containing any information needed to authenticate the application\/user and any component calls being made.",
+            "properties": {
+                "app_id": {
+                    "type": "string",
+                    "description": "Your application's unique ID.",
+                    "required": true
+                },
+                "call": {
+                    "object": "call",
+                    "array": {
+                        "object": "call"
+                    },
+                    "description": "A #call object, or array of one-or-more #call objects.",
+                    "required": true
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "An optional login session id.",
+                    "url": "http:\/\/www.newgrounds.com\/wiki\/creator-resources\/newgrounds-apis\/newgroundsio\/tutorials\/getting-user-sessions",
+                    "url_name": "Tutorial: Getting User Sessions"
+                },
+                "debug": {
+                    "type": "bool",
+                    "description": "If set to true, calls will be executed in debug mode."
+                },
+                "echo": {
+                    "type": "mixed",
+                    "description": "An optional value that will be returned, verbatim, in the #output object."
+                }
+            }
+        },
+        "call": {
+            "description": "Contains all the information needed to execute an API component.",
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "The name of the component you want to call, ie 'App.connect'.",
+                    "required": true,
+                    "not_required_if": "secure"
+                },
+                "parameters": {
+                    "type": "object",
+                    "array": {
+                        "type": "object"
+                    },
+                    "description": "An object of parameters you want to pass to the component."
+                },
+                "secure": {
+                    "type": "string",
+                    "description": "A an encrypted #call object or array of #call objects.",
+                    "required": true,
+                    "not_required_if": "component"
+                },
+                "echo": {
+                    "type": "mixed",
+                    "description": "An optional value that will be returned, verbatim, in the #result object."
+                }
+            },
+            "notes": "For secure calls using encryption, you only need to pass the 'secure' property. For all other calls, you only need to use the 'component' and 'parameters' properties."
+        },
+        "debug": {
+            "description": "Contains extra debugging information.",
+            "properties": {
+                "exec_time": {
+                    "type": "string",
+                    "description": "The time, in milliseconds, that it took to execute a request."
+                },
+                "input": {
+                    "object": "input",
+                    "description": "A copy of the input object that was posted to the server."
+                }
+            },
+            "notes": "This object is only used in debug mode."
+        },
+        "output": {
+            "description": "Contains all return output from an API request.",
+            "properties": {
+                "app_id": {
+                    "type": "string",
+                    "description": "Your application's unique ID"
+                },
+                "success": {
+                    "type": "boolean",
+                    "description": "If false, there was a problem with your 'input' object. Details will be in the #error property."
+                },
+                "debug": {
+                    "object": "debug",
+                    "description": "Contains extra information you may need when debugging (debug mode only)."
+                },
+                "result": {
+                    "object": "result",
+                    "array": {
+                        "object": "result"
+                    },
+                    "description": "This will be a #result object, or an array containing one-or-more #result objects (this will match the structure of the #call property in your #input object)."
+                },
+                "error": {
+                    "object": "error",
+                    "description": "This will contain any error info if the success property is false."
+                },
+                "api_version": {
+                    "type": "string",
+                    "description": "If there was an error, this will contain the current version number of the API gateway."
+                },
+                "help_url": {
+                    "type": "string",
+                    "description": "If there was an error, this will contain the URL for our help docs."
+                },
+                "echo": {
+                    "type": "mixed",
+                    "description": "If you passed an 'echo' value in your input object, it will be echoed here."
+                }
+            }
+        },
+        "result": {
+            "description": "Contains information returned by an API component.",
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "The name of the component that was executed (ie 'Medal.unlock')."
+                },
+                "data": {
+                    "type": "object",
+                    "array": {
+                        "type": "object"
+                    },
+                    "description": "An object, or array of one-or-more objects (follows the structure of the corresponding 'call' property), containing any returned properties or errors."
+                },
+                "echo": {
+                    "type": "mixed",
+                    "description": "If you passed an 'echo' value in your call object, it will be echoed here."
+                }
+            },
+            "notes": "The 'data' object will always contain a 'success' property. If the call was unsuccessful, there will also be an '#error' property."
+        },
+        "error": {
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Contains details about the error."
+                },
+                "code": {
+                    "type": "int",
+                    "description": "A code indication the error type."
+                }
+            }
+        },
+        "session": {
+            "description": "Contains information about the current user session.",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "A unique session identifier"
+                },
+                "user": {
+                    "object": "user",
+                    "description": "If the user has not signed in, or granted access to your app, this will be null"
+                },
+                "expired": {
+                    "type": "boolean",
+                    "description": "If true, the session_id is expired. Use App.startSession to get a new one."
+                },
+                "remember": {
+                    "type": "boolean",
+                    "description": "If true, the user would like you to remember their session id."
+                },
+                "passport_url": {
+                    "type": "string",
+                    "description": "If the session has no associated user but is not expired, this property will provide a URL that can be used to sign the user in."
+                }
+            },
+            "notes": "Remembered sessions will expire after 30 days of inactivity. All other sessions will expire after one hour of inactivity.\n\nSession expirations get renewed with every call. You could use 'Gateway.ping' every 5 minutes to keep sessions alive."
+        },
+        "user": {
+            "description": "Contains information about a user.",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "The user's numeric ID."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "The user's textual name."
+                },
+                "icons": {
+                    "object": "usericons",
+                    "description": "The user's icon images."
+                },
+                "supporter": {
+                    "type": "boolean",
+                    "description": "Returns true if the user has a Newgrounds Supporter upgrade."
+                }
+            }
+        },
+        "usericons": {
+            "description": "Contains any icons associated with this user.",
+            "properties": {
+                "small": {
+                    "type": "string",
+                    "description": "The URL of the user's small icon"
+                },
+                "medium": {
+                    "type": "string",
+                    "description": "The URL of the user's medium icon"
+                },
+                "large": {
+                    "type": "string",
+                    "description": "The URL of the user's large icon"
+                }
+            }
+        },
+        "medal": {
+            "description": "Contains information about a medal.",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "The numeric ID of the medal."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "The name of the medal."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "A short description of the medal."
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "The URL for the medal's icon."
+                },
+                "value": {
+                    "type": "int",
+                    "description": "The medal's point value."
+                },
+                "difficulty": {
+                    "type": "int",
+                    "description": "The difficulty id of the medal."
+                },
+                "secret": {
+                    "type": "boolean"
+                },
+                "unlocked": {
+                    "type": "boolean",
+                    "description": "This will only be set if a valid user session exists."
+                }
+            },
+            "notes": "Medal Difficulties:\n1 = Easy\n2 = Moderate\n3 = Challenging\n4 = Difficult\n5 = Brutal"
+        },
+        "scoreboard": {
+            "description": "Contains information about a scoreboard.",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "The numeric ID of the scoreboard."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "The name of the scoreboard."
+                }
+            }
+        },
+        "score": {
+            "description": "Contains information about a score posted to a scoreboard.",
+            "properties": {
+                "user": {
+                    "description": "The user who earned score. If this property is absent, the score belongs to the active user.",
+                    "object": "user"
+                },
+                "value": {
+                    "description": "The integer value of the score.",
+                    "type": "int"
+                },
+                "formatted_value": {
+                    "description": "The score value in the format selected in your scoreboard settings.",
+                    "type": "string"
+                },
+                "tag": {
+                    "description": "The tag attached to this score (if any).",
+                    "type": "string"
+                }
+            }
+        },
+        "saveslot": {
+            "description": "Contains information about a CloudSave slot.",
+            "properties": {
+                "id": {
+                    "description": "The numeric id used to save and load this slot.",
+                    "type": "int"
+                },
+                "size": {
+                    "description": "The size of the save data in bytes.",
+                    "type": "int"
+                },
+                "time": {
+                    "description": "A unix timestamp representing when this slot was last saved.",
+                    "type": "int"
+                },
+                "url": {
+                    "description": "The URL containing the actual save data for this slot.",
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "components": {
+        "App": {
+            "class": "App",
+            "description": "Used to get and validate information associated with your app, including user sessions.",
+            "methods": {
+                "App.logView": {
+                    "description": "Increments \"Total Views\" statistic.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "required": true,
+                            "description": "The domain hosting your app. Examples: \"www.somesite.com\", \"localHost\""
+                        }
+                    }
+                },
+                "App.checkSession": {
+                    "description": "Checks the validity of a session id and returns the results in a #session object.",
+                    "require_session": true,
+                    "return": {
+                        "session": {
+                            "object": "session"
+                        }
+                    }
+                },
+                "App.getHostLicense": {
+                    "description": "Checks a client-side host domain against domains defined in your \"Game Protection\" settings.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The host domain to check (ei, somesite.com)."
+                        }
+                    },
+                    "return": {
+                        "host_approved": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "App.getCurrentVersion": {
+                    "description": "Gets the version number of the app as defined in your \"Version Control\" settings.",
+                    "require_session": false,
+                    "params": {
+                        "version": {
+                            "type": "string",
+                            "description": "The version number (in \"X.Y.Z\" format) of the client-side app. (default = \"0.0.0\")"
+                        }
+                    },
+                    "return": {
+                        "current_version": {
+                            "type": "string",
+                            "description": "The version number of the app as defined in your \"Version Control\" settings."
+                        },
+                        "client_deprecated": {
+                            "type": "boolean",
+                            "description": "Notes whether the client-side app is using a lower version number."
+                        }
+                    }
+                },
+                "App.startSession": {
+                    "description": "Starts a new session for the application.",
+                    "require_session": false,
+                    "params": {
+                        "force": {
+                            "type": "boolean",
+                            "description": "If true, will create a new session even if the user already has an existing one.\n\nNote: Any previous session ids will no longer be valid if this is used."
+                        }
+                    },
+                    "return": {
+                        "session": {
+                            "object": "session"
+                        }
+                    }
+                },
+                "App.endSession": {
+                    "description": "Ends the current session, if any.",
+                    "require_session": true
+                }
+            }
+        },
+        "CloudSave": {
+            "class": "CloudSave",
+            "description": "Handles loading and saving of game states.",
+            "methods": {
+                "CloudSave.getSlots": {
+                    "description": "Returns a list of existing #saveslot objects.",
+                    "require_session": false,
+                    "return": {
+                        "slots": {
+                            "description": "An array of #saveslot objects.",
+                            "array": {
+                                "object": "saveslot"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "Event": {
+            "class": "Event",
+            "description": "Handles logging of custom events.",
+            "methods": {
+                "Event.logEvent": {
+                    "description": "Logs a custom event to your API stats.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"newgrounds.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "event_name": {
+                            "type": "string",
+                            "description": "The name of your custom event as defined in your Referrals & Events settings.",
+                            "required": true
+                        }
+                    },
+                    "return": {
+                        "event_name": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "Gateway": {
+            "class": "Gateway",
+            "description": "Provides information about the gateway server.",
+            "methods": {
+                "Gateway.getVersion": {
+                    "description": "Returns the current version of the Newgrounds.io gateway.",
+                    "require_session": false,
+                    "return": {
+                        "version": {
+                            "type": "string",
+                            "description": "The version number (in X.Y.Z format)."
+                        }
+                    }
+                },
+                "Gateway.getDatetime": {
+                    "description": "Loads the current date and time from the Newgrounds.io server.",
+                    "require_session": false,
+                    "return": {
+                        "datetime": {
+                            "type": "string",
+                            "description": "The server's date and time in ISO 8601 format."
+                        }
+                    }
+                },
+                "Gateway.ping": {
+                    "description": "Pings the Newgrounds.io server.",
+                    "require_session": false,
+                    "return": {
+                        "pong": {
+                            "type": "string",
+                            "description": "Will always return a value of 'pong'"
+                        }
+                    }
+                }
+            }
+        },
+        "Loader": {
+            "class": "Loader",
+            "description": "This class handles loading various URLs and tracking referral stats.\n\nNote: These calls do not return any JSON packets (unless the redirect param is set to false). Instead, they redirect to the appropriate URL.  These calls should be executed in a browser window vs using AJAX or any other internal loaders.",
+            "methods": {
+                "Loader.loadOfficialUrl": {
+                    "description": "Loads the official URL where the latest version of your app can be found (as defined in your \"Official URLs\" settings), and logs a referral to your API stats.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"www.somesite.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "redirect": {
+                            "type": "boolean",
+                            "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
+                            "required": false
+                        }
+                    },
+                    "redirect": true
+                },
+                "Loader.loadAuthorUrl": {
+                    "description": "Loads the official URL of the app's author (as defined in your \"Official URLs\" settings), and logs a referral to your API stats.\n\nFor apps with multiple author URLs, use Loader.loadReferral.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"www.somesite.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "redirect": {
+                            "type": "boolean",
+                            "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
+                            "required": false
+                        }
+                    },
+                    "redirect": true
+                },
+                "Loader.loadReferral": {
+                    "description": "Loads a custom referral URL (as defined in your \"Referrals & Events\" settings), and logs the referral to your API stats.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"www.somesite.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "referral_name": {
+                            "type": "string",
+                            "description": "The name of the referral (as defined in your \"Referrals & Events\" settings).",
+                            "required": true
+                        },
+                        "redirect": {
+                            "type": "boolean",
+                            "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
+                            "required": false
+                        }
+                    },
+                    "redirect": true
+                },
+                "Loader.loadMoreGames": {
+                    "description": "Loads the Newgrounds game portal, and logs the referral to your API stats.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"www.somesite.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "redirect": {
+                            "type": "boolean",
+                            "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
+                            "required": false
+                        }
+                    },
+                    "redirect": true
+                },
+                "Loader.loadNewgrounds": {
+                    "description": "Loads Newgrounds, and logs the referral to your API stats.",
+                    "require_session": false,
+                    "params": {
+                        "host": {
+                            "type": "string",
+                            "description": "The domain hosting your app. Example: \"www.somesite.com\", \"localHost\"",
+                            "required": true
+                        },
+                        "redirect": {
+                            "type": "boolean",
+                            "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
+                            "required": false
+                        }
+                    },
+                    "redirect": true
+                }
+            }
+        },
+        "Medal": {
+            "class": "Medal",
+            "description": "Handles loading and unlocking of medals.",
+            "methods": {
+                "Medal.getList": {
+                    "description": "Loads a list of #medal objects.",
+                    "require_session": false,
+                    "return": {
+                        "medals": {
+                            "description": "An array of medal objects.",
+                            "array": {
+                                "object": "medal"
+                            }
+                        }
+                    }
+                },
+                "Medal.unlock": {
+                    "description": "Unlocks a medal.",
+                    "require_session": true,
+                    "secure": true,
+                    "params": {
+                        "id": {
+                            "type": "int",
+                            "description": "The numeric ID of the medal to unlock.",
+                            "required": true,
+                            "extract_from": {
+                                "object": "medal",
+                                "alias": "medal",
+                                "property": "id"
+                            }
+                        }
+                    },
+                    "return": {
+                        "medal": {
+                            "object": "medal",
+                            "description": "The #medal that was unlocked."
+                        },
+                        "medal_score": {
+                            "type": "int",
+                            "description": "The user's new medal score."
+                        }
+                    }
+                }
+            }
+        },
+        "ScoreBoard": {
+            "class": "ScoreBoard",
+            "description": "Handles loading and posting of high scores and scoreboards.",
+            "methods": {
+                "ScoreBoard.getBoards": {
+                    "description": "Returns a list of available scoreboards.",
+                    "require_session": false,
+                    "return": {
+                        "scoreboards": {
+                            "description": "An array of #scoreboard objects.",
+                            "array": {
+                                "object": "scoreboard"
+                            }
+                        }
+                    }
+                },
+                "ScoreBoard.postScore": {
+                    "description": "Posts a score to the specified scoreboard.",
+                    "require_session": true,
+                    "secure": true,
+                    "params": {
+                        "id": {
+                            "type": "int",
+                            "description": "The numeric ID of the scoreboard.",
+                            "required": true,
+                            "extract_from": {
+                                "object": "scoreboard",
+                                "alias": "scoreboard",
+                                "property": "id"
+                            }
+                        },
+                        "value": {
+                            "type": "int",
+                            "description": "The int value of the score.",
+                            "required": true
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "An optional tag that can be used to filter scores via ScoreBoard.getScores"
+                        }
+                    },
+                    "return": {
+                        "scoreboard": {
+                            "description": "The #scoreboard that was posted to.",
+                            "object": "scoreboard"
+                        },
+                        "score": {
+                            "description": "The #score that was posted to the board.",
+                            "object": "score"
+                        }
+                    },
+                    "notes": "If this board uses incremental scores, the new total score value will be returned."
+                },
+                "ScoreBoard.getScores": {
+                    "description": "Loads a list of #score objects from a scoreboard. Use 'skip' and 'limit' for getting different pages.",
+                    "require_session": false,
+                    "params": {
+                        "id": {
+                            "description": "The numeric ID of the scoreboard.",
+                            "type": "int",
+                            "required": true,
+                            "extract_from": {
+                                "object": "scoreboard",
+                                "alias": "scoreboard",
+                                "property": "id"
+                            }
+                        },
+                        "period": {
+                            "description": "The time-frame to pull scores from (see notes for acceptable values).",
+                            "type": "string"
+                        },
+                        "tag": {
+                            "description": "A tag to filter results by.",
+                            "type": "string"
+                        },
+                        "social": {
+                            "description": "If set to true, only social scores will be loaded (scores by the user and their friends). This param will be ignored if there is no valid session id and the 'user' param is absent.",
+                            "type": "boolean"
+                        },
+                        "user": {
+                            "description": "A user's ID or name.  If 'social' is true, this user and their friends will be included. Otherwise, only scores for this user will be loaded. If this param is missing and there is a valid session id, that user will be used by default.",
+                            "type": "mixed"
+                        },
+                        "skip": {
+                            "description": "An integer indicating the number of scores to skip before starting the list. Default = 0.",
+                            "type": "int"
+                        },
+                        "limit": {
+                            "description": "An integer indicating the number of scores to include in the list. Default = 10.",
+                            "type": "int"
+                        }
+                    },
+                    "return": {
+                        "period": {
+                            "description": "The time-frame the scores belong to. See notes for acceptable values.",
+                            "type": "string"
+                        },
+                        "social": {
+                            "description": "Will return true if scores were loaded in social context ('social' set to true and a session or 'user' were provided).",
+                            "type": "boolean"
+                        },
+                        "limit": {
+                            "description": "The query skip that was used.",
+                            "type": "int"
+                        },
+                        "scoreboard": {
+                            "description": "The #scoreboard being queried.",
+                            "object": "scoreboard"
+                        },
+                        "scores": {
+                            "description": "An array of #score objects.",
+                            "array": {
+                                "object": "score"
+                            }
+                        },
+                        "user": {
+                            "description": "The #user the score list is associated with (either as defined in the 'user' param, or extracted from the current session when 'social' is set to true)",
+                            "object": "user"
+                        }
+                    },
+                    "notes": "Acceptable 'period' values:\n\"D\" = current day (default)\n\"W\" = current week\n\"M\" = current month\n\"Y\" = current year\n\"A\" = all-time"
+                }
+            }
+        }
+    }
+}
