@@ -1,19 +1,27 @@
 {
     "objects": {
-        "input": {
+        "request": {
             "description": "A top-level wrapper containing any information needed to authenticate the application\/user and any component calls being made.",
             "properties": {
+                "test1": {
+                    "type": "int",
+                    "array": {
+                        "type": "int"
+                    },
+                    "description": "an integer.",
+                    "required": true
+                },
                 "app_id": {
                     "type": "string",
                     "description": "Your application's unique ID.",
                     "required": true
                 },
-                "call": {
-                    "object": "call",
+                "execute": {
+                    "object": "execute",
                     "array": {
-                        "object": "call"
+                        "object": "execute"
                     },
-                    "description": "A #call object, or array of one-or-more #call objects.",
+                    "description": "A #execute object, or array of one-or-more #execute objects.",
                     "required": true
                 },
                 "session_id": {
@@ -28,11 +36,11 @@
                 },
                 "echo": {
                     "type": "mixed",
-                    "description": "An optional value that will be returned, verbatim, in the #output object."
+                    "description": "An optional value that will be returned, verbatim, in the #response object."
                 }
             }
         },
-        "call": {
+        "execute": {
             "description": "Contains all the information needed to execute an API component.",
             "properties": {
                 "component": {
@@ -50,7 +58,7 @@
                 },
                 "secure": {
                     "type": "string",
-                    "description": "A an encrypted #call object or array of #call objects.",
+                    "description": "A an encrypted #execute object or array of #execute objects.",
                     "required": true,
                     "not_required_if": "component"
                 },
@@ -68,14 +76,14 @@
                     "type": "string",
                     "description": "The time, in milliseconds, that it took to execute a request."
                 },
-                "input": {
-                    "object": "input",
-                    "description": "A copy of the input object that was posted to the server."
+                "request": {
+                    "object": "request",
+                    "description": "A copy of the request object that was posted to the server."
                 }
             },
             "notes": "This object is only used in debug mode."
         },
-        "output": {
+        "response": {
             "description": "Contains all return output from an API request.",
             "properties": {
                 "app_id": {
@@ -84,7 +92,7 @@
                 },
                 "success": {
                     "type": "boolean",
-                    "description": "If false, there was a problem with your 'input' object. Details will be in the #error property."
+                    "description": "If false, there was a problem with your 'request' object. Details will be in the #error property."
                 },
                 "debug": {
                     "object": "debug",
@@ -95,7 +103,7 @@
                     "array": {
                         "object": "result"
                     },
-                    "description": "This will be a #result object, or an array containing one-or-more #result objects (this will match the structure of the #call property in your #input object)."
+                    "description": "This will be a #result object, or an array containing one-or-more #result objects (this will match the structure of the #execute property in your #request object)."
                 },
                 "error": {
                     "object": "error",
@@ -111,7 +119,7 @@
                 },
                 "echo": {
                     "type": "mixed",
-                    "description": "If you passed an 'echo' value in your input object, it will be echoed here."
+                    "description": "If you passed an 'echo' value in your request object, it will be echoed here."
                 }
             }
         },
@@ -127,11 +135,11 @@
                     "array": {
                         "type": "object"
                     },
-                    "description": "An object, or array of one-or-more objects (follows the structure of the corresponding 'call' property), containing any returned properties or errors."
+                    "description": "An object, or array of one-or-more objects (follows the structure of the corresponding 'execute' property), containing any returned properties or errors."
                 },
                 "echo": {
                     "type": "mixed",
-                    "description": "If you passed an 'echo' value in your call object, it will be echoed here."
+                    "description": "If you passed an 'echo' value in your execute object, it will be echoed here."
                 }
             },
             "notes": "The 'data' object will always contain a 'success' property. If the call was unsuccessful, there will also be an '#error' property."
