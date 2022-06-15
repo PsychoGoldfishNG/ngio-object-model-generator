@@ -82,10 +82,32 @@ to_generate.forEach(function(generate_as) {
 	}
 
 	// Loop through the object docs and generate a file for each
+	for (const [name, obj] of Object.entries(objectDocs.components)) {
+
+
+		// generate the code
+		let output = generator.generateComponent(name,obj);
+
+		// save the file
+		let dir = checkDir(generator.config.outputDirs.components);
+		let file = dir+"/"+generator.config.prefixes.components+name+generator.config.fileExtension;
+		fs.writeFileSync(file, output)
+
+		console.log('created',file);
+	}
+
+
+	// Loop through the object docs and generate a file for each
 	for (const [name, obj] of Object.entries(objectDocs.objects)) {
+
+		// generate the code
 		let output = generator.generateObject(name,obj);
+
+		// save the file
 		let dir = checkDir(generator.config.outputDirs.objects);
 		let file = dir+"/"+generator.config.prefixes.objects+name+generator.config.fileExtension;
+		fs.writeFileSync(file, output);
+
 		console.log('created',file);
 	}
 });
