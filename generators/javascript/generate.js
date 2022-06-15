@@ -1,143 +1,12 @@
 'use strict';
 const fs = require('fs');
 
+/**
+ * This module is used to generate object model and component validation classes in browser-friendly ES6 JavaScript
+ */
 module.exports = {
 	
-	/**
-	 * Converts type names from the object document to native JavaScript types
-	 * @param {string} type_from_doc The data type as defined in the document
-	 * @return {string} The comparable JavaScript type
-	 */
-	getJSNativeType: function(type_from_doc)
-	{
-		var replace = [
-			[ 'int',    'float',  'string', 'boolean', 'object' ],
-			[ 'Number', 'Number', 'String', 'Boolean', 'Object' ]
-		];
-
-		let i = replace[0].indexOf(type_from_doc);
-
-		return i >= 0 ? replace[1][i] : type_from_doc;
-	},
-
-
-	/**
-	 * Gets the type(s) a poperty can use, for JSDoc comments
-	 * @param {object} property The property object from the objects document
-	 * @returns {string} a JSDoc-friendly type string
-	 */
-	getJSDocCastType: function(property) 
-	{
-		// convert types from the doc to native JS types
-
-		// this property can accept an array of values
-		if (typeof(property.array) !== 'undefined') {
-			let atype = this.getJSDocCastType(property.array);
-			let otype = this.getJSDocCastType({type: property.type, object: property.object});
-
-			// this property can accept either a flat value, OR an array of values
-			if (typeof(otype) !== 'undefined') {
-				return "("+otype+"|Array.<"+atype+">)";
-
-			// this property can ONLY accept an array of values
-			} else {
-				return "Array.<"+atype+">";
-			}
-		}
-
-		// this property needs to be an instance of another NGIO object
-		if (typeof(property.object) !== 'undefined') return 'NewgroundsIO_objects_'+property.object;
-
-		// this is a flat type
-		return this.getJSNativeType(property.type);
-	},
-
-
-	/**
-	 * Formats descriptions, from the object document, to JSDoc-friendly strings
-	 * @param {string} description The original description text
-	 * @param {string} tab Any additional indentation to add to new lines
-	 * @return {string}
-	 */
-	formatJSDocDescription: function(description, tab) 
-	{
-		// replaces # notations with full class paths, and adds * and indentation to any newlines in the string.
-		return description.replaceAll("\n\n","\n").replaceAll("#","NewgroundsIO_objects_").split("\n").join("\n"+tab+" *        ");
-	},
-
-
-	/**
-	 * Generates code for typecasting and error checking of native datatypes in setter methods
-	 * @param {string} key The property or variable name that needs strict casting
-	 * @param {string} value The name of the value variable
-	 * @param {string} type The value type from the document (may need translating)
-	 * @param {string} tab Any additional indenting to apply to new lines
-	 * @returns {string} JavaScript code to handle strict typecasting
-	 */
-	castValue: function(key,value,type,tab) 
-	{
-		let _out = "";
-		let is_int = false;
-
-		switch (type) {
-
-			// handle numeric types
-			case "int":
-				is_int = true;
-			case "float":
-
-				_out +=		"if (typeof("+value+") !== 'number') console.warn('Type Mismatch: Value should be a number, got a '+typeof("+value+"));\n";
-				if (is_int) {
-					_out += tab+"else if (!Number.isInteger("+value+")) console.warn('Type Mismatch: Value should be an integer, got a float');\n";
-				}
-				_out +=		tab+key+" = Number("+value+");\n";
-				break;
-
-			// handle strings
-			case "string":
-				_out +=		"if (typeof("+value+") !== 'string') console.warn('Type Mismatch: Value should be a string, got a '+typeof("+value+"));\n";
-				_out +=		tab+key+" = String("+value+");\n";
-				break;
-
-			// handle booleans
-			case "boolean":
-				_out +=		"if (typeof("+value+") !== 'boolean') console.warn('Type Mismatch: Value should be a boolean, got a '+typeof("+value+"));\n";
-				_out +=		tab+key+" = "+value+" ? true:false;\n";
-				break;
-
-			case "object":
-				_out +=		"if (typeof("+value+") !== 'object') console.warn('Type Mismatch: Value should be a object, got a '+typeof("+value+"));\n";
-				_out +=		tab+key+" = "+value+"\n";
-				break;
-
-			// everything else
-			default:
-				_out +=		key+" = "+value+"; // "+type+"\n";
-		}
-
-		return _out;
-	},
-
-
-	/**
-	 * Generates code for typecasting and error checking of class instances in setter methods
-	 * @param {string} key The property or variable name that needs strict casting
-	 * @param {string} value The name of the value variable
-	 * @param {string} obj The class name the value is expected to be an instance of
-	 * @param {string} tab Any additional indenting to apply to new lines
-	 * @returns {string} JavaScript code to handle strict typecasting
-	 */
-	castObject: function(key,value,obj,tab) 
-	{
-		let _out = "";
-
-		_out +=			"if (!("+value+" instanceof NewgroundsIO_objects_"+obj+"))\n";
-		_out +=	tab +	"	console.warn(\"Type Mismatch: expecting NewgroundsIO_objects_"+obj+", got \"+typeof("+value+"));\n\n"
-		_out +=	tab +	key+" = "+value+";";
-		
-		return _out;
-	},
-
+	/* =========================================== CODE GENERATORS =========================================== */
 
 	/**
 	 * Generates the JS code for a component class
@@ -384,5 +253,144 @@ module.exports = {
 		out +					"NewgroundsIO.objects."+objectName+" = NewgroundsIO_objects_"+objectName+";";
 
 		return out;
+	},
+
+
+	/* =========================================== HELPER METHODS =========================================== */
+
+	/**
+	 * Converts type names from the object document to native JavaScript types
+	 * @param {string} type_from_doc The data type as defined in the document
+	 * @return {string} The comparable JavaScript type
+	 */
+	getJSNativeType: function(type_from_doc)
+	{
+		var replace = [
+			[ 'int',    'float',  'string', 'boolean', 'object' ],
+			[ 'Number', 'Number', 'String', 'Boolean', 'Object' ]
+		];
+
+		let i = replace[0].indexOf(type_from_doc);
+
+		return i >= 0 ? replace[1][i] : type_from_doc;
+	},
+
+
+	/**
+	 * Gets the type(s) a poperty can use, for JSDoc comments
+	 * @param {object} property The property object from the objects document
+	 * @returns {string} a JSDoc-friendly type string
+	 */
+	getJSDocCastType: function(property) 
+	{
+		// convert types from the doc to native JS types
+
+		// this property can accept an array of values
+		if (typeof(property.array) !== 'undefined') {
+			let atype = this.getJSDocCastType(property.array);
+			let otype = this.getJSDocCastType({type: property.type, object: property.object});
+
+			// this property can accept either a flat value, OR an array of values
+			if (typeof(otype) !== 'undefined') {
+				return "("+otype+"|Array.<"+atype+">)";
+
+			// this property can ONLY accept an array of values
+			} else {
+				return "Array.<"+atype+">";
+			}
+		}
+
+		// this property needs to be an instance of another NGIO object
+		if (typeof(property.object) !== 'undefined') return 'NewgroundsIO_objects_'+property.object;
+
+		// this is a flat type
+		return this.getJSNativeType(property.type);
+	},
+
+
+	/**
+	 * Formats descriptions, from the object document, to JSDoc-friendly strings
+	 * @param {string} description The original description text
+	 * @param {string} tab Any additional indentation to add to new lines
+	 * @return {string}
+	 */
+	formatJSDocDescription: function(description, tab) 
+	{
+		// replaces # notations with full class paths, and adds * and indentation to any newlines in the string.
+		return description.replaceAll("\n\n","\n").replaceAll("#","NewgroundsIO_objects_").split("\n").join("\n"+tab+" *        ");
+	},
+
+
+	/**
+	 * Generates code for typecasting and error checking of native datatypes in setter methods
+	 * @param {string} key The property or variable name that needs strict casting
+	 * @param {string} value The name of the value variable
+	 * @param {string} type The value type from the document (may need translating)
+	 * @param {string} tab Any additional indenting to apply to new lines
+	 * @returns {string} JavaScript code to handle strict typecasting
+	 */
+	castValue: function(key,value,type,tab) 
+	{
+		let _out = "";
+		let is_int = false;
+
+		switch (type) {
+
+			// handle numeric types
+			case "int":
+				is_int = true;
+			case "float":
+
+				_out +=			"if (typeof("+value+") !== 'number') console.warn('Type Mismatch: Value should be a number, got a '+typeof("+value+"));\n";
+				if (is_int) {
+					_out += 	tab+"else if (!Number.isInteger("+value+")) console.warn('Type Mismatch: Value should be an integer, got a float');\n";
+				}
+				_out +=			tab+key+" = Number("+value+");\n";
+				break;
+
+			// handle strings
+			case "string":
+				_out +=			"if (typeof("+value+") !== 'string') console.warn('Type Mismatch: Value should be a string, got a '+typeof("+value+"));\n";
+				_out +=			tab+key+" = String("+value+");\n";
+				break;
+
+			// handle booleans
+			case "boolean":
+				_out +=			"if (typeof("+value+") !== 'boolean') console.warn('Type Mismatch: Value should be a boolean, got a '+typeof("+value+"));\n";
+				_out +=			tab+key+" = "+value+" ? true:false;\n";
+				break;
+
+			case "object":
+				_out +=			"if (typeof("+value+") !== 'object') console.warn('Type Mismatch: Value should be a object, got a '+typeof("+value+"));\n";
+				_out +=			tab+key+" = "+value+"\n";
+				break;
+
+			// everything else
+			default:
+				_out +=			key+" = "+value+"; // "+type+"\n";
+		}
+
+		return _out;
+	},
+
+
+	/**
+	 * Generates code for typecasting and error checking of class instances in setter methods
+	 * @param {string} key The property or variable name that needs strict casting
+	 * @param {string} value The name of the value variable
+	 * @param {string} obj The class name the value is expected to be an instance of
+	 * @param {string} tab Any additional indenting to apply to new lines
+	 * @returns {string} JavaScript code to handle strict typecasting
+	 */
+	castObject: function(key,value,obj,tab) 
+	{
+		let _out = "";
+
+		_out +=					"if (!("+value+" instanceof NewgroundsIO_objects_"+obj+"))\n";
+		_out +=	tab +			"	console.warn(\"Type Mismatch: expecting NewgroundsIO_objects_"+obj+", got \"+typeof("+value+"));\n\n"
+		_out +=	tab +			key+" = "+value+";";
+		
+		return _out;
 	}
+
 }
