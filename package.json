@@ -17,5 +17,8 @@
     "ngio"
   ],
   "author": "Josh Tuttle",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^3.5.3"
+  }
 }

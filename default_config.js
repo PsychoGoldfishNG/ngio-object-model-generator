@@ -7,32 +7,45 @@ module.exports = {
 
 	// CLI aliases, eg you can run 'build.js js' instead of 'build.js javascript'
 	aliases: {
-		js: "javascript"
+		js: "javascript",
+		cs: "csharp"
 	},
 
 	generators: {
 
 		javascript: {
 
-			// generated files will use this extension
-			fileExtension: ".js",
-
-			// generated filenames will use these prefixes
-			prefixes: {
-				objects: "NewgroundsIO_objects_",
-				components: "NewgroundsIO_components_"
-			},
-
-			// this is where your generated files will be saved
+			// this is where your generated model files will be saved
 			outputDirs: {
-				objects: "./build/objects",
-				components: "./build/components"
+				objects: "./build/javascript/newgroundsio/objects",
+				components: "./build/javascript/newgroundsio/components",
+				component_results: "./build/javascript/newgroundsio/results",
+				object_index: "./build/javascript/newgroundsio/objects"
 			},
 
 			// partials (code that will be inserted into generated files) for generated files can be found here
 			partialDirs: {
 				objects: "./generators/javascript/partials/objects",
-				components: "./generators/javascript/partials/components"
+				components: "./generators/javascript/partials/components",
+				component_results: "./generators/javascript/partials/results"
+			}
+		},
+
+		csharp: {
+
+			// this is where your generated model files will be saved
+			outputDirs: {
+				objects: "./build/csharp/newgroundsio/objects",
+				components: "./build/csharp/newgroundsio/components",
+				component_results: "./build/csharp/newgroundsio/results",
+				object_index: "./build/csharp/newgroundsio/objects"
+			},
+
+			// partials (code that will be inserted into generated files) for generated files can be found here
+			partialDirs: {
+				objects: "./generators/csharp/partials/objects",
+				components: "./generators/csharp/partials/components",
+				component_results: "./generators/csharp/partials/results"
 			}
 		}
 

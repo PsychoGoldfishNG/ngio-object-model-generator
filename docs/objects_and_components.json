@@ -1,7 +1,7 @@
 
 {
     "objects": {
-        "request": {
+        "Request": {
             "description": "A top-level wrapper containing any information needed to authenticate the application\/user and any component calls being made.",
             "properties": {
                 "app_id": {
@@ -10,11 +10,11 @@
                     "required": true
                 },
                 "execute": {
-                    "object": "execute",
+                    "object": "Execute",
                     "array": {
-                        "object": "execute"
+                        "object": "Execute"
                     },
-                    "description": "A #execute object, or array of one-or-more #execute objects.",
+                    "description": "A #Execute object, or array of one-or-more #Execute objects.",
                     "required": true
                 },
                 "session_id": {
@@ -29,11 +29,11 @@
                 },
                 "echo": {
                     "type": "mixed",
-                    "description": "An optional value that will be returned, verbatim, in the #response object."
+                    "description": "An optional value that will be returned, verbatim, in the #Response object."
                 }
             }
         },
-        "execute": {
+        "Execute": {
             "description": "Contains all the information needed to execute an API component.",
             "properties": {
                 "component": {
@@ -51,18 +51,18 @@
                 },
                 "secure": {
                     "type": "string",
-                    "description": "A an encrypted #execute object or array of #execute objects.",
+                    "description": "A an encrypted #Execute object or array of #Execute objects.",
                     "required": true,
                     "not_required_if": "component"
                 },
                 "echo": {
                     "type": "mixed",
-                    "description": "An optional value that will be returned, verbatim, in the #result object."
+                    "description": "An optional value that will be returned, verbatim, in the #Result object."
                 }
             },
             "notes": "For secure calls using encryption, you only need to pass the 'secure' property. For all other calls, you only need to use the 'component' and 'parameters' properties."
         },
-        "debug": {
+        "Debug": {
             "description": "Contains extra debugging information.",
             "properties": {
                 "exec_time": {
@@ -70,13 +70,13 @@
                     "description": "The time, in milliseconds, that it took to execute a request."
                 },
                 "request": {
-                    "object": "request",
+                    "object": "Request",
                     "description": "A copy of the request object that was posted to the server."
                 }
             },
             "notes": "This object is only used in debug mode."
         },
-        "response": {
+        "Response": {
             "description": "Contains all return output from an API request.",
             "properties": {
                 "app_id": {
@@ -85,21 +85,21 @@
                 },
                 "success": {
                     "type": "boolean",
-                    "description": "If false, there was a problem with your 'request' object. Details will be in the #error property."
+                    "description": "If false, there was a problem with your 'request' object. Details will be in the error property."
                 },
                 "debug": {
-                    "object": "debug",
+                    "object": "Debug",
                     "description": "Contains extra information you may need when debugging (debug mode only)."
                 },
                 "result": {
-                    "object": "result",
+                    "object": "Result",
                     "array": {
-                        "object": "result"
+                        "object": "Result"
                     },
-                    "description": "This will be a #result object, or an array containing one-or-more #result objects (this will match the structure of the #execute property in your #request object)."
+                    "description": "This will be a #Result object, or an array containing one-or-more #Result objects (this will match the structure of the execute property in your #Request object)."
                 },
                 "error": {
-                    "object": "error",
+                    "object": "Error",
                     "description": "This will contain any error info if the success property is false."
                 },
                 "api_version": {
@@ -116,12 +116,20 @@
                 }
             }
         },
-        "result": {
+        "Result": {
             "description": "Contains information returned by an API component.",
             "properties": {
                 "component": {
                     "type": "string",
                     "description": "The name of the component that was executed (ie 'Medal.unlock')."
+                },
+                "success": {
+                    "type": "boolean",
+                    "description": "If false, there was a problem with your 'request' object. Details will be in the error property."
+                },
+                "error": {
+                    "object": "Error",
+                    "description": "This will contain any error info if the success property is false."
                 },
                 "data": {
                     "type": "object",
@@ -135,9 +143,9 @@
                     "description": "If you passed an 'echo' value in your execute object, it will be echoed here."
                 }
             },
-            "notes": "The 'data' object will always contain a 'success' property. If the call was unsuccessful, there will also be an '#error' property."
+            "notes": "The 'data' object will always contain a 'success' property. If the call was unsuccessful, there will also be an 'error' property."
         },
-        "error": {
+        "Error": {
             "properties": {
                 "message": {
                     "type": "string",
@@ -149,7 +157,7 @@
                 }
             }
         },
-        "session": {
+        "Session": {
             "description": "Contains information about the current user session.",
             "properties": {
                 "id": {
@@ -157,7 +165,7 @@
                     "description": "A unique session identifier"
                 },
                 "user": {
-                    "object": "user",
+                    "object": "User",
                     "description": "If the user has not signed in, or granted access to your app, this will be null"
                 },
                 "expired": {
@@ -175,7 +183,7 @@
             },
             "notes": "Remembered sessions will expire after 30 days of inactivity. All other sessions will expire after one hour of inactivity.\n\nSession expirations get renewed with every call. You could use 'Gateway.ping' every 5 minutes to keep sessions alive."
         },
-        "user": {
+        "User": {
             "description": "Contains information about a user.",
             "properties": {
                 "id": {
@@ -187,7 +195,7 @@
                     "description": "The user's textual name."
                 },
                 "icons": {
-                    "object": "usericons",
+                    "object": "UserIcons",
                     "description": "The user's icon images."
                 },
                 "supporter": {
@@ -196,7 +204,7 @@
                 }
             }
         },
-        "usericons": {
+        "UserIcons": {
             "description": "Contains any icons associated with this user.",
             "properties": {
                 "small": {
@@ -213,7 +221,7 @@
                 }
             }
         },
-        "medal": {
+        "Medal": {
             "description": "Contains information about a medal.",
             "properties": {
                 "id": {
@@ -250,7 +258,7 @@
             },
             "notes": "Medal Difficulties:\n1 = Easy\n2 = Moderate\n3 = Challenging\n4 = Difficult\n5 = Brutal"
         },
-        "scoreboard": {
+        "ScoreBoard": {
             "description": "Contains information about a scoreboard.",
             "properties": {
                 "id": {
@@ -263,12 +271,12 @@
                 }
             }
         },
-        "score": {
+        "Score": {
             "description": "Contains information about a score posted to a scoreboard.",
             "properties": {
                 "user": {
                     "description": "The user who earned score. If this property is absent, the score belongs to the active user.",
-                    "object": "user"
+                    "object": "User"
                 },
                 "value": {
                     "description": "The integer value of the score.",
@@ -284,23 +292,27 @@
                 }
             }
         },
-        "saveslot": {
+        "SaveSlot": {
             "description": "Contains information about a CloudSave slot.",
             "properties": {
                 "id": {
-                    "description": "The numeric id used to save and load this slot.",
+                    "description": "The slot number.",
                     "type": "int"
                 },
                 "size": {
                     "description": "The size of the save data in bytes.",
                     "type": "int"
                 },
-                "time": {
+                "datetime": {
+                    "type": "string",
+                    "description": "A date and time (in ISO 8601 format) representing when this slot was last saved."
+                },
+                "timestamp": {
                     "description": "A unix timestamp representing when this slot was last saved.",
                     "type": "int"
                 },
                 "url": {
-                    "description": "The URL containing the actual save data for this slot.",
+                    "description": "The URL containing the actual save data for this slot, or null if this slot has no data.",
                     "type": "string"
                 }
             }
@@ -323,11 +335,11 @@
                     }
                 },
                 "checkSession": {
-                    "description": "Checks the validity of a session id and returns the results in a #session object.",
+                    "description": "Checks the validity of a session id and returns the results in a #Session object.",
                     "require_session": true,
                     "return": {
                         "session": {
-                            "object": "session"
+                            "object": "Session"
                         }
                     }
                 },
@@ -352,7 +364,8 @@
                     "params": {
                         "version": {
                             "type": "string",
-                            "description": "The version number (in \"X.Y.Z\" format) of the client-side app. (default = \"0.0.0\")"
+                            "description": "The version number (in \"X.Y.Z\" format) of the client-side app. (default = \"0.0.0\")",
+                            "default": "0.0.0"
                         }
                     },
                     "return": {
@@ -377,7 +390,7 @@
                     },
                     "return": {
                         "session": {
-                            "object": "session"
+                            "object": "Session"
                         }
                     }
                 },
@@ -391,15 +404,70 @@
             "class": "CloudSave",
             "description": "Handles loading and saving of game states.",
             "methods": {
-                "getSlots": {
-                    "description": "Returns a list of existing #saveslot objects.",
-                    "require_session": false,
+                "clearSlot": {
+                    "description": "Deletes all data from a save slot.",
+                    "require_session": true,
+                    "params": {
+                        "id": {
+                            "type": "int",
+                            "description": "The slot number.",
+                            "required": true
+                        }
+                    },
+                    "return": {
+                        "slot": {
+                            "description": "A #SaveSlot object.",
+                            "object": "SaveSlot"
+                        }
+                    }
+                },
+                "loadSlot": {
+                    "description": "Returns a specific #saveslot object.",
+                    "require_session": true,
+                    "params": {
+                        "id": {
+                            "type": "int",
+                            "description": "The slot number.",
+                            "required": true
+                        }
+                    },
+                    "return": {
+                        "slot": {
+                            "description": "A #SaveSlot object.",
+                            "object": "SaveSlot"
+                        }
+                    }
+                },
+                "loadSlots": {
+                    "description": "Returns a list of #saveslot objects.",
+                    "require_session": true,
                     "return": {
                         "slots": {
-                            "description": "An array of #saveslot objects.",
+                            "description": "An array of #SaveSlot objects.",
                             "array": {
-                                "object": "saveslot"
+                                "object": "SaveSlot"
                             }
+                        }
+                    }
+                },
+                "setData": {
+                    "description": "Saves data to a save slot. Any existing data will be replaced.",
+                    "require_session": true,
+                    "params": {
+                        "id": {
+                            "type": "int",
+                            "description": "The slot number.",
+                            "required": true
+                        },
+                        "data": {
+                            "type": "string",
+                            "description": "The data you want to save.",
+                            "required": true
+                        }
+                    },
+                    "return": {
+                        "slot": {
+                            "object": "SaveSlot"
                         }
                     }
                 }
@@ -453,6 +521,10 @@
                         "datetime": {
                             "type": "string",
                             "description": "The server's date and time in ISO 8601 format."
+                        },
+                        "timestamp": {
+                            "type": "int",
+                            "description": "The current UNIX timestamp on the server."
                         }
                     }
                 },
@@ -484,10 +556,22 @@
                         "redirect": {
                             "type": "boolean",
                             "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
-                            "required": false
+                            "required": false,
+                            "default": true
+                        },
+                        "log_stat": {
+                            "type": "boolean",
+                            "description": "Set this to false to skip logging this as a referral event.",
+                            "required": false,
+                            "default": true
                         }
                     },
-                    "redirect": true
+                    "redirect": true,
+                    "return": {
+                        "url": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "loadAuthorUrl": {
                     "description": "Loads the official URL of the app's author (as defined in your \"Official URLs\" settings), and logs a referral to your API stats.\n\nFor apps with multiple author URLs, use Loader.loadReferral.",
@@ -501,10 +585,22 @@
                         "redirect": {
                             "type": "boolean",
                             "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
-                            "required": false
+                            "required": false,
+                            "default": true
+                        },
+                        "log_stat": {
+                            "type": "boolean",
+                            "description": "Set this to false to skip logging this as a referral event.",
+                            "required": false,
+                            "default": true
                         }
                     },
-                    "redirect": true
+                    "redirect": true,
+                    "return": {
+                        "url": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "loadReferral": {
                     "description": "Loads a custom referral URL (as defined in your \"Referrals & Events\" settings), and logs the referral to your API stats.",
@@ -523,10 +619,22 @@
                         "redirect": {
                             "type": "boolean",
                             "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
-                            "required": false
+                            "required": false,
+                            "default": true
+                        },
+                        "log_stat": {
+                            "type": "boolean",
+                            "description": "Set this to false to skip logging this as a referral event.",
+                            "required": false,
+                            "default": true
                         }
                     },
-                    "redirect": true
+                    "redirect": true,
+                    "return": {
+                        "url": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "loadMoreGames": {
                     "description": "Loads the Newgrounds game portal, and logs the referral to your API stats.",
@@ -540,10 +648,22 @@
                         "redirect": {
                             "type": "boolean",
                             "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
-                            "required": false
+                            "required": false,
+                            "default": true
+                        },
+                        "log_stat": {
+                            "type": "boolean",
+                            "description": "Set this to false to skip logging this as a referral event.",
+                            "required": false,
+                            "default": true
                         }
                     },
-                    "redirect": true
+                    "redirect": true,
+                    "return": {
+                        "url": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "loadNewgrounds": {
                     "description": "Loads Newgrounds, and logs the referral to your API stats.",
@@ -557,10 +677,22 @@
                         "redirect": {
                             "type": "boolean",
                             "description": "Set this to false to get a JSON response containing the URL instead of doing an actual redirect.",
-                            "required": false
+                            "required": false,
+                            "default": true
+                        },
+                        "log_stat": {
+                            "type": "boolean",
+                            "description": "Set this to false to skip logging this as a referral event.",
+                            "required": false,
+                            "default": true
                         }
                     },
-                    "redirect": true
+                    "redirect": true,
+                    "return": {
+                        "url": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         },
@@ -569,14 +701,24 @@
             "description": "Handles loading and unlocking of medals.",
             "methods": {
                 "getList": {
-                    "description": "Loads a list of #medal objects.",
+                    "description": "Loads a list of #Medal objects.",
                     "require_session": false,
                     "return": {
                         "medals": {
                             "description": "An array of medal objects.",
                             "array": {
-                                "object": "medal"
+                                "object": "Medal"
                             }
+                        }
+                    }
+                },
+                "getMedalScore": {
+                    "description": "Loads the user's current medal score.",
+                    "require_session": true,
+                    "return": {
+                        "medal_score": {
+                            "type": "int",
+                            "description": "The user's medal score."
                         }
                     }
                 },
@@ -590,7 +732,7 @@
                             "description": "The numeric ID of the medal to unlock.",
                             "required": true,
                             "extract_from": {
-                                "object": "medal",
+                                "object": "Medal",
                                 "alias": "medal",
                                 "property": "id"
                             }
@@ -598,8 +740,8 @@
                     },
                     "return": {
                         "medal": {
-                            "object": "medal",
-                            "description": "The #medal that was unlocked."
+                            "object": "Medal",
+                            "description": "The #Medal that was unlocked."
                         },
                         "medal_score": {
                             "type": "int",
@@ -618,9 +760,9 @@
                     "require_session": false,
                     "return": {
                         "scoreboards": {
-                            "description": "An array of #scoreboard objects.",
+                            "description": "An array of #ScoreBoard objects.",
                             "array": {
-                                "object": "scoreboard"
+                                "object": "ScoreBoard"
                             }
                         }
                     }
@@ -635,7 +777,7 @@
                             "description": "The numeric ID of the scoreboard.",
                             "required": true,
                             "extract_from": {
-                                "object": "scoreboard",
+                                "object": "ScoreBoard",
                                 "alias": "scoreboard",
                                 "property": "id"
                             }
@@ -652,18 +794,18 @@
                     },
                     "return": {
                         "scoreboard": {
-                            "description": "The #scoreboard that was posted to.",
-                            "object": "scoreboard"
+                            "description": "The #ScoreBoard that was posted to.",
+                            "object": "ScoreBoard"
                         },
                         "score": {
-                            "description": "The #score that was posted to the board.",
-                            "object": "score"
+                            "description": "The #Score that was posted to the board.",
+                            "object": "Score"
                         }
                     },
                     "notes": "If this board uses incremental scores, the new total score value will be returned."
                 },
                 "getScores": {
-                    "description": "Loads a list of #score objects from a scoreboard. Use 'skip' and 'limit' for getting different pages.",
+                    "description": "Loads a list of #Score objects from a scoreboard. Use 'skip' and 'limit' for getting different pages.",
                     "require_session": false,
                     "params": {
                         "id": {
@@ -671,7 +813,7 @@
                             "type": "int",
                             "required": true,
                             "extract_from": {
-                                "object": "scoreboard",
+                                "object": "ScoreBoard",
                                 "alias": "scoreboard",
                                 "property": "id"
                             }
@@ -694,11 +836,13 @@
                         },
                         "skip": {
                             "description": "An integer indicating the number of scores to skip before starting the list. Default = 0.",
-                            "type": "int"
+                            "type": "int",
+                            "default": 0
                         },
                         "limit": {
                             "description": "An integer indicating the number of scores to include in the list. Default = 10.",
-                            "type": "int"
+                            "type": "int",
+                            "default": 10
                         }
                     },
                     "return": {
@@ -715,18 +859,18 @@
                             "type": "int"
                         },
                         "scoreboard": {
-                            "description": "The #scoreboard being queried.",
-                            "object": "scoreboard"
+                            "description": "The #ScoreBoard being queried.",
+                            "object": "ScoreBoard"
                         },
                         "scores": {
-                            "description": "An array of #score objects.",
+                            "description": "An array of #Score objects.",
                             "array": {
-                                "object": "score"
+                                "object": "Score"
                             }
                         },
                         "user": {
-                            "description": "The #user the score list is associated with (either as defined in the 'user' param, or extracted from the current session when 'social' is set to true)",
-                            "object": "user"
+                            "description": "The #User the score list is associated with (either as defined in the 'user' param, or extracted from the current session when 'social' is set to true)",
+                            "object": "User"
                         }
                     },
                     "notes": "Acceptable 'period' values:\n\"D\" = current day (default)\n\"W\" = current week\n\"M\" = current month\n\"Y\" = current year\n\"A\" = all-time"
