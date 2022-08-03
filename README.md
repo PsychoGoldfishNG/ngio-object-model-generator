@@ -4,6 +4,7 @@ A framework for building client-side object and component classes for the Newgro
 This package currently supports object and model generation for the following platforms/languages:
 
 * JavaScript
+* C# (For Unity)
 
 ## Installing & Configuring ##
 
@@ -18,6 +19,8 @@ Run 'node build.js <generatorname>'
 Current generator names are:
 
  * javascript
+ * csharp (for C#)
  * js (alias for javascript)
-
+ * cs (alias for csharp)
+ 
 Generator names ARE case sensitive.
