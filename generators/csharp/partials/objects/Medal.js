@@ -22,11 +22,12 @@ module.exports = {
 		var out = "";		
 
 		out += 				"		/// <summary>Unlocks this medal, then fires a callback.</summary>\n";
+		out += 				"		/// <param name=\"callback\">An optional function to call when the medal is unlocked on the server.</summary>\n";
 		out += 				"		public IEnumerator Unlock(Action<NewgroundsIO.objects.Response> callback=null)\n";
 		out += 				"		{\n";
 		out += 				"			// You can't unlock a medal without a Core object.\n";
 		out += 				"			if (this.__ngioCore is null) {\n";
-		out += 				"				UnityEngine.Debug.LogError(\"Can not unlock medal object without attaching a NewgroundsIO.Core instnce\");\n";
+		out += 				"				UnityEngine.Debug.LogError(\"NewgroundsIO - Can not unlock medal object without attaching a NewgroundsIO.Core instance.\");\n";
 		out += 				"				yield break;\n";
 		out += 				"			}\n\n";
 

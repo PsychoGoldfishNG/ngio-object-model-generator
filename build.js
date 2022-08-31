@@ -154,7 +154,7 @@ function generate(generate_as)
 				file_name = checkFilePath(generator.config.outputDirs.components + "/" +file_name);
 				fs.writeFileSync(file_name, file_contents);
 
-				console.log('created',file_name);
+				//console.log('created',file_name);
 			}
 
 			// create a result object file for each method
@@ -170,7 +170,7 @@ function generate(generate_as)
 					file_name = checkFilePath(generator.config.outputDirs.component_results + "/" +file_name);
 					fs.writeFileSync(file_name, file_contents);
 
-					console.log('created',file_name);
+					//console.log('created',file_name);
 				}
 			}
 		}
@@ -184,6 +184,7 @@ function generate(generate_as)
 		let partials = null;
 		if (generator.config.partialDirs && generator.config.partialDirs.objects) {
 			let partial_file = generator.config.partialDirs.objects+"/"+name+".js";
+
 			if (fs.existsSync(partial_file))
 				partials = require(partial_file);
 		}
@@ -198,7 +199,7 @@ function generate(generate_as)
 			file_name = checkFilePath(generator.config.outputDirs.objects + "/" +file_name);
 			fs.writeFileSync(file_name, file_contents);
 
-			console.log('created',file_name);
+			//console.log('created',file_name);
 		}
 	}
 
@@ -210,7 +211,7 @@ function generate(generate_as)
 			file_name = checkFilePath(generator.config.outputDirs.object_index + "/" +file_name);
 			fs.writeFileSync(file_name, file_contents);
 
-			console.log('created',file_name);
+			//console.log('created',file_name);
 		}
 	}
 

@@ -14,93 +14,18 @@ module.exports = {
 	 * @param {string} methodName The name of the method
 	 * @param {object} methodData All the data about the method
 	 * @param {object} partials An optional partials module for this class
-	 * @return {string}
+	 * @return {Array[string,string]} An array containing the filename to save, and the javascript contents
 	 */
 	generateComponentObject: function(componentName,methodName,methodData,partials) 
 	{
-		var out = "";
+		let objectName = componentName+"."+methodName;
+		let className = methodName;
+		let nameSpace = "NewgroundsIO.components."+componentName;
+		let baseClass = "NewgroundsIO.BaseComponent";
+		let objectData = methodData.params;
+		let componentProps = methodData;
 
-		// class definition and constructor
-		out +=					"/**\n";
-		out +=					" * Used to call the "+componentName+"."+methodName+" component.\n";
-		out +=					" */\n";
-		out +=	 				"class NewgroundsIO_components_"+componentName+"_"+methodName+" extends NewgroundsIO_components {\n\n";
-
-		out +=					"	/**\n";
-		out +=					"	 * Constructor\n";
-		if (methodData.params && Object.keys(methodData.params).length > 0)
-			out +=				"	 * @param {object} props An object of initial properties for this instance\n";
-		out +=					"	 */\n";
-		out +=					"	constructor("+(methodData.params ? 'props':'')+")\n";
-		out +=					"	{\n";
-		out +=					"		super();\n\n";
-		out +=					"		this.__object = \""+componentName+"."+methodName+"\";\n";
-		let props = [];
-		let required = [];
-		if (methodData.params) {
-			for (const [property, data] of Object.entries(methodData.params)) {
-				if (data.required === true) required.push(property);
-				out +=			"		this._"+property+" = null;\n";
-				props.push(property);
-			}
-		}
-
-		if (required.length > 0)
-			out +=				"		this.__required = "+JSON.stringify(required)+";\n";
-
-		if (methodData.secure === true)
-			out +=				"		this.__isSecure = true;\n";
-
-		if (methodData.require_session === true)
-			out +=				"		this.__requireSession = true;\n";
-
-		if (props.length > 0) {
-			out +=				"		this.__properties = this.__properties.concat("+JSON.stringify(props)+");\n";
-			out +=				"		if (typeof(props) === 'object') {\n";
-			out +=				"			for(var i=0; i<this.__properties.length; i++) {\n";
-			out +=				"				if (typeof(props[this.__properties[i]]) !== 'undefined') this[this.__properties[i]] = props[this.__properties[i]];\n";
-			out +=				"			}\n";
-			out +=				"		}\n";
-		}
-
-		// add any partial code that may exist for the constructor function
-		if (partials && partials.getConstructorPartial) out += partials.getConstructorPartial();
-		
-		out +=					"	}\n\n";
-
-		if (methodData.params) {
-			for (const [property, data] of Object.entries(methodData.params)) {
-				out +=			"	/**\n";
-				if (data.description) {
-					out +=		"	 * "+this.formatJSDocDescription(data.description, "	")+"\n";
-				}
-				out +=			"	 * @type {"+this.getJSDocCastType(data)+"}\n";
-
-				out +=			"	 */\n";
-				out += 			"	get "+property+"()\n";
-				out += 			"	{\n";
-				out += 			"		return this._"+property+";\n";
-				out += 			"	}\n\n";
-
-				out += 			"	set "+property+"(_"+property+")\n";
-				out += 			"	{\n";
-				if (data.object) {
-					out += 		"		"+(this.castObject('this._'+property, '_'+property, data.object, '		'))+"\n";
-				} else if (data.type) {
-					out += 		"		"+(this.castValue('this._'+property, '_'+property, data.type, '		'))+"\n";
-				}
-				out += 			"	}\n\n";
-			}
-		}
-
-		// add any partial code that may exist for the overall class
-		if (partials && partials.getClassPartial) out += partials.getClassPartial();
-
-		out += 					"}\n\n";
-
-		out += 					"// Make an alias for this class so it can be used dynamically with string names\n";
-		out += 					"if (typeof(NewgroundsIO.components."+componentName+") === 'undefined') NewgroundsIO.components."+componentName+" = {};\n";
-		out += 					"NewgroundsIO.components."+componentName+"."+methodName+" = NewgroundsIO_components_"+componentName+"_"+methodName+";";
+		let out = this.generateObjectClass(objectName, className, nameSpace, baseClass, objectData, componentProps, partials);
 
 		let filename = componentName+"/"+methodName+".js";
 		return [filename,out];
@@ -112,84 +37,17 @@ module.exports = {
 	 * @param {string} methodName The name of the method
 	 * @param {object} resultData All the data about the result object
 	 * @param {object} partials An optional partials module for this class
-	 * @return {string}
+	 * @return {Array[string,string]} An array containing the filename to save, and the javascript contents
 	 */
 	generateResultObject: function(componentName,methodName,resultData,partials) 
 	{
-		var out = "";
+		let objectName = componentName+"."+methodName;
+		let className = methodName;
+		let nameSpace = "NewgroundsIO.results."+componentName;
+		let baseClass = "NewgroundsIO.BaseResult";
+		let objectData = resultData;
 
-		// class definition and constructor
-		out +=					"/**\n";
-		out +=					" * Returned when "+componentName+"."+methodName+" component is called\n";
-		out +=					" */\n";
-		out +=	 				"class NewgroundsIO_results_"+componentName+"_"+methodName+" extends NewgroundsIO_results {\n\n";
-
-		out +=					"	/**\n";
-		out +=					"	 * Constructor\n";
-		if (resultData && Object.keys(resultData).length > 0) 
-			out +=				"	 * @param {object} props An object of initial properties for this instance\n";
-		out +=					"	 */\n";
-		out +=					"	constructor("+(resultData ? 'props':'')+")\n";
-		out +=					"	{\n";
-		out +=					"		super();\n\n";
-		out +=					"		this.__object = \""+componentName+"."+methodName+"\";\n";
-		let props = [];
-		for (const [property, data] of Object.entries(resultData)) {
-			props.push(property)
-			out +=				"		this._"+property+" = null;\n";
-		}
-		if (props.length > 0) {
-			out +=				"		this.__properties = this.__properties.concat("+JSON.stringify(props)+");\n";
-			out +=				"		if (typeof(props) === 'object') {\n";
-			out +=				"			for(var i=0; i<this.__properties.length; i++) {\n";
-			out +=				"				if (typeof(props[this.__properties[i]]) !== 'undefined') this[this.__properties[i]] = props[this.__properties[i]];\n";
-			out +=				"			}\n";
-			out +=				"		}\n";
-		}
-		
-		// add any partial code that may exist for the constructor function
-		if (partials && partials.getConstructorPartial) out += partials.getConstructorPartial();
-
-		out +=					"	}\n\n";
-
-		for (const [property, data] of Object.entries(resultData)) {
-			out +=				"	/**\n";
-			if (data.description) {
-				out +=			"	 * "+this.formatJSDocDescription(data.description, "	")+"\n";
-			}
-			out +=				"	 * @type {"+this.getJSDocCastType(data)+"}\n";
-
-			out +=				"	 */\n";
-			out += 				"	get "+property+"()\n";
-			out += 				"	{\n";
-			out += 				"		return this._"+property+";\n";
-			out += 				"	}\n\n";
-
-			out += 				"	set "+property+"(_"+property+")\n";
-			out += 				"	{\n";
-
-			if (data.object) {
-				out += 			"		if (!(_"+property+" instanceof NewgroundsIO_objects_"+data.object+") && typeof(_"+property+") === 'object')\n";
-				out += 			" 			_"+property+" = new NewgroundsIO_objects_"+data.object+"(_"+property+");\n\n";
-			}
-
-			if (data.object) {
-				out += 			"		"+(this.castObject('this._'+property, '_'+property, data.object, '		'))+"\n";
-			} else if (data.type) {
-				out += 			"		"+(this.castValue('this._'+property, '_'+property, data.type, '		'))+"\n";
-			}
-			out += 				"	}\n\n";
-		}
-
-		// add any partial code that may exist for the overall class
-		if (partials && partials.getClassPartial) out += partials.getClassPartial();
-		
-		out += 					"}\n\n";
-
-		out += 					"// Make an alias for this class so it can be used dynamically with string names\n";
-		out += 					"NewgroundsIO_results.registerComponent('"+componentName+"."+methodName+"', NewgroundsIO_results_"+componentName+"_"+methodName+");\n";
-		out += 					"if (typeof(NewgroundsIO.results."+componentName+") === 'undefined') NewgroundsIO.results."+componentName+" = {};\n";
-		out += 					"NewgroundsIO.results."+componentName+"."+methodName+" = NewgroundsIO_results_"+componentName+"_"+methodName+";";
+		let out = this.generateObjectClass(objectName, className, nameSpace, baseClass, objectData, {}, partials);
 
 		let filename = componentName+"/"+methodName+".js";
 		return [filename,out];
@@ -200,154 +58,244 @@ module.exports = {
 	 * @param {string} objectName The name of the object being generated
 	 * @param {object} objectData All the data about the object from the main document
 	 * @param {object} partials An optional partials module for this class
-	 * @return {string}
+	 * @return {Array[string,string]} An array containing the filename to save, and the javascript contents
 	 */
 	generateObject: function(objectName,objectData,partials) 
 	{
-		// don't make a model for this...
-		if (objectName === "Result") return "";
-
-		var out = "";
-
-		// class description	
-		out += 					"/**\n";
-		if (objectData.description)
-			out += 				" * "+this.formatJSDocDescription(objectData.description, "")+"\n";
-		out += 					" */\n";
-
-		// class definition.  We will be extending a
-		out += 					"class NewgroundsIO_objects_"+objectName+" extends NewgroundsIO_objects {\n\n";
-
-
-		// constructor
-		out += 					"	/**\n";
-		out += 					"	 * Constructor\n";
-		if (objectData.properties  && Object.keys(objectData.properties).length > 0)
-			out +=				"	 * @param {object} props An object of initial properties for this instance\n";
-		out += 					"	 */\n";
-		out += 					"	constructor("+(objectData.properties ? 'props':'')+")\n";
-		out += 					"	{\n";
-		out +=					"		super();\n\n";
-		out +=					"		this.__object = '"+objectName+"';\n\n";
-
-		let _required = [];
-
-		// set initial property values
-		let props = [];
-		for (const [name, obj] of Object.entries(objectData.properties)) {
-
-			props.push(name);
-			// prefixing actual properties with "_" because end-user will be accessing via get/set methods
-			// initial values can be set in the constructor, or will be null by default
-			out +=				"			this._"+name+" = null;\n";
-
-			// keep track of required properties
-			if (obj.required === true) _required.push(name);
-		}
+		let className = objectName;
+		let nameSpace = "NewgroundsIO.objects";
+		let baseClass = "NewgroundsIO.BaseObject";
 		
-		// set properties from props object
-		if (props.length > 0) {
-			out +=				"			this.__properties = this.__properties.concat("+JSON.stringify(props)+");\n";
-			out += 				"			if (typeof(props) === 'object') {\n";
-			out +=				"				for(var i=0; i<this.__properties.length; i++) {\n";
-			out +=				"					if (typeof(props[this.__properties[i]]) !== 'undefined') this[this.__properties[i]] = props[this.__properties[i]];\n";
-			out +=				"				}\n";
-			out += 				"			}\n\n";
-		}
-
-
-		// note required properties
-		if (_required.length > 0)
-			out += 				"		this.__required = "+JSON.stringify(_required)+";\n";
-
-
-		// add any partial code that may exist for the constructor function
-		if (partials && partials.getConstructorPartial) out += partials.getConstructorPartial();
-
-		out += 					"	}\n\n";
-		// end constructor
-
-
-		// getter/setters for properties
-		for (const [name, obj] of Object.entries(objectData.properties)) {
-
-			// Override how the result propert of the Repsonse object is defined
-			if (objectName === "Response" && name === "result") {
-				delete obj.object;
-				obj.type = "NewgroundsIO_results";
-				obj.array = {
-					type: "NewgroundsIO_results"
-				};
-				obj.description = "This will be a NewgroundsIO_results object, or an array containing one-or-more NewgroundsIO_results objects."
-			}
-
-			// JSDoc description
-			out +=				"	/**\n";
-			if (obj.description)
-				out +=			"	 * "+this.formatJSDocDescription(obj.description, "	")+"\n";
-			out += 				"	 * @type {"+this.getJSDocCastType(obj)+"}\n";
-			out +=				"	 */\n";
-
-			// Getter
-			out += 				"	get "+name+"()\n";
-			out += 				"	{\n";
-			out += 				"		return this._"+name+";\n";
-			out += 				"	}\n\n";
-
-			out += 				"	set "+name+"(_"+name+")\n";
-			out += 				"	{\n";
-
-			// handle properties that can be passed as typed arrays
-			if (obj.array) {
-
-				out += 			"		if (Array.isArray(_"+name+")) {\n";
-
-				if (obj.array.type === 'mixed') {
-
-					out += 		"			"+(this.castValue('this._'+name, '_'+name, obj.array, '			'))+"\n";
-
-				} else {
-
-					out += 		"			let newArr = [];\n";
-					out += 		"			_"+name+".forEach(function(val,index) {\n";
-
-					if (obj.array.object) {
-						out += 	"				"+(this.castObject('newArr[index]', 'val', obj.array.object, '				'))+"\n";
-					} else {
-						out += 	"				"+(this.castValue('newArr[index]', 'val', obj.array.type, '				'))+"\n";
-					}
-					out += 		"			});\n";
-					out += 		"			this._"+name+" = newArr;\n";
-
-				}
-
-				out += 			"			return;\n";
-				out += 			"		}\n\n";
-			}
-
-			if (obj.object) {
-				out += 			"		"+(this.castObject('this._'+name, '_'+name, obj.object, '		'))+"\n";
-			} else if (obj.type) {
-				out += 			"		"+(this.castValue('this._'+name, '_'+name, obj.type, '		'))+"\n";
-			}
-
-			out += 				"	}\n\n";
-		}
-		// end getter/setters for properties
-
-		// add any partial code that may exist for the main class
-		if (partials && partials.getClassPartial) out += partials.getClassPartial();
-
-		out +=					"}\n\n";
-		// end class
-
-		out +=					"// Alias to the NewgroundsIO.objects namespace\n";
-		out +=					"NewgroundsIO.objects."+objectName+" = NewgroundsIO_objects_"+objectName+";";
+		let out = this.generateObjectClass(objectName, className, nameSpace, baseClass, objectData.properties, {}, partials);
 
 		let filename = objectName+".js";
 		return [filename,out];
 	},
 
+	/**
+	 * Generates the JS code for the above class types
+	 * @param {string} objectName The string name of the object
+	 * @param {string} className The name of the class
+	 * @param {string} nameSpacce The namespace the class will be added to
+	 * @param {object} objectData All the data about the object from the main document
+	 * @param {object} partials An optional partials module for this class
+	 * @return {string} the Javascript output
+	 */
+	generateObjectClass: function(objectName, className, nameSpace, baseClass, objectData, componentProps, partials)
+	{
+		var longName = nameSpace+"."+className;
+
+		// skip any models that are purely abstract
+		if (longName == "NewgroundsIO.objects.Result") return "";
+
+
+		// some objects have abstract properties, so we'll have to do some overriding here
+		if (objectData) {
+			for (const [property, data] of Object.entries(objectData)) {
+
+				// Override how the result property of the Repsonse object is defined
+				if (longName == "NewgroundsIO.objects.Response" && property === "result") {
+					delete data.object;
+					data.type = "NewgroundsIO.BaseResult";
+					data.array = {
+						type: "NewgroundsIO.BaseResult"
+					};
+					data.description = "This will be a NewgroundsIO.results.XXXXXX object, or an array containing one-or-more NewgroundsIO.results.XXXXXX objects.";
+				}
+			}
+		}
+
+
+		var out = 				"(()=>{\n";
+		out +=	 				"/** Start "+longName+" **/\n\n";
+
+		// class description	
+		if (objectData && typeof(objectData.description) === 'string') {
+			out +=				"	/**\n";
+			out +=				" * "+this.formatJSDocDescription(objectData.description, "")+"\n";
+			out +=				"	 */\n";
+		}
+
+		// class definition
+		out +=					"	class "+className+" extends "+baseClass+" {\n\n";
+
+		// start constructor
+		out +=					"		/**\n";
+		out +=					"		 * Constructor\n";
+
+		// generate parameter comments
+		if (objectData && Object.keys(objectData).length > 0) {
+			out +=				"		 * @param {object} props An object of initial properties for this instance\n";
+			for (const [property, data] of Object.entries(objectData)) {
+				out += 			"		 * @param {"+this.getJSDocCastType(data)+"} props."+property+" "+this.formatJSDocDescription(data.description)+"\n";
+			}
+		}
+		out +=					"		 */\n";
+		out +=					"		constructor("+(objectData ? 'props':'')+")\n";
+		out +=					"		{\n";
+		out +=					"			super();\n\n";
+		out +=					"			this.__object = \""+objectName+"\";\n";
+
+		let props = [];
+		let required = [];
+		let objectMap = {};
+		let arrayMap = {};
+
+		// render private(ish) vars for properties
+		if (objectData) {
+			for (const [property, data] of Object.entries(objectData)) {
+
+				// all objects have this already
+				if (property == "echo") continue;
+
+				// record the property name
+				props.push(property);
+
+				// record anything that's required
+				if (data.required === true) required.push(property);
+
+				// ignore properties that are handled in partial code
+				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
+				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
+
+
+				out +=			"			this._"+property+" = null;\n";
+			}
+		}
+
+		// render the names of any required properties in an array
+		if (required.length > 0)
+			out +=				"			this.__required = "+JSON.stringify(required)+";\n";
+
+		// note if this is a secure component
+		if (componentProps.secure === true)
+			out +=				"			this.__isSecure = true;\n";
+
+		// note if this is a component that requires a valid user session
+		if (componentProps.require_session === true)
+			out +=				"			this.__requireSession = true;\n";
+
+		// render the names of all our properties to an array, and add some generic code for setting initial values
+		// from the constructor's "prop" param.
+		if (props.length > 0) {
+			out +=				"			this.__properties = this.__properties.concat("+JSON.stringify(props)+");\n";
+			out +=				"			if (props && typeof(props) === 'object') {\n";
+			out +=				"				for(var i=0; i<this.__properties.length; i++) {\n";
+			out +=				"					if (typeof(props[this.__properties[i]]) !== 'undefined') this[this.__properties[i]] = props[this.__properties[i]];\n";
+			out +=				"				}\n";
+			out +=				"			}\n";
+		}
+
+		// add any partial code that may exist for the constructor function
+		if (partials && partials.getConstructorPartial) out += partials.getConstructorPartial();
+		
+		// end constructor code
+		out +=					"		}\n\n";
+
+		// Generate getter/setters for all of our properties
+		if (objectData) {
+			for (const [property, data] of Object.entries(objectData)) {
+
+				// ignore properties that are handled in partial code
+				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
+				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
+				
+				// add JSDoc comments
+				out +=			"		/**\n";
+				if (data.description) {
+					out +=		"		 * "+this.formatJSDocDescription(data.description, "		")+"\n";
+				}
+				out +=			"		 * @type {"+this.getJSDocCastType(data)+"}\n";
+
+				out +=			"		 */\n";
+
+				// add the getter
+				out +=			"		get "+property+"()\n";
+				out +=			"		{\n";
+				out +=			"			return this._"+property+";\n";
+				out +=			"		}\n\n";
+
+				// add the setter (it will have type-checking added via some helper methods)
+				out +=			"		set "+property+"(_"+property+")\n";
+				out +=			"		{\n";
+				
+
+				// convert flat objects to NGIO objects
+				if (data.object) {
+
+					out +=		"			if ("+(data.array ? "!Array.isArray(_"+property+") && " : "")+"!(_"+property+" instanceof NewgroundsIO.objects."+data.object+") && typeof(_"+property+") === 'object')\n";
+					out +=		"				_"+property+" = new NewgroundsIO.objects."+data.object+"(_"+property+");\n\n";
+
+					objectMap[property] = data.object;
+				}
+
+				// handle properties that can be set as arrays
+				if (data.array) {
+
+					out +=		"			if (Array.isArray(_"+property+")) {\n";
+
+					// mixed stuff can just be accepted as-is
+					if (data.array.type === 'mixed') {
+
+						out += 	"				"+(this.castValue('this._'+property, '_'+property, data.array, '				'))+"\n";
+
+					// iterate the array we were sent, and check types for each value.
+					} else {
+
+						out += 	"				let newArr = [];\n";
+						out += 	"				_"+property+".forEach(function(val,index) {\n";
+
+						if (data.array.object) {
+							out+= "					"+(this.castObject('newArr[index]', 'val', data.array.object, '					'))+"\n";
+							arrayMap[property] = data.array.object;
+						} else {
+							out+= "					"+(this.castValue('newArr[index]', 'val', data.array.type, '					'))+"\n";
+						}
+						out += 	"				});\n";
+						out += 	"				this._"+property+" = newArr;\n";
+
+					}
+
+					out +=		"				return;\n";
+					out +=		"			}\n\n";
+				}
+
+				// handle objects and flat values
+				if (data.object) {
+					out += 		"			"+(this.castObject('this._'+property, '_'+property, data.object, '			'))+"\n";
+				} else if (data.type) {
+					out += 		"			"+(this.castValue('this._'+property, '_'+property, data.type, '			'))+"\n";
+				}
+				out +=			"		}\n\n";
+			}
+
+			// render our object and array maps
+
+			if (Object.keys(objectMap).length)
+				out +=			"		objectMap = " + JSON.stringify(objectMap) +";\n\n";
+			
+			if (Object.keys(arrayMap).length)
+				out +=			"		arrayMap = " + JSON.stringify(arrayMap) +";\n\n";
+
+		}
+		// End of getter/setters
+
+		// add any partial code that may exist for the overall class
+		if (partials && partials.getClassPartial) out += partials.getClassPartial();
+
+		out +=					"	}\n\n";
+		out +=	 				"/** End Class "+longName+" **/\n";
+		// end of class
+
+		// add the class to the apropriate namespace
+		out +=					"if (typeof("+nameSpace+") === 'undefined') "+nameSpace+" = {};\n";
+		out +=					longName+" = "+className+";\n\n";
+
+		out +=					"})();\n\n";
+
+		// all done!
+		return out;
+	},
 
 	/* =========================================== HELPER METHODS =========================================== */
 
@@ -394,7 +342,7 @@ module.exports = {
 		}
 
 		// this property needs to be an instance of another NGIO object
-		if (typeof(property.object) !== 'undefined') return 'NewgroundsIO_objects_'+property.object;
+		if (typeof(property.object) !== 'undefined') return 'NewgroundsIO.objects.'+property.object;
 
 		// this is a flat type
 		return this.getJSNativeType(property.type);
@@ -409,8 +357,9 @@ module.exports = {
 	 */
 	formatJSDocDescription: function(description, tab) 
 	{
+		if (!description) return "";
 		// replaces # notations with full class paths, and adds * and indentation to any newlines in the string.
-		return description.replaceAll("\n\n","\n").replaceAll("#","NewgroundsIO_objects_").split("\n").join("\n"+tab+" *        ");
+		return description.replaceAll("\n\n","\n").replaceAll("#","NewgroundsIO.objects.").split("\n").join("\n"+tab+" *        ");
 	},
 
 
@@ -434,9 +383,9 @@ module.exports = {
 				is_int = true;
 			case "float":
 
-				_out +=			"if (typeof("+value+") !== 'number') console.warn('NewgroundsIO Type Mismatch: Value should be a number, got a '+typeof("+value+"));\n";
+				_out +=			"if (typeof("+value+") !== 'number' && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a number, got', "+value+");\n";
 				if (is_int) {
-					_out += 	tab+"else if (!Number.isInteger("+value+")) console.warn('NewgroundsIO Type Mismatch: Value should be an integer, got a float');\n";
+					_out += 	tab+"else if (!Number.isInteger("+value+") && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be an integer, got a float');\n";
 				}
 				_out +=			tab+key+" = Number("+value+");\n";
 				_out +=			tab+"if (isNaN("+key+")) "+key+" = null;\n";
@@ -444,33 +393,33 @@ module.exports = {
 
 			// handle strings
 			case "string":
-				_out +=			"if (typeof("+value+") !== 'string') console.warn('NewgroundsIO Type Mismatch: Value should be a string, got a '+typeof("+value+"));\n";
+				_out +=			"if (typeof("+value+") !== 'string' && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a string, got', "+value+");\n";
 				_out +=			tab+key+" = String("+value+");\n";
 				break;
 
 			// handle booleans
 			case "boolean":
-				_out +=			"if (typeof("+value+") !== 'boolean') console.warn('NewgroundsIO Type Mismatch: Value should be a boolean, got a '+typeof("+value+"));\n";
+				_out +=			"if (typeof("+value+") !== 'boolean' && typeof("+value+") !== 'number' && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a boolean, got', "+value+");\n";
 				_out +=			tab+key+" = "+value+" ? true:false;\n";
 				break;
 
 			case "object":
-				_out +=			"if (typeof("+value+") !== 'object') console.warn('NewgroundsIO Type Mismatch: Value should be a object, got a '+typeof("+value+"));\n";
+				_out +=			"if (typeof("+value+") !== 'object' && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a object, got', "+value+");\n";
 				_out +=			tab+key+" = "+value+"\n";
 				break;
 
-			case "NewgroundsIO_objects":
-				_out +=			"if (!("+value+" instanceof NewgroundsIO_objects)) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO_objects instance, got a '+typeof("+value+"));\n";
+			case "NewgroundsIO.BaseObject":
+				_out +=			"if (!("+value+" instanceof NewgroundsIO.BaseObject) && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO.objects.XXXX instance, got', "+value+");\n";
 				_out +=			tab+key+" = "+value+"\n";
 				break;
 
-			case "NewgroundsIO_components":
-				_out +=			"if (!("+value+" instanceof NewgroundsIO_components)) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO_components instance, got a '+typeof("+value+"));\n";
+			case "NewgroundsIO.BaseComponent":
+				_out +=			"if (!("+value+" instanceof NewgroundsIO.BaseComponent) && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO.components.XXXX instance, got', "+value+");\n";
 				_out +=			tab+key+" = "+value+"\n";
 				break;
 
-			case "NewgroundsIO_results":
-				_out +=			"if (!("+value+" instanceof NewgroundsIO_results)) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO_results instance, got a '+typeof("+value+"));\n";
+			case "NewgroundsIO.BaseResult":
+				_out +=			"if (!("+value+" instanceof NewgroundsIO.BaseResult) && "+value+" !== null) console.warn('NewgroundsIO Type Mismatch: Value should be a NewgroundsIO.results.XXXX instance, got', "+value+");\n";
 				_out +=			tab+key+" = "+value+"\n";
 				break;
 
@@ -495,8 +444,8 @@ module.exports = {
 	{
 		let _out = "";
 
-		_out +=					"if (!("+value+" instanceof NewgroundsIO_objects_"+obj+"))\n";
-		_out +=	tab +			"	console.warn(\"Type Mismatch: expecting NewgroundsIO_objects_"+obj+", got \"+typeof("+value+"));\n\n"
+		_out +=					"	if ("+value+" !== null && !("+value+" instanceof NewgroundsIO.objects."+obj+"))\n";
+		_out +=	tab +			"	console.warn(\"Type Mismatch: expecting NewgroundsIO.objects."+obj+", got \","+value+");\n\n"
 		_out +=	tab +			key+" = "+value+";";
 		
 		return _out;

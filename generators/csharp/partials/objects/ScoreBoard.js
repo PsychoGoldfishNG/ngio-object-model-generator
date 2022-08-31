@@ -11,7 +11,7 @@ module.exports = {
 	{
 		var out = "";		
 
-		out += 				"		/// <summary>Gets a list of scores from his board.</summary>\n";
+		out += 				"		/// <summary>Gets a list of scores from this board.</summary>\n";
 		out += 				"		/// <param name=\"period\">The overall period to retrieve from. Can be D, W, M, Y or A</param>\n";
 		out += 				"		/// <param name=\"tag\">An optional tag to filter on. Use null to skip filtering.</param>\n";
 		out += 				"		/// <param name=\"social\">Set to true to only see scores from friends.</param>\n";
@@ -30,7 +30,7 @@ module.exports = {
 		out += 				"			var component = new NewgroundsIO.components.ScoreBoard.getScores();\n";
 		out += 				"			component.id = this.id;\n";
 		out += 				"			component.period = period;\n";
-		out += 				"			if (tag is not null) component.tag = tag;\n";
+		out += 				"			if (!(tag is null)) component.tag = tag;\n";
 		out += 				"			if (social) component.social = true;\n";
 		out += 				"			if (skip > 0) component.skip = skip;\n";
 		out += 				"			if (limit > 0) component.limit = limit;\n";

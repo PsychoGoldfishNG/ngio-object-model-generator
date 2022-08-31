@@ -19,6 +19,7 @@
   "author": "Josh Tuttle",
   "license": "MIT",
   "dependencies": {
-    "chokidar": "^3.5.3"
+    "chokidar": "^3.5.3",
+    "jsdoc-to-markdown": "^7.1.1"
   }
 }

@@ -22,7 +22,7 @@ module.exports = {
 	{
 		var out = "";
 		out += 				"		/// <summary>This will be true if this save slot has any saved data</summary>\n";
-		out += 				"		public bool hasData { get { return this.url is not null; }}\n\n";
+		out += 				"		public bool hasData { get { return !(this.url is null); }}\n\n";
 		return out;
 	},
 
@@ -59,7 +59,7 @@ module.exports = {
 		out += 				"		public IEnumerator SetData(string data, Action<NewgroundsIO.objects.Response> callback=null)\n";
 		out += 				"		{\n";
 		out += 				"			if (__ngioCore is null) {\n";
-		out += 				"				if (callback is not null) callback(null);\n";
+		out += 				"				if (!(callback is null)) callback(null);\n";
 		out += 				"				yield break;\n";
 		out += 				"			}\n\n";
 

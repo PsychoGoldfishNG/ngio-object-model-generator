@@ -37,7 +37,7 @@ module.exports = {
 		out += 				"			return NewgroundsIO.SessionState.SESSION_WAITING.Contains(this.status);\n";
 		out += 				"		} }\n\n";
 
-		out += 				"		// The last time Update() was called\n";
+		out += 				"		// The last time Update() was called.\n";
 		out += 				"		private DateTime _lastUpdate;\n\n";
 
 		out += 				"		// If false, Update() will end immediately when called.\n";
@@ -46,14 +46,14 @@ module.exports = {
 		out += 				"		// The status from the last time Update() was called.\n";
 		out += 				"		private string _lastStatus = null;\n\n";
 
-		out += 				"		// The mode we'lluse to check the status of this session\n";
+		out += 				"		// The mode we'll use to check the status of this session.\n";
 		out += 				"		private string mode = \"expired\";\n\n";
 
 		out += 				"		// The total number of attempts we've tried to contact the server without success.\n";
 		out += 				"		private ushort _totalAttempts = 0;\n\n";
 
 		out += 				"		// \n";
-		out += 				"		// The max number of attempts can make to the server without success before we give up.\n";
+		out += 				"		// The max number of attempts we can make to the server without success before we give up.\n";
 		out += 				"		private ushort _maxAttempts = 5;\n";
 		return out;
 	},
@@ -92,9 +92,9 @@ module.exports = {
 		{
 			if (!String.IsNullOrEmpty(this.passport_url)) {
 				Application.OpenURL(this.passport_url);
+				this.status = NewgroundsIO.SessionState.WAITING_FOR_USER;
+				this.mode = "check";
 			}
-			this.status = NewgroundsIO.SessionState.WAITING_FOR_USER;
-			this.mode = "check";
 		}
 
 		/// <summary>Logs the user out of their current session, locally and on the server, then calls a function when complete.</summary>
@@ -136,8 +136,6 @@ module.exports = {
 
 			// we can skip this whole routine if we're in the middle of checking things
 			if (!this._canUpdate || this.mode == "wait") yield break;
-
-			// remember the current status so we can tell if it changes by the end of this routine
 
 			// Server is not responding as expected, it may be down...  We'll set the session back to unintialized and try again
 			if (this.status == NewgroundsIO.SessionState.SERVER_UNAVAILABLE) {
@@ -252,7 +250,7 @@ module.exports = {
 
 		/** App.checkSession **/
 
-		/// <summary>This will call the API to see what the status of our current session is</summary
+		/// <summary>This will call the API to see what the status of our current session is</summary>
 		public IEnumerator CheckSession()
 		{
 			// don't check for any new updates while we're checking session
