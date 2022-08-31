@@ -6,86 +6,75 @@
 module.exports = {
 
 	/**
-	 * return {string} Code to inject into the NewgroundsIO_objects_Session constructor
-	 */
-	getConstructorPartial: function() 
-	{
-		var out = 			"\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * The current state of this session.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * The status from the last time update() was called.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._lastStatus = null;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * Will be true if the status was changed on an update call.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._statusChanged = false;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * The last time update() was called. (Start in the past so update() will work immediately.)\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._lastUpdate = new Date((new Date()).getTime() - 30000);\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * If false, update() will end immediately when called.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._canUpdate = true;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * The mode we'll use to check the status of this session.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._mode = \"expired\";\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * The total number of attempts we've tried to contact the server without success.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._totalAttempts = 0;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * TThe max number of attempts we can make to the server without success before we give up.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._maxAttempts = 5;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * Stores a session ID from the game's URI if hosted on Newgrounds.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._uri_id = null;\n\n";
-
-		out +=				"			/**\n";
-		out +=				"			 * Stores a session ID that was saved from a Passport login.\n";
-		out +=				"			 * @private\n";
-		out +=				"			 */\n";
-		out +=				"			this._saved_id = null;\n\n";
-
-		return out;
-	},
-
-	/**
 	 * return {string} Code to inject into the overall NewgroundsIO_objects_Session class
 	 */
 	getClassPartial: function() 
 	{
 		var out = `
 		/**
+		 * The current state of this session.
+		 * @private
+		 */
+		#status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
+
+		/**
+		 * The status from the last time update() was called.
+		 * @private
+		 */
+		#lastStatus = null;
+
+		/**
+		 * Will be true if the status was changed on an update call.
+		 * @private
+		 */
+		#statusChanged = false;
+
+		/**
+		 * The last time update() was called. (Start in the past so update() will work immediately.)
+		 * @private
+		 */
+		#lastUpdate = new Date((new Date()).getTime() - 30000);
+
+		/**
+		 * If false, update() will end immediately when called.
+		 * @private
+		 */
+		#canUpdate = true;
+
+		/**
+		 * The mode we'll use to check the status of this session.
+		 * @private
+		 */
+		#mode = \"expired\";
+
+		/**
+		 * The total number of attempts we've tried to contact the server without success.
+		 * @private
+		 */
+		#totalAttempts = 0;
+
+		/**
+		 * TThe max number of attempts we can make to the server without success before we give up.
+		 * @private
+		 */
+		#maxAttempts = 5;
+
+		/**
+		 * Stores a session ID from the game's URI if hosted on Newgrounds.
+		 * @private
+		 */
+		#uri_id = null;
+
+		/**
+		 * Stores a session ID that was saved from a Passport login.
+		 * @private
+		 */
+		#saved_id = null;
+
+		/**
 		 * @callback responseCallback
 		 * @param {NewgroundsIO.objects.Response} serverResponse
 		 */
-
 
 		/**
 		 * The current state of this session.
@@ -93,7 +82,7 @@ module.exports = {
 		 */
 		get status()
 		{
-			return this._status;
+			return this.#status;
 		}
 
 		/**
@@ -102,7 +91,7 @@ module.exports = {
 		 */
 		get statusChanged()
 		{
-			return this._statusChanged;
+			return this.#statusChanged;
 		}
 
 		/**
@@ -111,7 +100,7 @@ module.exports = {
 		 */
 		get waiting()
 		{
-			return this._lastStatus != this.status;
+			return this.#lastStatus != this.status;
 		}
 
 		/**
@@ -120,7 +109,7 @@ module.exports = {
 		 */
 		get storageKey()
 		{
-			return this.__ngioCore ? "_ngio_" + this.__ngioCore.appID + "_session_" : null;
+			return this.#ngioCore ? "_ngio_" + this.#ngioCore.appID + "_session_" : null;
 		}
 
 		/**
@@ -129,8 +118,8 @@ module.exports = {
 		 */
 		resetSession()
 		{
-			this._uri_id = null;
-			this._saved_id = null;
+			this.#uri_id = null;
+			this.#saved_id = null;
 			this.remember = false;
 			this.user = null;
 			this.expired = false;
@@ -148,7 +137,7 @@ module.exports = {
 				return;
 			}
 
-			this._status = NewgroundsIO.SessionState.WAITING_FOR_USER;
+			this.#status = NewgroundsIO.SessionState.WAITING_FOR_USER;
 			this.mode = "check";
 
 			window.open(this.passport_url, "_blank");
@@ -177,14 +166,14 @@ module.exports = {
 			// clear the current session data, and set the appropriate cancel status
 			this.resetSession();
 			this.id = null;
-			this._status = newStatus;
+			this.#status = newStatus;
 
 			// this was a manual cancel, so we can reset the retry counter
-			this._totalAttempts = 0;
+			this.#totalAttempts = 0;
 
 			// this was a manual cancel, so we can reset the retry counter
-			this._mode = "new";
-			this._lastUpdate = new Date((new Date()).getTime() - 30000);
+			this.#mode = "new";
+			this.#lastUpdate = new Date((new Date()).getTime() - 30000);
 		}
 
 		/**
@@ -199,11 +188,11 @@ module.exports = {
 		 */
 		update(callback, thisArg)
 		{
-			this._statusChanged = false;
+			this.#statusChanged = false;
 
-			if (this._lastStatus != this.status) {
-				this._statusChanged = true;
-				this._lastStatus = this.status;
+			if (this.#lastStatus != this.status) {
+				this.#statusChanged = true;
+				this.#lastStatus = this.status;
 				if (typeof(callback) === "function") {
 					if (thisArg) callback.call(thisArg, this);
 					else callback(this);
@@ -211,10 +200,10 @@ module.exports = {
 			}
 
 			// we can skip this whole routine if we're in the middle of checking things
-			if (!this._canUpdate || this.mode == "wait") return;
-			if (!this.__ngioCore) {
+			if (!this.#canUpdate || this.mode == "wait") return;
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can't update session without attaching a NewgroundsIO.Core instance.");
-				this._canUpdate = false;
+				this.#canUpdate = false;
 				return;
 			}
 
@@ -222,13 +211,13 @@ module.exports = {
 			if (this.status == NewgroundsIO.SessionState.SERVER_UNAVAILABLE) {
 				
 				// we've had too many failed attempts, time to stop retrying
-				if (this._totalAttempts >= this._maxAttempts) {
-					this._status = NewgroundsIO.SessionState.EXCEEDED_MAX_ATTEMPTS;
+				if (this.#totalAttempts >= this.#maxAttempts) {
+					this.#status = NewgroundsIO.SessionState.EXCEEDED_MAX_ATTEMPTS;
 
 				// next time our delay time has passed, we'll reset this, and try our sessions again
 				} else {
-					this._status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
-					this._totalAttempts++;
+					this.#status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
+					this.#totalAttempts++;
 
 				}
 			}
@@ -236,15 +225,15 @@ module.exports = {
 			// first time getting here (probably).  We need to see if we have any existing session data to try...
 			if (this.status == NewgroundsIO.SessionState.SESSION_UNINITIALIZED) {
 
-				this._saved_id = localStorage.getItem(this.storageKey);
+				this.#saved_id = localStorage.getItem(this.storageKey);
 
 				// check if we have a session id from our URL params (hosted on Newgrounds)
-				if (this._uri_id) {
-					this.id = this._uri_id;
+				if (this.#uri_id) {
+					this.id = this.#uri_id;
 
 				// check if we have a saved session (hosted elsewhere or standalone app)
-				} else if (this._saved_id) {
-					this.id = this._saved_id;
+				} else if (this.#saved_id) {
+					this.id = this.#saved_id;
 
 				}
 
@@ -255,10 +244,10 @@ module.exports = {
 
 			// make sure at least 5 seconds pass between each API call so we don't get blocked by DDOS protection.
 			var _now = new Date();
-			var wait = _now - this._lastUpdate;
+			var wait = _now - this.#lastUpdate;
 			if (wait < 5000) return;
 
-			this._lastUpdate = _now;
+			this.#lastUpdate = _now;
 			
 			switch (this.mode) {
 
@@ -291,15 +280,15 @@ module.exports = {
 		startSession()
 		{
 			// don't check for any new updates while we're starting the new session
-			this._canUpdate = false;
+			this.#canUpdate = false;
 			
 			// clear out any pre-existing session data
 			this.resetSession();
 
-			this._status = NewgroundsIO.SessionState.WAITING_FOR_SERVER;
+			this.#status = NewgroundsIO.SessionState.WAITING_FOR_SERVER;
 
-			var startSession = this.__ngioCore.getComponent('App.startSession');
-			this.__ngioCore.executeComponent(startSession, this._onStartSession, this);
+			var startSession = this.#ngioCore.getComponent('App.startSession');
+			this.#ngioCore.executeComponent(startSession, this.#onStartSession, this);
 		}
 
 		/**
@@ -328,18 +317,18 @@ module.exports = {
 				this.passport_url = result.session.passport_url;
 
 				// update our session status. This will trigger the callback in our update loop.
-				this._status = NewgroundsIO.SessionState.LOGIN_REQUIRED;
+				this.#status = NewgroundsIO.SessionState.LOGIN_REQUIRED;
 
 				// The update loop needs to wait until the user clicks a login button
 				this.mode = "wait";
 				
 			// Something went wrong!  (Good chance the servers are down)
 			} else {
-				this._status = NewgroundsIO.SessionState.SERVER_UNAVAILABLE;
+				this.#status = NewgroundsIO.SessionState.SERVER_UNAVAILABLE;
 			}
 
 			// Let our update loop know it can actually do stuff again
-			this._canUpdate = true;
+			this.#canUpdate = true;
 		}
 
 
@@ -351,10 +340,10 @@ module.exports = {
 		checkSession()
 		{
 			// don't check for any new updates while we're checking session
-			this._canUpdate = false;
+			this.#canUpdate = false;
 
-			var checkSession = this.__ngioCore.getComponent('App.checkSession');
-			this.__ngioCore.executeComponent(checkSession, this._onCheckSession, this);
+			var checkSession = this.#ngioCore.getComponent('App.checkSession');
+			this.#ngioCore.executeComponent(checkSession, this.#onCheckSession, this);
 		}
 
 		/**
@@ -381,19 +370,19 @@ module.exports = {
 						// reset the session so it's like we never had one
 						this.resetSession();
 						this.id = null;
-						this._status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
+						this.#status = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
 
 					// we have a valid user login attached!
 					} else if (response.result.session.user !== null) {
 
 						// store the user info, and update status
 						this.user = response.result.session.user;
-						this._status = NewgroundsIO.SessionState.LOGIN_SUCCESSFUL;
+						this.#status = NewgroundsIO.SessionState.LOGIN_SUCCESSFUL;
 						this.mode = "valid";
 
 						// if the user selected to remember the login, save it now!
 						if (response.result.session.remember) {
-							this._saved_id = this.id;
+							this.#saved_id = this.id;
 							this.remember = true;
 							localStorage.setItem(this.storageKey, this.id);
 						}
@@ -407,12 +396,12 @@ module.exports = {
 			} else {
 
 				// Something went wrong!  Servers may be down, or you got blocked for sending too many requests
-				this._status = NewgroundsIO.SessionState.SERVER_UNAVAILABLE;
+				this.#status = NewgroundsIO.SessionState.SERVER_UNAVAILABLE;
 
 			}
 
 			// Let our update loop know it can actually do stuff again
-			this._canUpdate = true;
+			this.#canUpdate = true;
 		}
 
 
@@ -426,17 +415,17 @@ module.exports = {
 		endSession(callback, thisArg)
 		{
 			// don't check for any new updates while we're ending session
-			this._canUpdate = false;
+			this.#canUpdate = false;
 
-			var endSession = this.__ngioCore.getComponent('App.endSession');
-			var startSession = this.__ngioCore.getComponent('App.startSession');
+			var endSession = this.#ngioCore.getComponent('App.endSession');
+			var startSession = this.#ngioCore.getComponent('App.startSession');
 
-			this.__ngioCore.queueComponent(endSession);
-			this.__ngioCore.queueComponent(startSession);
+			this.#ngioCore.queueComponent(endSession);
+			this.#ngioCore.queueComponent(startSession);
 
-			this.__ngioCore.executeQueue(function(response) {
-				this._onEndSession(response);
-				this._onStartSession(response);
+			this.#ngioCore.executeQueue(function(response) {
+				this.#onEndSession(response);
+				this.#onStartSession(response);
 				if (typeof(callback) === "function") {
 					if (thisArg) callback.call(thisArg, this);
 					else callback(this);
@@ -444,8 +433,8 @@ module.exports = {
 			}, this);
 
 			/*
-			this.__ngioCore.executeComponent(endSession, function(response) {
-				this._onEndSession(response);
+			this.#ngioCore.executeComponent(endSession, function(response) {
+				this.#onEndSession(response);
 				if (typeof(callback) === "function") {
 					if (thisArg) callback.call(thisArg, this);
 					else callback(this);
@@ -466,10 +455,10 @@ module.exports = {
 			this.user = null;
 			this.passport_url = null;
 			this.mode = "new";
-			this._status = NewgroundsIO.SessionState.USER_LOGGED_OUT;
+			this.#status = NewgroundsIO.SessionState.USER_LOGGED_OUT;
 
 			// Let our update loop know it can actually do stuff again
-			this._canUpdate = true;
+			this.#canUpdate = true;
 		}
 
 		`;

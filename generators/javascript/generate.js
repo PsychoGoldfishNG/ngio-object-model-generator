@@ -141,28 +141,6 @@ module.exports = {
 		let objectMap = {};
 		let arrayMap = {};
 
-		// render private(ish) vars for properties
-		if (objectData) {
-			for (const [property, data] of Object.entries(objectData)) {
-
-				// all objects have this already
-				if (property == "echo") continue;
-
-				// record the property name
-				props.push(property);
-
-				// record anything that's required
-				if (data.required === true) required.push(property);
-
-				// ignore properties that are handled in partial code
-				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
-				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
-
-
-				out +=			"			this._"+property+" = null;\n";
-			}
-		}
-
 		// render the names of any required properties in an array
 		if (required.length > 0)
 			out +=				"			this.__required = "+JSON.stringify(required)+";\n";
@@ -192,8 +170,30 @@ module.exports = {
 		// end constructor code
 		out +=					"		}\n\n";
 
-		// Generate getter/setters for all of our properties
+
 		if (objectData) {
+
+			// render private vars for properties
+			for (const [property, data] of Object.entries(objectData)) {
+
+				// all objects have this already
+				if (property == "echo") continue;
+
+				// record the property name
+				props.push(property);
+
+				// record anything that's required
+				if (data.required === true) required.push(property);
+
+				// ignore properties that are handled in partial code
+				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
+				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
+
+
+				out +=			"			#"+property+" = null;\n";
+			}
+	
+			// Generate getter/setters for all of our properties
 			for (const [property, data] of Object.entries(objectData)) {
 
 				// ignore properties that are handled in partial code
@@ -212,7 +212,7 @@ module.exports = {
 				// add the getter
 				out +=			"		get "+property+"()\n";
 				out +=			"		{\n";
-				out +=			"			return this._"+property+";\n";
+				out +=			"			return this.#"+property+";\n";
 				out +=			"		}\n\n";
 
 				// add the setter (it will have type-checking added via some helper methods)
@@ -252,7 +252,7 @@ module.exports = {
 							out+= "					"+(this.castValue('newArr[index]', 'val', data.array.type, '					'))+"\n";
 						}
 						out += 	"				});\n";
-						out += 	"				this._"+property+" = newArr;\n";
+						out += 	"				this.#"+property+" = newArr;\n";
 
 					}
 

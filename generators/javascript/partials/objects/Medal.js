@@ -23,13 +23,13 @@ module.exports = {
 		 */
 		unlock(callback, thisArg)
 		{
-			if (!this.__ngioCore) {
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can not unlock medal object without attaching a NewgroundsIO.Core instance.");
 				return;
 			}
 
-			var component = this.__ngioCore.getComponent('Medal.unlock', {id:this.id});
-			this.__ngioCore.executeComponent(component, callback, thisArg);
+			var component = this.#ngioCore.getComponent('Medal.unlock', {id:this.id});
+			this.#ngioCore.executeComponent(component, callback, thisArg);
 		}
 		`;
 

@@ -29,7 +29,7 @@ module.exports = {
 		 */
 		getScores(options, callback, thisArg)
 		{
-			if (!this.__ngioCore) {
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can not get scores without attaching a NewgroundsIO.Core instance.");
 				return;
 			}
@@ -44,8 +44,8 @@ module.exports = {
 			if (!options) options = {};
 			options.id = this.id;
 
-			var component = this.__ngioCore.getComponent('ScoreBoard.getScores', options);
-			this.__ngioCore.executeComponent(component, callback, thisArg);
+			var component = this.#ngioCore.getComponent('ScoreBoard.getScores', options);
+			this.#ngioCore.executeComponent(component, callback, thisArg);
 		}
 
 		/**
@@ -57,7 +57,7 @@ module.exports = {
 		 */
 		postScore(value, tag, callback, thisArg)
 		{
-			if (!this.__ngioCore) {
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can not post scores without attaching a NewgroundsIO.Core instance.");
 				return;
 			}
@@ -69,8 +69,8 @@ module.exports = {
 				tag = null;
 			}
 
-			var component = this.__ngioCore.getComponent('ScoreBoard.postScore', {id:this.id,value:value,tag:tag});
-			this.__ngioCore.executeComponent(component, callback, thisArg);
+			var component = this.#ngioCore.getComponent('ScoreBoard.postScore', {id:this.id,value:value,tag:tag});
+			this.#ngioCore.executeComponent(component, callback, thisArg);
 		}
 		`;
 		

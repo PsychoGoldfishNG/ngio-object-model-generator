@@ -6,15 +6,6 @@
 module.exports = {
 
 	/**
-	 * return {string} Code to inject into the NewgroundsIO.objects.Request constructor
-	 */
-	getConstructorPartial: function() 
-	{
-		var out = 			"\n";
-		return out;
-	},
-
-	/**
 	 * return {string} Code to inject into the overall NewgroundsIO.objects.Request class
 	 */
 	getClassPartial: function() 
@@ -27,7 +18,7 @@ module.exports = {
 		out += 				"		 */\n";
 		out += 				"		get app_id()\n";
 		out += 				"		{\n";
-		out += 				"			return this.__ngioCore ? this.__ngioCore.appID : null;\n";
+		out += 				"			return this.#ngioCore ? this.#ngioCore.appID : null;\n";
 		out += 				"		}\n\n";
 
 		out += 				"		/**\n";
@@ -36,7 +27,7 @@ module.exports = {
 		out += 				"		 */\n";
 		out += 				"		get session_id()\n";
 		out += 				"		{\n";
-		out += 				"			return this.__ngioCore && this.__ngioCore.session ? this.__ngioCore.session.id : null;\n";
+		out += 				"			return this.#ngioCore && this.#ngioCore.session ? this.#ngioCore.session.id : null;\n";
 		out += 				"		}\n\n";
 
 		return out;

@@ -60,13 +60,13 @@ module.exports = {
 		 */
 		setData(data, callback, thisArg)
 		{
-			if (!this.__ngioCore) {
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can not save data without attaching a NewgroundsIO.Core instance.");
 				return;
 			}
 
-			var component = this.__ngioCore.getComponent('CloudSave.setData', {id:this.id, data:data});
-			this.__ngioCore.executeComponent(component, callback, thisArg);
+			var component = this.#ngioCore.getComponent('CloudSave.setData', {id:this.id, data:data});
+			this.#ngioCore.executeComponent(component, callback, thisArg);
 		}
 
 		/**
@@ -76,13 +76,13 @@ module.exports = {
 		 */
 		clearData(callback, thisArg)
 		{
-			if (!this.__ngioCore) {
+			if (!this.#ngioCore) {
 				console.error("NewgroundsIO - Can not clear data without attaching a NewgroundsIO.Core instance.");
 				return;
 			}
-			this._url = null;
-			var component = this.__ngioCore.getComponent('CloudSave.clearSlot', {id:this.id});
-			this.__ngioCore.executeComponent(component, callback, thisArg);
+			this.#url = null;
+			var component = this.#ngioCore.getComponent('CloudSave.clearSlot', {id:this.id});
+			this.#ngioCore.executeComponent(component, callback, thisArg);
 		}
 
 		/**
