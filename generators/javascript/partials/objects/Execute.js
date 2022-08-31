@@ -74,7 +74,8 @@ module.exports = {
 			if (this.#componentObject && this.#componentObject.__isSecure) return this.toSecureJSON();
 			return super.toJSON();
 		}
-		`
+
+`;
 		return out;
 	}
 }

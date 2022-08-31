@@ -10,25 +10,26 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";
-		
-		out += 				"		/**\n";
-		out += 				"		 * Gets the appID from a core object\n";
-		out += 				"		 * @returns {string}\n";
-		out += 				"		 */\n";
-		out += 				"		get app_id()\n";
-		out += 				"		{\n";
-		out += 				"			return this.#ngioCore ? this.#ngioCore.appID : null;\n";
-		out += 				"		}\n\n";
+		var out = `
+		/**
+		 * Gets the appID from a core object
+		 * @returns {string}
+		 */
+		get app_id()
+		{
+			return this.__ngioCore ? this.__ngioCore.appID : null;
+		}
 
-		out += 				"		/**\n";
-		out += 				"		 * Gets the Session ID from a core object\n";
-		out += 				"		 * @returns {string}\n";
-		out += 				"		 */\n";
-		out += 				"		get session_id()\n";
-		out += 				"		{\n";
-		out += 				"			return this.#ngioCore && this.#ngioCore.session ? this.#ngioCore.session.id : null;\n";
-		out += 				"		}\n\n";
+		/**
+		 * Gets the Session ID from a core object
+		 * @returns {string}
+		 */
+		get session_id()
+		{
+			return this.__ngioCore && this.__ngioCore.session ? this.__ngioCore.session.id : null;
+		}
+		
+`;
 
 		return out;
 	}

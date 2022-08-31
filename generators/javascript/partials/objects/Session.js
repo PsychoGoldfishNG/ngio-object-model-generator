@@ -109,7 +109,7 @@ module.exports = {
 		 */
 		get storageKey()
 		{
-			return this.#ngioCore ? "_ngio_" + this.#ngioCore.appID + "_session_" : null;
+			return this.__ngioCore ? "_ngio_" + this.__ngioCore.appID + "_session_" : null;
 		}
 
 		/**
@@ -201,7 +201,7 @@ module.exports = {
 
 			// we can skip this whole routine if we're in the middle of checking things
 			if (!this.#canUpdate || this.mode == "wait") return;
-			if (!this.#ngioCore) {
+			if (!this.__ngioCore) {
 				console.error("NewgroundsIO - Can't update session without attaching a NewgroundsIO.Core instance.");
 				this.#canUpdate = false;
 				return;
@@ -287,8 +287,8 @@ module.exports = {
 
 			this.#status = NewgroundsIO.SessionState.WAITING_FOR_SERVER;
 
-			var startSession = this.#ngioCore.getComponent('App.startSession');
-			this.#ngioCore.executeComponent(startSession, this.#onStartSession, this);
+			var startSession = this.__ngioCore.getComponent('App.startSession');
+			this.__ngioCore.executeComponent(startSession, this._onStartSession, this);
 		}
 
 		/**
@@ -342,8 +342,8 @@ module.exports = {
 			// don't check for any new updates while we're checking session
 			this.#canUpdate = false;
 
-			var checkSession = this.#ngioCore.getComponent('App.checkSession');
-			this.#ngioCore.executeComponent(checkSession, this.#onCheckSession, this);
+			var checkSession = this.__ngioCore.getComponent('App.checkSession');
+			this.__ngioCore.executeComponent(checkSession, this._onCheckSession, this);
 		}
 
 		/**
@@ -417,15 +417,15 @@ module.exports = {
 			// don't check for any new updates while we're ending session
 			this.#canUpdate = false;
 
-			var endSession = this.#ngioCore.getComponent('App.endSession');
-			var startSession = this.#ngioCore.getComponent('App.startSession');
+			var endSession = this.__ngioCore.getComponent('App.endSession');
+			var startSession = this.__ngioCore.getComponent('App.startSession');
 
-			this.#ngioCore.queueComponent(endSession);
-			this.#ngioCore.queueComponent(startSession);
+			this.__ngioCore.queueComponent(endSession);
+			this.__ngioCore.queueComponent(startSession);
 
-			this.#ngioCore.executeQueue(function(response) {
-				this.#onEndSession(response);
-				this.#onStartSession(response);
+			this.__ngioCore.executeQueue(function(response) {
+				this._onEndSession(response);
+				this._onStartSession(response);
 				if (typeof(callback) === "function") {
 					if (thisArg) callback.call(thisArg, this);
 					else callback(this);
@@ -433,8 +433,8 @@ module.exports = {
 			}, this);
 
 			/*
-			this.#ngioCore.executeComponent(endSession, function(response) {
-				this.#onEndSession(response);
+			this.__ngioCore.executeComponent(endSession, function(response) {
+				this._onEndSession(response);
 				if (typeof(callback) === "function") {
 					if (thisArg) callback.call(thisArg, this);
 					else callback(this);
@@ -461,7 +461,7 @@ module.exports = {
 			this.#canUpdate = true;
 		}
 
-		`;
+`;
 
 		return out;
 	}

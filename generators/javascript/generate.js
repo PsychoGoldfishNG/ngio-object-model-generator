@@ -88,12 +88,20 @@ module.exports = {
 		// skip any models that are purely abstract
 		if (longName == "NewgroundsIO.objects.Result") return "";
 
+		let props = [];
+		let required = [];
+		let objectMap = {};
+		let arrayMap = {};
 
-		// some objects have abstract properties, so we'll have to do some overriding here
+		// Check all of our properties for any special handling, then add them to an array
 		if (objectData) {
 			for (const [property, data] of Object.entries(objectData)) {
 
-				// Override how the result property of the Repsonse object is defined
+				// all objects have this already
+				if (property == "echo") continue;
+
+				// The result property of the Response object can be ANY result object
+				// so lets override the data object a bit here
 				if (longName == "NewgroundsIO.objects.Response" && property === "result") {
 					delete data.object;
 					data.type = "NewgroundsIO.BaseResult";
@@ -102,6 +110,8 @@ module.exports = {
 					};
 					data.description = "This will be a NewgroundsIO.results.XXXXXX object, or an array containing one-or-more NewgroundsIO.results.XXXXXX objects.";
 				}
+
+				props.push(property);
 			}
 		}
 
@@ -133,13 +143,10 @@ module.exports = {
 		out +=					"		 */\n";
 		out +=					"		constructor("+(objectData ? 'props':'')+")\n";
 		out +=					"		{\n";
-		out +=					"			super();\n\n";
+		out +=					"			super();\n";
+		out +=					"			let _this = this;\n\n";
 		out +=					"			this.__object = \""+objectName+"\";\n";
 
-		let props = [];
-		let required = [];
-		let objectMap = {};
-		let arrayMap = {};
 
 		// render the names of any required properties in an array
 		if (required.length > 0)
@@ -156,7 +163,9 @@ module.exports = {
 		// render the names of all our properties to an array, and add some generic code for setting initial values
 		// from the constructor's "prop" param.
 		if (props.length > 0) {
-			out +=				"			this.__properties = this.__properties.concat("+JSON.stringify(props)+");\n";
+			out +=				"			"+JSON.stringify(props)+".forEach(prop => {\n";
+			out +=				"			   if (_this.__properties.indexOf(prop) < 0) _this.__properties.push(prop);\n";
+			out +=				"			});\n";
 			out +=				"			if (props && typeof(props) === 'object') {\n";
 			out +=				"				for(var i=0; i<this.__properties.length; i++) {\n";
 			out +=				"					if (typeof(props[this.__properties[i]]) !== 'undefined') this[this.__properties[i]] = props[this.__properties[i]];\n";
@@ -179,27 +188,19 @@ module.exports = {
 				// all objects have this already
 				if (property == "echo") continue;
 
-				// record the property name
-				props.push(property);
-
 				// record anything that's required
 				if (data.required === true) required.push(property);
 
 				// ignore properties that are handled in partial code
-				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
+				if (property === "host") continue;
 				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
 
+				// add the private container var
+				out +=			"		/**\n";
+				out +=			"		 * @private\n";
+				out +=			"		 */\n";
+				out +=			"		#"+property+" = null;\n\n";
 
-				out +=			"			#"+property+" = null;\n";
-			}
-	
-			// Generate getter/setters for all of our properties
-			for (const [property, data] of Object.entries(objectData)) {
-
-				// ignore properties that are handled in partial code
-				if (nameSpace === "NewgroundsIO.components.Loader" && property === "host") continue;
-				if (longName === "NewgroundsIO.objects.Request" && (property === "app_id" || property === "session_id")) continue;
-				
 				// add JSDoc comments
 				out +=			"		/**\n";
 				if (data.description) {
@@ -237,7 +238,7 @@ module.exports = {
 					// mixed stuff can just be accepted as-is
 					if (data.array.type === 'mixed') {
 
-						out += 	"				"+(this.castValue('this._'+property, '_'+property, data.array, '				'))+"\n";
+						out += 	"				"+(this.castValue('this.#'+property, '_'+property, data.array, '				'))+"\n";
 
 					// iterate the array we were sent, and check types for each value.
 					} else {
@@ -262,9 +263,9 @@ module.exports = {
 
 				// handle objects and flat values
 				if (data.object) {
-					out += 		"			"+(this.castObject('this._'+property, '_'+property, data.object, '			'))+"\n";
+					out += 		"			"+(this.castObject('this.#'+property, '_'+property, data.object, '			'))+"\n";
 				} else if (data.type) {
-					out += 		"			"+(this.castValue('this._'+property, '_'+property, data.type, '			'))+"\n";
+					out += 		"			"+(this.castValue('this.#'+property, '_'+property, data.type, '			'))+"\n";
 				}
 				out +=			"		}\n\n";
 			}
