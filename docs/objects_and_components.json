@@ -429,24 +429,42 @@
                             "type": "int",
                             "description": "The slot number.",
                             "required": true
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load slot data from."
                         }
                     },
                     "return": {
                         "slot": {
                             "description": "A #SaveSlot object.",
                             "object": "SaveSlot"
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load scores from."
                         }
                     }
                 },
                 "loadSlots": {
                     "description": "Returns a list of #saveslot objects.",
                     "require_session": true,
+                    "params": {
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load slot data from."
+                        }
+                    },
                     "return": {
                         "slots": {
                             "description": "An array of #SaveSlot objects.",
                             "array": {
                                 "object": "SaveSlot"
                             }
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load scores from."
                         }
                     }
                 },
@@ -703,12 +721,22 @@
                 "getList": {
                     "description": "Loads a list of #Medal objects.",
                     "require_session": false,
+                    "params": {
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load medals from."
+                        }
+                    },
                     "return": {
                         "medals": {
                             "description": "An array of medal objects.",
                             "array": {
                                 "object": "Medal"
                             }
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of any external app these medals were loaded from."
                         }
                     }
                 },
@@ -843,6 +871,10 @@
                             "description": "An integer indicating the number of scores to include in the list. Default = 10.",
                             "type": "int",
                             "default": 10
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of another, approved app to load scores from."
                         }
                     },
                     "return": {
@@ -871,6 +903,10 @@
                         "user": {
                             "description": "The #User the score list is associated with (either as defined in the 'user' param, or extracted from the current session when 'social' is set to true)",
                             "object": "User"
+                        },
+                        "app_id": {
+                            "type": "string",
+                            "description": "The App ID of any external app these scores were loaded from."
                         }
                     },
                     "notes": "Acceptable 'period' values:\n\"D\" = current day (default)\n\"W\" = current week\n\"M\" = current month\n\"Y\" = current year\n\"A\" = all-time"
