@@ -14,7 +14,7 @@ You can edit the new config.js file to change any of the generator settings.  Ty
 
 ## Building Object and Ccomponent Models ##
 
-Run 'node build.js <generatorname>'
+Run 'node build.js &lt;generatorname&gt;'
 
 Current generator names are:
 
