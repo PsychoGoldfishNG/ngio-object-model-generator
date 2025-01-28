@@ -10,8 +10,7 @@ module.exports = {
 	 */
 	getUsingPartial: function() 
 	{
-		var out = 			"";
-		return out;
+		return "";
 	},
 
 	/**
@@ -19,43 +18,42 @@ module.exports = {
 	 */
 	getPropertiesPartial: function() 
 	{
-		var out = 			"";
-		out += 				"		/// <summary>The current state of this session.</summary>\n";
-		out += 				"		public string status { get; private set; } = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;\n\n";
+return `
+		/// <summary>The current state of this session.</summary>
+		public string status { get; private set; } = NewgroundsIO.SessionState.SESSION_UNINITIALIZED;
 
-		out += 				"		/// <summary>Stores a session ID from the game's URI if hosted on Newgrounds.</summary>\n";
-		out += 				"		public string _uri_id = null;\n\n";
+		/// <summary>Stores a session ID from the game's URI if hosted on Newgrounds.</summary>
+		public string _uri_id = null;
 
-		out += 				"		/// <summary>Stores a session ID that was saved from a Passport login.</summary>\n";
-		out += 				"		public string _saved_id = null;\n\n";
-		
-		out += 				"		/// <summary>This will return true if the status has changed since the last time Update() was called.</summary>\n";
-		out += 				"		public bool statusChanged { get { return (this._lastStatus != this.status); } }\n\n";
+		/// <summary>Stores a session ID that was saved from a Passport login.</summary>
+		public string _saved_id = null;
 
-		out += 				"		/// <summary>Returns true if the current state is a waiting state.</summary>\n";
-		out += 				"		public bool waiting { get {\n";
-		out += 				"			return NewgroundsIO.SessionState.SESSION_WAITING.Contains(this.status);\n";
-		out += 				"		} }\n\n";
+		/// <summary>This will return true if the status has changed since the last time Update() was called.</summary>
+		public bool statusChanged { get { return (this._lastStatus != this.status); } }
 
-		out += 				"		// The last time Update() was called\n";
-		out += 				"		private DateTime _lastUpdate;\n\n";
+		/// <summary>Returns true if the current state is a waiting state.</summary>
+		public bool waiting { get {
+			return NewgroundsIO.SessionState.SESSION_WAITING.Contains(this.status);
+		} }
 
-		out += 				"		// If false, Update() will end immediately when called.\n";
-		out += 				"		private bool _canUpdate = true;\n\n";
+		// The last time Update() was called
+		private DateTime _lastUpdate;
 
-		out += 				"		// The status from the last time Update() was called.\n";
-		out += 				"		private string _lastStatus = null;\n\n";
+		// If false, Update() will end immediately when called.
+		private bool _canUpdate = true;
 
-		out += 				"		// The mode we'lluse to check the status of this session\n";
-		out += 				"		private string mode = \"expired\";\n\n";
+		// The status from the last time Update() was called.
+		private string _lastStatus = null;
 
-		out += 				"		// The total number of attempts we've tried to contact the server without success.\n";
-		out += 				"		private ushort _totalAttempts = 0;\n\n";
+		// The mode we'll use to check the status of this session
+		private string mode = "expired";
 
-		out += 				"		// \n";
-		out += 				"		// The max number of attempts can make to the server without success before we give up.\n";
-		out += 				"		private ushort _maxAttempts = 5;\n";
-		return out;
+		// The total number of attempts we've tried to contact the server without success.
+		private ushort _totalAttempts = 0;
+
+		// The max number of attempts can make to the server without success before we give up.
+		private ushort _maxAttempts = 5;
+`;
 	},
 	
 	/**
@@ -63,10 +61,10 @@ module.exports = {
 	 */
 	getConstructorPartial: function() 
 	{
-		var out = 			"";
-		out +=				"			// set this in the past so the first time-lapse check won't make the user wait\n";
-		out +=				"			this._lastUpdate = DateTime.Now.AddMinutes(-30);\n";
-		return out;
+return `
+			// set this in the past so the first time-lapse check won't make the user wait
+			this._lastUpdate = DateTime.Now.AddMinutes(-30);
+`;
 	},
 
 	/**
@@ -74,7 +72,7 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		return `
+return `
 		// resets everything except the session id
 		private void ResetSession()
 		{

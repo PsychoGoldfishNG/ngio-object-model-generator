@@ -10,8 +10,7 @@ module.exports = {
 	 */
 	getPropertiesPartial: function() 
 	{
-		var out = 			"";
-		return out;
+		return "";
 	},
 
 	/**
@@ -19,22 +18,21 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";		
+return `
+		/// <summary>Unlocks this medal, then fires a callback.</summary>
+		public IEnumerator Unlock(Action<NewgroundsIO.objects.Response> callback=null)
+		{
+			// You can't unlock a medal without a Core object.
+			if (this.__ngioCore is null) {
+				UnityEngine.Debug.LogError("Can not unlock medal object without attaching a NewgroundsIO.Core instance");
+				yield break;
+			}
 
-		out += 				"		/// <summary>Unlocks this medal, then fires a callback.</summary>\n";
-		out += 				"		public IEnumerator Unlock(Action<NewgroundsIO.objects.Response> callback=null)\n";
-		out += 				"		{\n";
-		out += 				"			// You can't unlock a medal without a Core object.\n";
-		out += 				"			if (this.__ngioCore is null) {\n";
-		out += 				"				UnityEngine.Debug.LogError(\"Can not unlock medal object without attaching a NewgroundsIO.Core instnce\");\n";
-		out += 				"				yield break;\n";
-		out += 				"			}\n\n";
-
-		out += 				"			// Do the unlock\n";
-		out += 				"			var component = new NewgroundsIO.components.Medal.unlock();\n";
-		out += 				"			component.id = this.id;\n";
-		out += 				"			yield return __ngioCore.ExecuteComponent(component, callback);\n";
-		out += 				"		}\n\n";
-		return out;
+			// Do the unlock
+			var component = new NewgroundsIO.components.Medal.unlock();
+			component.id = this.id;
+			yield return __ngioCore.ExecuteComponent(component, callback);
+		}
+`;
 	}
 }

@@ -10,11 +10,11 @@ module.exports = {
 	 */
 	getConstructorPartial: function() 
 	{
-		var out = 			"\n";
+		const template = `
+			this.__componentObject = null;
+		`;
 
-		out +=				"		this.__componentObject = null;\n";
-
-		return out;
+		return template;
 	},
 
 	/**
@@ -22,65 +22,64 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";
-		
-		out += 				"	/**\n";
-		out += 				"	 * Set a component object to execute\n";
-		out += 				"	 * @param {NewgroundsIO_components} component Any NGIO component object\n";
-		out += 				"	 */\n";
-		out += 				"	setComponent(component)\n";
-		out += 				"	{\n";
-		out += 				"		if (!(component instanceof NewgroundsIO_components))\n";
-		out += 				"			console.error('NewgroundsIO Error: Expecting NewgroundsIO component, got '+typeof(component));\n\n";
+		const template = `
+		/**
+		 * Set a component object to execute
+		 * @param {NewgroundsIO_components} component Any NGIO component object
+		 */
+		setComponent(component)
+		{
+			if (!(component instanceof NewgroundsIO_components))
+				console.error('NewgroundsIO Error: Expecting NewgroundsIO component, got '+typeof(component));
 
-		out += 				"		this.__componentObject = component;\n\n";
+			this.__componentObject = component;
 
-		out += 				"		// set the string name of the component;\n";
-		out += 				"		this.component = component.toString();\n";
-		out += 				"		this.parameters = component.toJSON();\n";
+			// set the string name of the component;
+			this.component = component.toString();
+			this.parameters = component.toJSON();
+		}
 
-		out += 				"	}\n\n";
+		/**
+		 * Validate this object (overrides default validator)
+		 * @return {Boolean}
+		 */
+		isValid()
+		{
+			// must have a component set
+			if (!this.component) {
+				console.error('NewgroundsIO Error: Missing required component!');
+			}
 
-		out += 				"	/**\n";
-		out += 				"	 * Validate this object (overrides default valdator)\n";
-		out += 				"	 * @return {Boolean}\n";
-		out += 				"	 */\n";
-		out +=				"	isValid()\n";
-		out +=				"	{\n";
-		out +=				"		// must have a component set\n";
-		out +=				"		if (!this.component) {\n";
-		out +=				"			console.error('NewgroundsIO Error: Missing required component!');\n";
-		out +=				"		}\n\n";
+			// must be linked to a core NewgroundsIO instance
+			if (!this.__ngioCore) {
+				console.error('NewgroundsIO Error: Must call setCore() before validating!');
+				return false;
+			}
 
-		out +=				"		// must be linked to a core NewgroundsIO instance\n";
-		out +=				"		if (!this.__ngioCore) {\n";
-		out +=				"			console.error('NewgroundsIO Error: Must call setCore() before validating!');\n";
-		out +=				"			return false;\n";
-		out +=				"		}\n\n";
+			// SHOULD have an actual component object. Validate that as well, if it exists
+			if (this.__componentObject) {
+				if (this.__componentObject.__requireSession && !this.__ngioCore.session.isActive()) {
+					console.warn('NewgroundsIO Warning: '+this.component+' can only be used with a valid user session.');
+					this.__ngioCore.session.logProblems();
+					return false;
+				}
 
-		out +=				"		// SHOULD have an actual component object. Validate that as well, if it exists\n";
-		out +=				"		if (this.__componentObject) {\n";
-		out +=				"			if (this.__componentObject.__requireSession && !this.__ngioCore.session.isActive()) {\n";
-		out +=				"				console.warn('NewgroundsIO Warning: '+this.component+' can only be used with a valid user session.');\n";
-		out +=				"				this.__ngioCore.session.logProblems();\n";
-		out +=				"				return false;\n";
-		out +=				"			}\n\n";
+				return (this.__componentObject instanceof NewgroundsIO_components) && this.__componentObject.isValid();
+			}
 
-		out +=				"			return (this.__componentObject instanceof NewgroundsIO_components) && this.__componentObject.isValid();\n";
-		out +=				"		}\n\n";
+			return true;
+		}
 
-		out +=				"		return true;\n";
-		out +=				"	}\n\n";
-
-		out +=				"	/**\n";
-		out +=				"	 * Override the default toJSON handler and use encryption on components that require it\n";
-		out +=				"	 * @return {object} A native JS object that can be converted to a JSON string\n";
-		out +=				"	 */\n";
-		out +=				"	toJSON()\n";
-		out +=				"	{\n";
-		out +=				"		if (this.__componentObject && this.__componentObject.__isSecure) return this.toSecureJSON();\n";
-		out +=				"		return super.toJSON();\n";
-		out +=				"	}\n\n";
-		return out;
+		/**
+		 * Override the default toJSON handler and use encryption on components that require it
+		 * @return {object} A native JS object that can be converted to a JSON string
+		 */
+		toJSON()
+		{
+			if (this.__componentObject && this.__componentObject.__isSecure) return this.toSecureJSON();
+			return super.toJSON();
+		}
+		`;
+		return template;
 	}
 }

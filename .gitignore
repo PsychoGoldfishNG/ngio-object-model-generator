@@ -16,6 +16,7 @@
 # generated paths
 config.js
 build
+docs
 
 # Package Lock
 package-lock.json

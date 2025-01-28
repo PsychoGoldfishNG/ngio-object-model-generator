@@ -10,9 +10,8 @@ module.exports = {
 	 */
 	getUsingPartial: function() 
 	{
-		var out = "";
-		out +=				"using UnityEngine.Networking;\n";
-		return out;
+return `using UnityEngine.Networking
+`;
 	},
 
 	/**
@@ -20,10 +19,10 @@ module.exports = {
 	 */
 	getPropertiesPartial: function() 
 	{
-		var out = "";
-		out += 				"		/// <summary>This will be true if this save slot has any saved data</summary>\n";
-		out += 				"		public bool hasData { get { return this.url is not null; }}\n\n";
-		return out;
+return `
+		/// <summary>This will be true if this save slot has any saved data</summary>
+		public bool hasData { get { return this.url is not null; }}
+`;
 	},
 
 	/**
@@ -31,45 +30,41 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";		
+return `
+		/// <summary>Loads the save file for this slot then passes its contents to a callback function.</summary>
+		/// <param name="callback">The callback function</param>
+		public IEnumerator GetData(Action<string> callback)
+		{
+			if (this.url is null) {
+				callback(null);
+				yield break;
+			}
 
-		out += 				"		/// <summary>Loads the save file for this slot then passes its contents to a callback function.</summary>\n";
-		out += 				"		/// <param name=\"callback\">The callback function</param>\n";
-		out += 				"		public IEnumerator GetData(Action<string> callback)\n";
-		out += 				"		{\n";
-		out += 				"			if (this.url is null) {\n";
-		out += 				"				callback(null);\n";
-		out += 				"				yield break;\n";
-		out += 				"			}\n\n";
+			UnityWebRequest www = UnityWebRequest.Get(this.url);
+			yield return www.SendWebRequest();
 
-        out += 				"		    UnityWebRequest www = UnityWebRequest.Get(this.url);\n";
-        out += 				"		    yield return www.SendWebRequest();\n\n";
-     
-        out += 				"		    if (www.result != UnityWebRequest.Result.Success) {\n";
-        out += 				"		        callback(null);\n\n";
+			if (www.result != UnityWebRequest.Result.Success) {
+				callback(null);
+			} else {
+				callback(www.downloadHandler.text);
+			}
+		}
 
-        out += 				"		    } else {\n";
-        out += 				"		        callback(www.downloadHandler.text);\n";
-        out += 				"		    }\n";
-		out += 				"		}\n\n";
+		/// <summary>Saves string data to a file associated with this slot, and calls a function when complete.</summary>
+		/// <param name="data">The data you want to save (needs to be serialized to a string).</param>
+		/// <param name="callback">The callback function</param>
+		public IEnumerator SetData(string data, Action<NewgroundsIO.objects.Response> callback=null)
+		{
+			if (__ngioCore is null) {
+				if (callback is not null) callback(null);
+				yield break;
+			}
 
-		out += 				"		/// <summary>Saves string data to a file associated with this slot, and calls a function when complete.</summary>\n";
-		out += 				"		/// <param name=\"data\">The data you want to save (needs to be serialized to a string).</param>\n";
-		out += 				"		/// <param name=\"callback\">The callback function</param>\n";
-		out += 				"		public IEnumerator SetData(string data, Action<NewgroundsIO.objects.Response> callback=null)\n";
-		out += 				"		{\n";
-		out += 				"			if (__ngioCore is null) {\n";
-		out += 				"				if (callback is not null) callback(null);\n";
-		out += 				"				yield break;\n";
-		out += 				"			}\n\n";
-
-		out += 				"			var component = new NewgroundsIO.components.CloudSave.setData();\n";
-		out += 				"			component.id = this.id;\n";
-		out += 				"			component.data = data;\n";
-		out += 				"			yield return __ngioCore.ExecuteComponent(component, callback);\n\n";
-
-		out += 				"		}\n";
-
-		return out;
+			var component = new NewgroundsIO.components.CloudSave.setData();
+			component.id = this.id;
+			component.data = data;
+			yield return __ngioCore.ExecuteComponent(component, callback);
+		}
+`;
 	}
 }

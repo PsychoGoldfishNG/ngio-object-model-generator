@@ -10,14 +10,13 @@ module.exports = {
 	 */
 	getConstructorPartial: function() 
 	{
-		var out = 			"\n";
+		return `
+		if (!props || !props.ngio) throw("NewgroundsIO_objects_Session requires a 'core' value");
+		this.__ngio = props.ngio;
 
-		out +=				"		if (!props || !props.ngio) throw(\"NewgroundsIO_objects_Session requires a 'core' value\");\n";
-		out +=				"		this.__ngio = props.ngio;\n\n";
-		out +=				"		this.__loaded_saved_key = false;\n";
-		out +=				"		this.__loaded_url_key = false;\n";
-
-		return out;
+		this.__loaded_saved_key = false;
+		this.__loaded_url_key = false;
+		`;
 	},
 
 	/**
@@ -25,37 +24,30 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";
-		
-		out += 				"	getSessionStorageKey()\n";
-		out += 				"	{\n";
-		out += 				"		return \"Newgrounds-io-app_session-\"+(this.__ngio.app_id.split(\":\").join(\"-\"));\n";
-		out += 				"	}\n\n";
+		return `
+			getSessionStorageKey() {
+				return "Newgrounds-io-app_session-" + (this.__ngio.app_id.split(":").join("-"));
+			}
 
-		out += 				"	isActive()\n";
-		out += 				"	{\n";
-		out += 				"		return true;\n";
-		out += 				"	}\n\n";
+			isActive() {
+				return true;
+			}
 
-		out += 				"	logProblems()\n";
-		out += 				"	{\n";
-		out += 				"		console.warn('NewgroundsIO warning: TODO');\n";
-		out += 				"	}\n\n";
+			logProblems() {
+				console.warn('NewgroundsIO warning: TODO');
+			}
 
-		out += 				"	wasServerValidated()\n";
-		out += 				"	{\n";
-		out += 				"		return (this._user !== null || this._expired !== null);\n";
-		out += 				"	}\n\n";
+			wasServerValidated() {
+				return (this._user !== null || this._expired !== null);
+			}
 
-		out += 				"	load(callback, thisArg)\n";
-		out += 				"	{\n";
-		out += 				"		let session = this;\n\n";
+			load(callback, thisArg) {
+				let session = this;
 
-		out += 				"		if (!session.__loaded_saved_key) {\n";
-		out += 				"			let component = new NewgroundsIO_components_App_checkSession({});\n";
-		out += 				"		}\n";
-		out += 				"	}\n";
-
-		return out;
+				if (!session.__loaded_saved_key) {
+					let component = new NewgroundsIO_components_App_checkSession({});
+				}
+			}
+		`;
 	}
 }

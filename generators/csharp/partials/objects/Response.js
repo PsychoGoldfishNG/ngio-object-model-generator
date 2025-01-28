@@ -10,10 +10,9 @@ module.exports = {
 	 */
 	getUsingPartial: function() 
 	{
-		var out = 			"";
-		out += 				"using Newtonsoft.Json;\n";
-		out += 				"using Newtonsoft.Json.Linq;\n";
-		return out;
+return `using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+`;
 	},
 
 	/**
@@ -21,18 +20,16 @@ module.exports = {
 	 */
 	getPropertiesPartial: function() 
 	{
-		var out = 			"\n";
+return `
+		/// <summary>If this is a list of queued responses, this will be true.</summary>
+		public bool isList { get; private set; }
 
-		out += 				"		/// <summary>If this is a list of queued responses, this will be true.</summary>\n";
-		out += 				"		public bool isList { get; private set; }\n\n";
+		/// <summary>Single results will be stored here.</summary>
+		private NewgroundsIO.BaseResult _result = null;
 
-		out += 				"		/// <summary>Single results will be stored here.</summary>\n";
-		out += 				"		private NewgroundsIO.BaseResult _result = null;\n\n";
-
-		out += 				"		/// <summary>Queued results will be stored here</summary>\n";
-		out += 				"		private List<NewgroundsIO.BaseResult> _resultList = null;\n";
-
-		return out;
+		/// <summary>Queued results will be stored here</summary>
+		private List<NewgroundsIO.BaseResult> _resultList = null;
+`;
 	},
 
 	/**
@@ -40,10 +37,9 @@ module.exports = {
 	 */
 	getConstructorPartial: function() 
 	{
-		var out = 			"";
-		out +=				"			this.__properties.Add(\"result\");\n";
-		out +=				"			this.__properties.Add(\"resultList\");\n";
-		return out;
+return `			this.__properties.Add("result");
+			this.__properties.Add("resultList");
+`;
 	},
 
 	/**
@@ -51,49 +47,47 @@ module.exports = {
 	 */
 	getClassPartial: function() 
 	{
-		var out = "";		
-		out += 				"		/// <summary>A single component result.<summary>\n";
-		out += 				"		public NewgroundsIO.BaseResult result {\n";
-		out += 				"			get {\n";
-		out += 				"				return this._result;\n";
-		out += 				"			}\n";
-		out += 				"		}\n\n";
+return `		/// <summary>A single component result.<summary>
+		public NewgroundsIO.BaseResult result {
+			get {
+				return this._result;
+			}
+		}
 
-		out += 				"		/// <summary>A list of component results.<summary>\n";
-		out += 				"		public List<NewgroundsIO.BaseResult> resultList {\n";
-		out += 				"			get {\n";
-		out += 				"				return this._resultList;\n";
-		out += 				"			}\n";
-		out += 				"		}\n\n";
+		/// <summary>A list of component results.<summary>
+		public List<NewgroundsIO.BaseResult> resultList {
+			get {
+				return this._resultList;
+			}
+		}
 
-		out += 				"		/// <summary>Set a single results object from deserialized JSON.<summary>\n";
-		out += 				"		public void SetResults(JObject jObj)\n";
-		out += 				"		{\n";
-		out += 				"			string _component = (string)jObj.GetValue(\"component\").ToObject(typeof(string));\n";
-		out += 				"			this._result = NewgroundsIO.ObjectIndex.CreateResult(_component, jObj.GetValue(\"data\") as JObject);\n\n";
+		/// <summary>Set a single results object from deserialized JSON.<summary>
+		public void SetResults(JObject jObj)
+		{
+			string _component = (string)jObj.GetValue("component").ToObject(typeof(string));
+			this._result = NewgroundsIO.ObjectIndex.CreateResult(_component, jObj.GetValue("data") as JObject);
 
-		out += 				"			this.isList = false;\n";
-		out += 				"		}\n\n";
+			this.isList = false;
+		}
 
-		out += 				"		/// <summary>Set a list of results object from deserialized JSON.<summary>\n";
-		out += 				"		public void SetResultsList(JArray jArr)\n";
-		out += 				"		{\n";
-		out += 				"			string _component;\n";
-		out += 				"			this._resultList = new List<NewgroundsIO.BaseResult>();\n";
-		out += 				"			foreach (JObject jObj in jArr) {\n";
-		out += 				"				_component = (string)jObj.GetValue(\"component\").ToObject(typeof(string));\n";
-		out += 				"				this._resultList.Add( NewgroundsIO.ObjectIndex.CreateResult(_component, jObj.GetValue(\"data\") as JObject) );\n";
-		out += 				"			}\n\n";
+		/// <summary>Set a list of results object from deserialized JSON.<summary>
+		public void SetResultsList(JArray jArr)
+		{
+			string _component;
+			this._resultList = new List<NewgroundsIO.BaseResult>();
+			foreach (JObject jObj in jArr) {
+				_component = (string)jObj.GetValue("component").ToObject(typeof(string));
+				this._resultList.Add( NewgroundsIO.ObjectIndex.CreateResult(_component, jObj.GetValue("data") as JObject) );
+			}
 
-		out += 				"			this.isList = true;\n";
-		out += 				"		}\n";
+			this.isList = true;
+		}
 
-		out += 				"		/// <summary>This override will link a Core instance to every result in the resultList.</summary>\n";
-		out += 				"		public override void SetCoreOnLists( NewgroundsIO.Core ngio )\n";
-		out += 				"		{\n";
-		out += 				"			if (!(this._resultList is null)) this._resultList.ForEach(child => { if (!(child is null)) child.SetCore(ngio); });\n";
-		out += 				"		}\n\n";
-
-		return out;
+		/// <summary>This override will link a Core instance to every result in the resultList.</summary>
+		public override void SetCoreOnLists( NewgroundsIO.Core ngio )
+		{
+			if (!(this._resultList is null)) this._resultList.ForEach(child => { if (!(child is null)) child.SetCore(ngio); });
+		}
+`;
 	}
 }

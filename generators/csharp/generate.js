@@ -8,6 +8,8 @@ module.exports = {
 	
 	/* =========================================== CODE GENERATORS =========================================== */
 
+	/* ------------------------------------------- COMPONENT OBJECTS ------------------------------------------- */
+
 	/**
 	 * Generates the JS code for a component class
 	 * @param {string} componentName The name of the component
@@ -24,6 +26,8 @@ module.exports = {
 		return [filename,out];
 	},
 
+	/* ------------------------------------------- RESULT OBJECTS ------------------------------------------- */
+
 	/**
 	 * Generates the JS code for a component class
 	 * @param {string} componentName The name of the component
@@ -39,6 +43,8 @@ module.exports = {
 		return [filename,out];
 	},
 
+	/* ------------------------------------------- MODEL OBJECTS ------------------------------------------- */
+
 	/**
 	 * Generates the JS code for an object class
 	 * @param {string} objectName The name of the object being generated
@@ -53,271 +59,165 @@ module.exports = {
 		return [filename,out];
 	},
 
+	/* ------------------------------------------- CLASS GENERATION ------------------------------------------- */
+
 	generateObjectClass: function(objectName, className, nameSpace, baseClass, objectData, partials)
 	{
 
 		// don't make a model for these, they are abstract concepts...
 		if (objectName === "Result" || objectName === "Execute") return "";
 
-		var out = "";
+		const template = (data) => `
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+${partials && partials.getUsingPartial ? partials.getUsingPartial() : ''}
 
-		// class definition.  We will be extending the BaseObject class
-		out +=					"using System;\n";
-		out +=					"using System.Collections;\n";
-		out +=					"using System.Collections.Generic;\n";
-		out +=					"using UnityEngine;\n";
+namespace ${data.nameSpace} {
 
-		// add any partial code that may exist for the properties part of the class function
-		if (partials && partials.getUsingPartial) out += partials.getUsingPartial();
+	${this.formatComment(data.objectData.description, "summary", null, "	")}
+	public class ${data.className} : ${data.baseClass} {
 
-		out += "\n";
-		out +=					"namespace "+nameSpace+" {\n\n";
+		${data.properties.map(prop => `
+		${this.formatComment(prop.description, "summary")}
+		public ${this.getDataType(prop)} ${prop.name} { get; set; }${prop.default ? ` = ${JSON.stringify(prop.default)};` : ''}`).join('\n\n')}
 
-		out +=						this.formatComment(objectData.description, "summary", null, "	");
-		out +=					"	public class "+className+" : "+baseClass+" {\n\n";
+		${partials && partials.getPropertiesPartial ? partials.getPropertiesPartial() : ''}
 
+		/// <summary>Constructor</summary>
+		public ${data.className}()
+		{
+			this.__object = "${data.objectName}";
+			${data.props.map(prop => `this.__properties.Add("${prop}");`).join('\n')}
+			${data.required.map(prop => `this.__required.Add("${prop}");`).join('\n')}
+			${Object.entries(data.objectMap).map(([name, obj]) => `this.__objectMap.Add("${name}", "${obj}");`).join('\n')}
+			${data.objectData.secure ? 'this.__isSecure = true;' : ''}
+			${data.objectData.require_session ? 'this.__requireSession = true;' : ''}
+			${partials && partials.getConstructorPartial ? partials.getConstructorPartial() : ''}
+		}
 
-		// properties
-		let _required = [];
+		${data.props.includes("datetime") ? `
+		/// <summary>Returns the datetime value as an actual DateTime</summary>
+		public DateTime GetDateTime()
+		{
+			return DateTime.Parse(datetime);
+		}` : ''}
 
-		// set initial property values
-		let props = [];
-		let objectArrays = {};
-		let objectMap = {};
-		for (const [name, obj] of Object.entries(objectData.properties)) {
-
-			// Need to override any properties in partials?  Keep them from being added here:
-
-				// The Response object has custom handling for it's result property. See the objects/Response.js partials for details
-				if (objectName === 'Response' && name === "result") continue;
-				
-				// The Request object has custom handling for it's execute property. See the objects/Request.js partials for details
-				if (objectName === 'Request' && name === "execute") continue;
-
-				// components already have a 'host' property, but only add it to the export array if it's in the objectData 
-				if (nameSpace.indexOf("components") >= 0 && name === "host") {
-					props.push(name);
-					continue;
-				}
-
-			// End of overrides
-
-			props.push(name);
-
-			if (typeof(obj.array) !== 'undefined' && (typeof(obj.object) !== 'undefined' || typeof(obj.type) !== 'undefined')) {
-				objectArrays[name] = [name+"List",this.getDataType(obj.array)];
-
-				// this property can either be a flat value OR a list of values.  We need containers for both
-				out +=			"\n";
-				out +=			"		/// <summary>Will be true if the "+name+"List was set instead of "+name+".</summary>\n";
-				out +=			"		public bool "+name+"IsList { get; private set; }\n\n";
-
-				out +=			"		private "+this.getDataType(obj)+" _"+name+";\n\n";
-
-				out +=					this.formatComment(obj.description, "summary");
-				out +=			"		public "+this.getDataType(obj)+" "+name+" { get {\n";
-				out +=			"			return this._"+name+";\n";
-				out +=			"		}\n"; 
-				out +=			"		set {\n";
-				out +=			"			this."+name+"IsList = false;\n";
-				out +=			"			this._"+name+" = value;\n";
-				out +=			"			this._"+name+"List = null;\n";
-				out +=			"		} }\n\n";
-
-				out +=			"		public List<"+this.getDataType(obj.array)+"> _"+name+"List = new List<"+this.getDataType(obj.array)+">();\n\n";
-
-				out +=					this.formatComment("(A list of:) "+obj.description, "summary");
-				out +=			"		public List<"+this.getDataType(obj.array)+"> "+name+"List { get {\n";
-				out +=			"			return this._"+name+"List;\n";
-				out +=			"		}\n"; 
-				out +=			"		set {\n";
-				out +=			"			this."+name+"IsList = true;\n";
-				out +=			"			this._"+name+" = null;\n";
-				out +=			"			this._"+name+"List = value;\n";
-				out +=			"		} }\n\n";
-
-			} else if (typeof(obj.array) !== 'undefined') {
-				objectArrays[name] = [name, this.getDataType(obj.array)];
-
-				// this property is always going to be a list
-				out +=					this.formatComment(obj.description, "summary");
-				out +=			"		public List<"+this.getDataType(obj.array)+"> "+name+" { get; set; } = new List<"+this.getDataType(obj.array)+">();\n\n";
-
-			} else {
-
-				// this property is always going to be a flat value
-				out +=					this.formatComment(obj.description, "summary");
-				out +=			"		public "+this.getDataType(obj)+" "+name+" { get; set; }";
-				if (typeof(obj['default']) !== 'undefined') out += " = "+JSON.stringify(obj.default)+";";
-				out += "\n\n";
+		${Object.keys(data.objectArrays).length > 0 ? `
+		/// <summary>Adds objects to their associated lists and casts them to their appropriate class.</summary>
+		public override void AddToPropertyList(string propName, NewgroundsIO.BaseObject obj)
+		{
+			switch(propName) {
+				${Object.entries(data.objectArrays).map(([name, [prop, oclass]]) => `
+				case "${name}":
+					this.${prop}.Add(obj as ${oclass});
+					break;`).join('\n')}
 			}
+		}` : ''}
 
+		${Object.keys(data.objectArrays).length > 0 ? `
+		/// <summary>Links a Core instance to every object in our object lists.</summary>
+		public override void SetCoreOnLists(NewgroundsIO.Core ngio)
+		{
+			${Object.entries(data.objectArrays).map(([name, [prop]]) => `
+			this.${prop}.ForEach(child => { if (!(child is null)) child.SetCore(ngio); });`).join('\n')}
+		}` : ''}
 
-			// keep track of required properties
-			if (obj.required === true) _required.push(name);
-			if (obj.object) objectMap[name] = obj.object;
-			if (obj.array && obj.array.object) objectMap[name] = obj.array.object;
-		}		
-
-		// add any partial code that may exist for the properties part of the class function
-		if (partials && partials.getPropertiesPartial) out += partials.getPropertiesPartial();
-
-		// constructor
-		out += 					"\n";
-		out += 					"		/// <summary>Constructor</summary>\n";
-		out += 					"		public "+className+"()\n";
-		out += 					"		{\n";
-		out +=					"			this.__object = \""+objectName+"\";\n\n";
-		
-		// set properties from props object
-		props.forEach(prop => {
-			out +=				"			this.__properties.Add(\""+prop+"\");\n";
-		},this);
-
-		_required.forEach(prop => {
-			out +=				"			this.__required.Add(\""+prop+"\");\n";
-		},this);
-
-		for (const [name, obj] of Object.entries(objectMap)) {
-			out +=				"			this.__objectMap.Add(\""+name+"\",\""+obj+"\");\n";
+		/// <summary>Clones the properties of this object to another (or new) object.</summary>
+		/// <param name="cloneTo">An object to clone properties to. If null, a new instance will be created.</param>
+		/// <returns>The object that was cloned to.</returns>
+		public ${data.nameSpace}.${data.className} clone(${data.nameSpace}.${data.className} cloneTo = null)
+		{
+			if (cloneTo is null) cloneTo = new ${data.nameSpace}.${data.className}();
+			cloneTo.__properties.ForEach(propName => {
+				cloneTo.GetType().GetProperty(propName).SetValue(cloneTo, this.GetType().GetProperty(propName).GetValue(this), null);
+			});
+			cloneTo.__ngioCore = this.__ngioCore;
+			return cloneTo;
 		}
 
-		if (objectData.secure === true)
-			out +=				"			this.__isSecure = true;\n";
-
-		if (objectData.require_session === true)
-			out +=				"			this.__requireSession = true;\n";
-
-		// add any partial code that may exist for the constructor function
-		if (partials && partials.getConstructorPartial) out += partials.getConstructorPartial();
-
-		out += 					"		}\n\n";
-		// end constructor
-
-		if (props.indexOf("datetime") >= 0) {
-			out += 				"		/// <summary>Returns the datetime value as an actual DateTime</summary>\n";
-			out += 				"		public DateTime GetDateTime()\n";
-			out += 				"		{\n";
-			out += 				"			return DateTime.Parse(datetime);\n";
-			out += 				"		}\n\n";
-		}
-
-		if (Object.keys(objectArrays).length > 0) {
-
-			out +=				"		/// <summary>Adds objects to their associated lists and casts them to their appropriate class.</summary>\n";
-			out +=				"		public override void AddToPropertyList( string propName, NewgroundsIO.BaseObject obj)\n";
-			out +=				"		{\n";
-			out +=				"			switch(propName) {\n\n";
-
-			for (const [name, obj] of Object.entries(objectArrays)) {
-
-				let [prop,oclass] = obj;
-
-				out +=			"				case \""+name+"\":\n\n";
-				out +=			"					this."+prop+".Add(obj as "+oclass+");\n";
-
-				out +=			"					break;\n\n";
-			}
-
-			out +=				"			}\n";
-			out +=				"		}\n";
-
-		}
-
-
-		if (Object.keys(objectArrays).length > 0) {
-
-			out +=				"		/// <summary>Links a Core instance to every object in our object lists.</summary>\n";
-			out +=				"		public override void SetCoreOnLists( NewgroundsIO.Core ngio )\n";
-			out +=				"		{\n";
-			
-			for (const [name, obj] of Object.entries(objectArrays)) {
-
-				let [prop,oclass] = obj;
-
-				out +=			"			this."+prop+".ForEach(child => { if (!(child is null)) child.SetCore(ngio); });\n";
-			}
-
-			out +=				"		}\n\n";
-
-		}
-
-		out +=					"		/// <summary>Clones the properties of this object to another (or new) object.</summary>\n";
-		out +=					"		/// <param name=\"cloneTo\">An object to clone properties to. If null, a new instance will be created.</param>\n";
-		out +=					"		/// <returns>The object that was cloned to.</returns>\n";
-		out +=					"		public "+nameSpace+"."+className+" clone("+nameSpace+"."+className+" cloneTo = null) {\n";
-		out +=					"			if (cloneTo is null) cloneTo = new "+nameSpace+"."+className+"();\n";
-		out +=					"			cloneTo.__properties.ForEach(propName => {\n";
-		out +=					"				cloneTo.GetType().GetProperty(propName).SetValue(cloneTo, this.GetType().GetProperty(propName).GetValue(this), null);\n";
-		out +=					"			});\n";
-		out +=					"			cloneTo.__ngioCore = this.__ngioCore;\n";
-		out +=					"			return cloneTo;\n";
-		out +=					"		}\n\n";
-
-		// add any partial code that may exist for the main class
-		if (partials && partials.getClassPartial) out += partials.getClassPartial();
-
-		out +=					"	}\n\n";
-		out +=					"}\n\n";
-		// end class
-
-		return out;
+		${partials && partials.getClassPartial ? partials.getClassPartial() : ''}
+	}
+}
+`;
+		const data = {
+			nameSpace,
+			className,
+			baseClass,
+			objectName,
+			objectData,
+			props: Object.keys(objectData.properties),
+			required: Object.keys(objectData.properties).filter(prop => objectData.properties[prop].required),
+			objectMap: Object.entries(objectData.properties).reduce((map, [name, obj]) => {
+				if (obj.object) map[name] = obj.object;
+				if (obj.array && obj.array.object) map[name] = obj.array.object;
+				return map;
+			}, {}),
+			objectArrays: Object.entries(objectData.properties).reduce((arrays, [name, obj]) => {
+				if (obj.array) arrays[name] = [name, this.getDataType(obj.array)];
+				return arrays;
+			}, {}),
+			properties: Object.entries(objectData.properties).map(([name, obj]) => ({
+				name,
+				description: obj.description,
+				default: obj.default,
+				type: this.getDataType(obj)
+			}))
+		};
+		return template(data);
 	},
+
+	/* ------------------------------------------- OBJECT INDEX ------------------------------------------- */
 
 	generateObjectIndex: function(index)
 	{
-		var out = "";
-		out +=					"using System;\n";
-		out +=					"using System.Collections;\n";
-		out +=					"using System.Collections.Generic;\n";
-		out +=					"using UnityEngine;\n\n";
+		const template = (data) => `
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
-		out +=					"namespace NewgroundsIO {\n\n";
-		
-		out +=					"	/// <summary>A class used to get object/component/result instances from a string name and deserialized JSON properties.</summary>\n";
-		out +=					"	class ObjectIndex {\n\n";
+namespace NewgroundsIO {
 
-		function makeIndex(namespace, method, objects, base)
+	/// <summary>A class used to get object/component/result instances from a string name and deserialized JSON properties.</summary>
+	class ObjectIndex {
+
+		${data.indexes.map(index => `
+		/// <summary>Handles creation of ${index.base} subclasses.</summary>
+		/// <param name="name">The object's name/type.</param>
+		/// <param name="json">The values to apply to the object.</param>
+		/// <returns>A subclass instance, cast back to ${index.base}</returns>
+		public static ${index.base} ${index.method}(string name, object json)
 		{
-			out +=				"		/// <summary>Handles creation of "+base+" subclasses.</summary>\n";
-			out +=				"		/// <param name=\"name\">The object's name/type.</param>\n";
-			out +=				"		/// <param name=\"json\">The values to apply to the object.</param>\n";
-			out +=				"		/// <returns>A subclass instance, cast back to "+base+"</returns>\n";
-			out +=				"		public static "+base+" "+method+"(string name, object json)\n";
-			out +=				"		{\n";
-			out +=				"			switch (name.ToLower()) {\n\n";
+			switch (name.ToLower()) {
+				${index.objects.map(obj => {
+					const varname = "new_" + obj.split(".").join("_");
+					const otype = index.namespace + obj;
+					if (otype === "NewgroundsIO.objects.Result" || otype === "NewgroundsIO.objects.Execute") return '';
+					return `
+				case "${obj.toLowerCase()}":
+					${otype} ${varname} = new ${otype}();
+					${varname}.FromJSON(json);
+					return ${varname} as ${index.base};`;
+				}).join('\n')}
+			}
+			return null;
+		}`).join('\n')}
+	}
+}`;
 
-			objects.forEach(function (obj) {
+		const data = {
+			indexes: [
+				{ namespace: "NewgroundsIO.objects.", method: "CreateObject", objects: index.objects, base: "NewgroundsIO.BaseObject" },
+				{ namespace: "NewgroundsIO.components.", method: "CreateComponent", objects: index.components, base: "NewgroundsIO.BaseComponent" },
+				{ namespace: "NewgroundsIO.results.", method: "CreateResult", objects: index.results, base: "NewgroundsIO.BaseResult" }
+			]
+		};
 
-				var varname = "new_"+obj.split(".").join("_");
-				var otype = namespace + obj;
-
-				// we don't build a Result or Execute object, the Response object and ExecuteWrapper handle these.
-				if (otype === "NewgroundsIO.objects.Result" || otype === "NewgroundsIO.objects.Execute") return;
-
-
-				out +=			"				case \""+obj.toLowerCase()+"\":\n\n";
-				out +=			"					"+otype+" "+varname+" = new "+otype+"();\n";
-				out +=			"					"+varname+".FromJSON(json);\n";
-				out +=			"					return "+varname+" as "+base+";\n\n";
-
-			}, this);
-
-			out +=				"			}\n\n";
-
-			out +=				"			return null;\n";
-			out +=				"		}\n\n";
-		}
-
-		makeIndex("NewgroundsIO.objects.", "CreateObject", index.objects, "NewgroundsIO.BaseObject");
-		makeIndex("NewgroundsIO.components.", "CreateComponent", index.components, "NewgroundsIO.BaseComponent");
-		makeIndex("NewgroundsIO.results.", "CreateResult", index.results, "NewgroundsIO.BaseResult");
-
-		out +=		"	}\n";
-		out +=		"}";
-
-		let filename = "ObjectIndex.cs";
-		return [filename,out];
+		const out = template(data);
+		const filename = "ObjectIndex.cs";
+		return [filename, out];
 	},
 
 	/* =========================================== HELPER METHODS =========================================== */
