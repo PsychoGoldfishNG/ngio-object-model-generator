@@ -22,10 +22,10 @@ module.exports = {
 
 			// directories where generated files will be saved, by object type
 			outputDirs: {
-				objects: "./build/actionscript2/newgroundsio/objects",
-				components: "./build/actionscript2/newgroundsio/components",
-				component_results: "./build/actionscript2/newgroundsio/results",
-				object_index: "./build/actionscript2/newgroundsio/objects"
+				objects: "./build/actionscript2/io/newgrounds/models/objects",
+				components: "./build/actionscript2/io/newgrounds/models/components",
+				component_results: "./build/actionscript2/io/newgrounds/models/results",
+				object_index: "./build/actionscript2/io/newgrounds/models/objects"
 			},
 
 			// directories where partials (code that will be inserted into generated files) can be found
