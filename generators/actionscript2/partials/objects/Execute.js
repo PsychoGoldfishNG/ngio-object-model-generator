@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * This module is used to generate object model and component validation classes in browser-friendly ES6 JavaScript
+ * This module is used to add advanced methods to the Execute object
  */
 module.exports = {
 
 	/**
-	 * return {string} Code to inject into the NewgroundsIO_objects_Execute constructor
+	 * return {string} Code to inject into the io.newgrounds.models.objects.Execute constructor
 	 */
 	getConstructorPartial: function() 
 	{
@@ -18,7 +18,7 @@ module.exports = {
 	},
 
 	/**
-	 * return {string} Code to inject into the overall NewgroundsIO_objects_Execute class
+	 * return {string} Code to inject into the overall io.newgrounds.models.objects.Execute class
 	 */
 	getClassPartial: function() 
 	{
