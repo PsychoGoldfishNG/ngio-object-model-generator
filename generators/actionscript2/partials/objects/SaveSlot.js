@@ -11,6 +11,11 @@ module.exports = {
 	getClassPartial: function() 
 	{
 		const template = `
+    public function hasData():Boolean
+    {
+        return this.url !== null;
+    }
+    
     public function clear(callback:Function, thisArg:Object) 
     {
         if (!this.getCore()) {
