@@ -1,11 +1,14 @@
 {
-  "name": "ngio-object-model-generator",
+  "name": "@psychogoldfish/ngio-object-model-generator",
   "version": "1.0.0",
-  "description": "A framework for building client-side object and component classes for the Newgrounds.io API",
+  "description": "A framework for building Newgrounds.io API model files.",
   "main": "build.js",
+  "bin": {
+    "ngio-object-model-generator": "./build.js"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/PsychoGoldfishNG/ngio-object-model-generator"
+    "url": "git+https://github.com/PsychoGoldfishNG/ngio-object-model-generator.git"
   },
   "scripts": {
     "test": "echo \"Do, or do not, there is no test!\" && exit 1"
@@ -16,7 +19,7 @@
     "newgrounds.io",
     "ngio"
   ],
-  "author": "Josh Tuttle",
+  "author": "Josh Tuttle <josh@psychogoldfish.com>",
   "license": "MIT",
   "dependencies": {
     "chokidar": "^3.5.3"
