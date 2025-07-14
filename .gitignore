@@ -18,6 +18,9 @@ config.js
 build
 docs
 
+# used in testing/development
+dev-test
+
 # Package Lock
 package-lock.json
 

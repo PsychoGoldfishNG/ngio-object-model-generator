@@ -3,316 +3,368 @@ const fs = require('fs');
 const https = require('https');
 const chokidar = require('chokidar');
 const { exec } = require("child_process");
+const path = require('path');
+const { pathToFileURL } = require('url');
 
-var generator_name = process.argv.length > 2 ? process.argv.pop().trim() : false;
+// use simple mustache templating for filename generation
+const mustache = require('mustache');
 
-var flags = {
-	help: false,
-	install: false,
-	refresh: false,
-	watch: false
+// use more advanced ejs for the model templates
+const ejs = require('ejs');
+
+// the object documentation is available in a json file at this url
+const object_doc_url = "https://www.newgrounds.io/help/objects_and_components.json";
+
+// we'll save the downloaded object documentation here
+const object_doc_file = path.join(__dirname, 'docs', 'objects_and_components.json');
+
+// and note the last updated time here
+// this is used to check if the documentation is up-to-date so we don't download it every time we run the script
+const object_doc_stamp = path.join(__dirname, 'docs', 'last_updated');
+
+// we should have one extra argument, pointing at the config file, relative to the project path
+if (process.argv.length < 3) {
+    console.error("Usage: node build.js <config_file>");
+    process.exit(1);
+}
+let config_file = process.argv[2];
+
+// if config file isn't being loaded with an absolute path, we assume it's relative to the current working directory
+if (!path.isAbsolute(config_file)) {
+    config_file = path.join(process.cwd(), config_file);
+}
+
+// make sure config_file exists
+if (!fs.existsSync(config_file)) {
+    console.error(`Config file not found: ${config_file}`);
+    process.exit(1);
+}
+
+// load the config file
+console.log("NGIO Model Builder - Loading config file:", config_file);
+const config = require(config_file);
+
+// get the directory the config file is in.  Most of the paths in there will be relative to this directory.
+const configDir = path.dirname(config_file);
+
+// when checking paths in the config file, there are a few mustache variables we can use
+// {{__dirname}} will be replaced with the directory the config file is in
+// {{name}} will be replaced with the name of object models
+// {{component}} will be replaced with the compnent namespace that component methods and result objects belong to
+// {{method}} will be replaced with the method name of component methods and their result objects
+
+// get the directory our partials are in
+const partialDir = path.normalize(mustache.render(config.partials_dir ?? `${configDir}/partials`, {__dirname: configDir}));
+
+/**
+ * This object has methods for loading and rendering partial templates within our outer templates.
+ */
+const partial = {
+    /**
+     * Checks if a partial template file exists.
+     * @param {string} partial The name of the partial template (without extension).
+     * @return {boolean} True if the partial exists, false otherwise.
+     */
+    has(partial) {
+        const partialFile = path.join(partialDir, `${partial}.ejs`);
+        return fs.existsSync(partialFile);
+    },
+
+    /**
+     * Loads a partial template file and returns its content.
+     * @param {string} partial The name of the partial template (without extension).
+     * @param {object} data The data to render the template with.
+     * @returns {string} The rendered content of the partial template.
+     * @throws {Error} If the partial template file does not exist.
+     */
+    get(partial, data) {
+
+        const partialFile = path.join(partialDir, `${partial}.ejs`);
+        if (!this.has(partial)) {
+            throw new Error(`Partial template not found: ${partialFile}`);
+        }
+
+        const template = fs.readFileSync(partialFile, 'utf8');
+        return ejs.render(template, data);
+    },
+
+    /**
+     * Gets the content of a partial template if it exists, otherwise returns an empty string.
+     * @param {string} partial The name of the partial template (without extension).
+     * @param {object} data The data to render the template with.
+     * @returns {string} The rendered content of the partial template, or an empty string if it doesn't exist.
+     */
+    getIfExists(partial, data) {
+        if (this.has(partial)) {
+            return this.get(partial, data);
+        }
+        return "";
+    }
 };
 
-// the first argument isn't a generator, so set that to false and put the argument back in the list
-if (generator_name[0] === "-") {
-	process.argv.splice(2, 0, generator_name);
-	generator_name = false;
+/**
+ * Fetches the last-modified header from a URL.
+ * @param {string} url 
+ * @returns {Promise<string>} A promise that resolves to the last-modified date string.
+ * @throws {Error} If the request fails.
+ */
+function getLastModified(url) {
+    return new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+            resolve(res.headers["last-modified"]);
+        }).on('error', (err) => {
+            if (fs.existsSync(object_doc_stamp)) {
+                console.warn(`Warning: Failed to download object documentation (${err.message}), using existing documentation.`);
+                resolve(fs.readFileSync(object_doc_stamp, "utf8"));
+            } else {
+                reject(err);
+            }
+        });
+    });
 }
 
-var options = [
-	["-help", "help", "View all the options for this script"],
-	["-install", "install", "Run this before anything else to generate your config.js file!"],
-	["-refresh", "refresh", "Download the latest object documentation"],
-	["-w", "watch", "Watch for changes to generator and partial scripts and auto-build"]
-];
+/**
+ * @returns {Promise<void>} A promise that resolves when the object documentation is downloaded.
+ * @throws {Error} If the download fails.
+ */
+function downloadObjectDocAsync() {
+    return new Promise((resolve, reject) => {
+        https.get(object_doc_url, (res) => {
 
-// parse the remaining command line arguments
-while (process.argv.length > 2) {
-	let arg = process.argv.pop().trim();
-	if (!arg) continue;
+            let error = null;
+            if (res.statusCode !== 200) {
+                error = new Error(`Failed to download object documentation: ${res.statusCode} ${res.statusMessage}`);
+            } else if (!res.headers['content-type'] || !res.headers['content-type'].includes('application/json')) {
+                error = new Error(`Invalid content type for object documentation: ${res.headers['content-type']}`);
+            }
 
-	let valid = false;
-
-	for (let i = 0; i < options.length; i++) {
-		if (arg === options[i][0]) {
-			valid = true;
-			flags[options[i][1]] = true;
-			break;
-		}
-	}
-
-	if (flags.install === true) flags.refresh = true;
-
-	if (!valid) {
-		console.error("Invalid argument:", arg);
-		process.exit();
-	}
+            if (error) {
+                if (fs.existsSync(object_doc_file)) {
+                    console.warn(`Warning: Failed to download object documentation (${error.message}), using existing documentation.`);
+                    resolve();
+                }
+                return reject(error);
+            }
+            
+            const file = fs.createWriteStream(object_doc_file);
+            res.pipe(file);
+            file.on("finish", () => {
+                file.close();
+                fs.writeFileSync(object_doc_stamp, res.headers["last-modified"]);
+                resolve();
+            });
+        }).on('error', (err) => {
+            if (fs.existsSync(object_doc_file)) {
+                console.warn(`Warning: Failed to download object documentation (${err.message}), using existing documentation.`);
+                resolve();
+            } else {
+                reject(err);
+            }
+        });
+    });
 }
 
-var file_contents, file_name;
-
-// Make sure we have a config.js file
-if (!fs.existsSync('./config.js')) {
-
-	// create the file
-	if (flags.install === true) {
-		fs.copyFileSync("./default_config.js", "./config.js");
-		console.log("Created config.js.  You can now edit this file!");
-
-		// tell the user how to create the file
-	} else {
-		console.error("Missing config.js.  Use 'node build.js -install' to generate.");
-		process.exit(1);
-	}
-
-} else if (flags.install) {
-	console.error("config.js already exists.  If you need to add new formats, copy from default_config.js and edit accordingly.");
-
-	process.exit(1);
+/**
+ * Ensures the latest object documentation is downloaded.
+ * If the documentation file does not exist or is outdated, it downloads the latest version.
+ * 
+ * @returns {Promise<void>} A promise that resolves when the documentation is ensured to be up-to-date.
+ * @throws {Error} If the download fails or the file cannot be written.
+ */
+async function ensureLatestObjectDoc() {
+    if (!fs.existsSync(object_doc_file)) {
+        console.log("Object documentation file does not exist. Downloading latest version...");
+        await downloadObjectDocAsync();
+    } else {
+        const stamp = fs.existsSync(object_doc_stamp) ? fs.readFileSync(object_doc_stamp, "utf8") : null;
+        const new_stamp = await getLastModified(object_doc_url);
+        if (new_stamp && new_stamp !== stamp) {
+            console.log("Object documentation is outdated. Downloading latest version...");
+            await downloadObjectDocAsync();
+        } else {
+            console.log("Object documentation is up-to-date.");
+        }
+    }
 }
 
-var config = require('./config.js');
-var doc_file = './docs/objects_and_components.json';
 
-if (flags.refresh === true) {
+// everything else is wrapped in an async function so we can use await...
+(async () => {
 
-	// load the config file
+    // if we have a path set for a helper module, load that, or just use an empty object.
+    // this helper variable will be injected into the templates, so users can add custom functions to help with rendering.
+    let helper = {};
+    if (config.helper_module) {
 
-	// download the object documentation
-	console.log("Downloading object documentation from " + config.object_doc_url + "...");
+        // load the helper module if it exists
+        const helperModulePath = path.normalize(mustache.render(config.helper_module, {__dirname: configDir}));
 
-	// only accept if status code is 200 and response is JSON
-	https.get(config.object_doc_url, (res) => {
-		if (res.statusCode !== 200) {
-			console.error("Unable to download object documentation from " + config.object_doc_url);
-			process.exit(1);
-		}
+        if (fs.existsSync(helperModulePath)) {
+            helper = require(helperModulePath);
+        } else {
+            console.error(`Helper module not found: ${helperModulePath}`);
+            process.exit(1);
+        }
+    }
 
-		let data = '';
+    // Make sure we have the latest model documentation.
+    await ensureLatestObjectDoc();
 
-		res.on('data', (chunk) => {
-			data += chunk;
-		});
+    // Load the documentation file
+    const object_doc = JSON.parse(fs.readFileSync(object_doc_file, "utf8"));
 
-		res.on('end', () => {
-			fs.writeFileSync(doc_file, data);
-			console.log("Downloaded object documentation to " + doc_file);
-			process.exit();
-		});
+    // build the base-level object models
+    for (const name in object_doc.objects) {
 
-	}).on('error', (e) => {
-		console.error("Unable to download object documentation from " + config.object_doc_url);
-		process.exit(1);
-	});
+        // this is more of a parent class users could build off of, not a base object.
+        // we will make separate result objects for each component.
+        if (name === "Result") continue;
 
-} else {
+        const object = object_doc.objects[name];
+        
+        object.name = name;
 
-	// make sure the user has selected a generator to run (or opted to run them all for some insane reason)
-	if (flags.help || !generator_name) {
-		console.log("Use: node build.js {options} {generator_name|all}\n\nexample:\nnode build.js -w javascript\n\nValid Options:\n");
-		options.forEach(option => {
-			console.log("  ", option[0], (" ").repeat(16 - option[0].length), option[2]);
-		});
-		process.exit(1);
-	}
+        const templateFileName = path.normalize(mustache.render(config.template_files.objects, {__dirname: configDir}));
+        const outputFileName = path.normalize(mustache.render(config.output_files.objects, {__dirname: configDir, name: name}));
 
-	// make sure doc_file exists
-	if (!fs.existsSync(doc_file)) {
-		console.error("Unable to load object documentation from " + config.object_doc_url);
-		console.log("Run node build-js -refresh to download the latest documentation.");
-		process.exit(1);
-	}
+        // make sure the template file exists
+        if (!fs.existsSync(templateFileName)) {
+            console.error(`Object template file not found: ${templateFileName}`);
+            process.exit(1);
+        }
 
-	// load the object document
-	var json = fs.readFileSync(doc_file);
-	var objectDocs = JSON.parse(String(json));
+        // make sure the output directory exists. Create it if it doesn't.
+        const outputDir = path.dirname(outputFileName);
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
 
-	// figure out what generators we're actually running and throw them in an array
-	var to_generate = [];
-	if (generator_name === 'all') {
-		for (var i in config.generators) {
-			to_generate.push(i);
-		}
-	} else {
-		if (typeof (config.aliases[generator_name]) === 'string') generator_name = config.aliases[generator_name];
-		to_generate.push(generator_name);
-	}
+        // run the object through the template using ejs
+        const template = fs.readFileSync(templateFileName, 'utf8');
+        const output = ejs.render(template, {model:object, helper: helper, partial: partial, config: config});
+        fs.writeFileSync(outputFileName, output);
+    }
 
-	function generate(generate_as) {
-		// get actual generator name if user is using an alias
-		if (typeof (config.aliases[generate_as]) === 'string') generate_as = config.aliases[generate_as];
+    console.log("Object models generated.");
 
-		// attempt to import the generator
-		var baseDir = './generators/' + generate_as.toLowerCase();
-		if (!fs.existsSync(baseDir + '/generate.js')) {
-			console.error("No generator exists for '" + generate_as + "'");
-			process.exit(1);
-		}
-		var generator = require(baseDir + '/generate.js');
+    const resultObjects = {};
+    const componentObjects = {};
+    
+    // split up the component and result objects
+    for (const component in object_doc.components) {
 
-		console.log("Generating " + generate_as + "...");
+        // this is more of a parent class users could build off of, not a base object.
+        // we will make separate result objects for each component.
+        if (component === "Result") continue;
 
-		// pass the config to the generator
-		generator.config = config.generators[generate_as.toLowerCase()];
+        for (const method in object_doc.components[component].methods) {
 
-		/**
-		 * Checks if a director exists and creates it if needed
-		 * @param {string} dir The directory to check
-		 * @return {string} The directory that was checked
-		 */
-		function checkDir(dir) {
-			if (!fs.existsSync(dir)) {
-				fs.mkdirSync(dir, { recursive: true });
-				if (!fs.existsSync(dir)) {
-					console.error("Unable to create directory: ", dir);
-					process.exit(1);
-				}
-			}
-			return dir;
-		}
+            if (!componentObjects[component]) componentObjects[component] = {};
+            componentObjects[component][method] = object_doc.components[component].methods[method];
+            componentObjects[component][method].component = component;
+            componentObjects[component][method].method = method;
 
-		function checkFilePath(path) {
-			path = path.replaceAll("\\", "/").split("/");
+            // the method parameters will technically be properties of the model
+            // so let's key them as properties for consistency
+            componentObjects[component][method].properties = componentObjects[component][method].params;
 
-			let name = path.pop();
-			path = checkDir(path.join("/"));
+            // if this component has no return, we won't need to model a result object
+            if (!object_doc.components[component].methods[method].return) continue;
 
-			return path + "/" + name;
-		}
+            if (!resultObjects[component]) resultObjects[component] = {};
 
-		var objectLists = {
-			objects: [],
-			components: [],
-			results: []
-		};
+            resultObjects[component][method] = {
+                properties: object_doc.components[component].methods[method].return,
+                component: component,
+                method: method
+            };
+        }
+    }
 
-		// Loop through the docs and generate request and response files for each component/method
-		for (const [name, obj] of Object.entries(objectDocs.components)) {
-			for (const [method, data] of Object.entries(obj.methods)) {
+    console.log("Component models generated.");
+    
+    for (const component in componentObjects) {
+        for (const method in componentObjects[component]) {
 
-				objectLists.components.push(name + "." + method);
+            const model = componentObjects[component][method];
 
-				if (generator.generateComponentObject) {
-					// create a request object file for each method
-					[file_name, file_contents] = generator.generateComponentObject(name, method, data);
+            const templateFileName = path.normalize(mustache.render(config.template_files.components, {__dirname: configDir}));
+            const outputFileName = path.normalize(mustache.render(config.output_files.components, {__dirname: configDir, component: component, method: method}));
 
-					// save the file
-					file_name = checkFilePath(generator.config.outputDirs.components + "/" + file_name);
-					fs.writeFileSync(file_name, file_contents);
+            // make sure the template file exists
+            if (!fs.existsSync(templateFileName)) {
+                console.error(`Component template file not found: ${templateFileName}`);
+                process.exit(1);
+            }
 
-					console.log('created', file_name);
-				}
+            // make sure the output directory exists. Create it if it doesn't.
+            const outputDir = path.dirname(outputFileName);
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
 
-				// create a result object file for each method
-				if (data.return) {
+            // run the object through the template using ejs
+            const template = fs.readFileSync(templateFileName, 'utf8');
+            const output = ejs.render(template, {model:model, helper: helper, partial: partial, config: config});
+            fs.writeFileSync(outputFileName, output);
+        }
+    }
+    
+    for (const component in resultObjects) {
+        for (const method in resultObjects[component]) {
+            const result = resultObjects[component][method];
+            
+            const templateFileName = path.normalize(mustache.render(config.template_files.results, {__dirname: configDir}));
+            const outputFileName = path.normalize(mustache.render(config.output_files.results, {__dirname: configDir, component: component, method: method}));
 
-					objectLists.results.push(name + "." + method);
+            // make sure the template file exists
+            if (!fs.existsSync(templateFileName)) {
+                console.error(`Results template file not found: ${templateFileName}`);
+                process.exit(1);
+            }
 
-					if (generator.generateResultObject) {
-						// generate the code
-						[file_name, file_contents] = generator.generateResultObject(name, method, data.return);
+            // make sure the output directory exists. Create it if it doesn't.
+            const outputDir = path.dirname(outputFileName);
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
 
-						// save the file
-						file_name = checkFilePath(generator.config.outputDirs.component_results + "/" + file_name);
-						fs.writeFileSync(file_name, file_contents);
+            // run the object through the template using ejs
+            const template = fs.readFileSync(templateFileName, 'utf8');
+            const output = ejs.render(template, {model:result, helper: helper, partial: partial, config: config});
+            fs.writeFileSync(outputFileName, output);
+        }
+    }
 
-						console.log('created', file_name);
-					}
-				}
-			}
-		}
+    console.log("Result models generated.");
 
-		// Loop through the docs and generate a file for each object
-		for (const [name, obj] of Object.entries(objectDocs.objects)) {
+    // see if we need to build an object index for this library
+    if (config.template_files.object_index && config.output_files.object_index) {
+        const templateFileName = path.normalize(mustache.render(config.template_files.object_index, {__dirname: configDir}));
+        const outputFileName = path.normalize(mustache.render(config.output_files.object_index, {__dirname: configDir}));
 
-			objectLists.objects.push(name);
+        // make sure the template file exists
+        if (!fs.existsSync(templateFileName)) {
+            console.error(`Object index template file not found: ${templateFileName}`);
+            process.exit(1);
+        }
 
-			let partials = null;
-			if (generator.config.partialDirs && generator.config.partialDirs.objects) {
-				let partial_file = generator.config.partialDirs.objects + "/" + name + ".js";
-				if (fs.existsSync(partial_file))
-					partials = require(partial_file);
-			}
+        // make sure the output directory exists. Create it if it doesn't.
+        const outputDir = path.dirname(outputFileName);
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
 
-			if (generator.generateObject) {
-				// generate the code
-				[file_name, file_contents] = generator.generateObject(name, obj, partials);
+        // we'll pass all of our model objects to the template
+        const models = {
+            objects: object_doc.objects,
+            components: componentObjects,
+            results: resultObjects
+        };
 
-				if (!file_contents) continue;
-
-				// save the file
-				file_name = checkFilePath(generator.config.outputDirs.objects + "/" + file_name);
-				fs.writeFileSync(file_name, file_contents);
-
-				console.log('created', file_name);
-			}
-		}
-
-		if (generator.generateObjectIndex) {
-			[file_name, file_contents] = generator.generateObjectIndex(objectLists);
-
-			if (file_contents) {
-				// save the file
-				file_name = checkFilePath(generator.config.outputDirs.object_index + "/" + file_name);
-				fs.writeFileSync(file_name, file_contents);
-
-				console.log('created', file_name);
-			}
-		}
-
-		console.log("done!");
-	}
-
-	// start generating!
-	to_generate.forEach(function (generate_as) {
-		generate(generate_as);
-	});
-
-
-	if (flags.watch) {
-		let scanned = false;
-
-		to_generate.forEach(function (generate_as) {
-
-			let queued = false;
-
-			function onChange(file) {
-				if (!scanned || queued) return;
-
-				queued = true;
-
-				setTimeout(() => {
-					exec("node " + __dirname + "/build.js " + generate_as, (error, stdout, stderr) => {
-						if (error) {
-							console.log(`error: ${error.message}`);
-							process.exit();
-						}
-						if (stderr) {
-							console.log(`stderr: ${stderr}`);
-							process.exit();
-						}
-						console.log(stdout);
-						console.log(file, "updated at " + (new Date()).toLocaleString());
-
-						queued = false;
-					});
-				}, 100);
-			}
-
-			let watcher = chokidar.watch("./generators/" + to_generate + "/", { persistent: true });
-
-			watcher
-				.on('add', onChange)
-				.on('change', onChange)
-				.on('unlink', onChange)
-				.on('unlinkDir', onChange)
-				;
-
-			console.log("Watching " + generate_as + "...");
-		});
-
-		setTimeout(() => {
-			scanned = true;
-		}, 500);
-	}
-}
+        // run the object through the template using ejs
+        const template = fs.readFileSync(templateFileName, 'utf8');
+        const output = ejs.render(template, {models:models, helper: helper, partial: partial, config: config});
+        fs.writeFileSync(outputFileName, output);
+    }
+})();

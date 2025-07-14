@@ -22,6 +22,8 @@
   "author": "Josh Tuttle <josh@psychogoldfish.com>",
   "license": "MIT",
   "dependencies": {
-    "chokidar": "^3.5.3"
+    "chokidar": "^3.5.3",
+    "ejs": "^3.1.10",
+    "mustache": "^4.2.0"
   }
 }
