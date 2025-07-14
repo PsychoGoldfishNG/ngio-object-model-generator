@@ -150,7 +150,7 @@ function downloadObjectDocAsync() {
             if (!fs.existsSync(path.dirname(object_doc_file))) {
                 fs.mkdirSync(path.dirname(object_doc_file), { recursive: true });
             }
-            
+
             const file = fs.createWriteStream(object_doc_file);
             res.pipe(file);
             file.on("finish", () => {
@@ -218,6 +218,10 @@ async function ensureLatestObjectDoc() {
     // Load the documentation file
     const object_doc = JSON.parse(fs.readFileSync(object_doc_file, "utf8"));
 
+    // not everything in the object documentation is a model we want to build.
+    // we'll keep all the model docs we actually want to build in this object.
+    const coreObjects = {};
+
     // build the base-level object models
     for (const name in object_doc.objects) {
 
@@ -226,8 +230,9 @@ async function ensureLatestObjectDoc() {
         if (name === "Result") continue;
 
         const object = object_doc.objects[name];
-        
         object.name = name;
+
+        coreObjects[name] = object;
 
         const templateFileName = path.normalize(mustache.render(config.template_files.objects, {__dirname: configDir}));
         const outputFileName = path.normalize(mustache.render(config.output_files.objects, {__dirname: configDir, name: name}));
@@ -362,7 +367,7 @@ async function ensureLatestObjectDoc() {
 
         // we'll pass all of our model objects to the template
         const models = {
-            objects: object_doc.objects,
+            objects: coreObjects,
             components: componentObjects,
             results: resultObjects
         };
