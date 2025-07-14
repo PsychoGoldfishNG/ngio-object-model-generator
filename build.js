@@ -146,6 +146,11 @@ function downloadObjectDocAsync() {
                 return reject(error);
             }
             
+            // make sure object_doc_file target direct exists, create if needed
+            if (!fs.existsSync(path.dirname(object_doc_file))) {
+                fs.mkdirSync(path.dirname(object_doc_file), { recursive: true });
+            }
+            
             const file = fs.createWriteStream(object_doc_file);
             res.pipe(file);
             file.on("finish", () => {
