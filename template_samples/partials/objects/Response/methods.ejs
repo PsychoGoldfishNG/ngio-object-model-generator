@@ -1,0 +1,22 @@
+    /**
+     * special handler for result objects that makes sure
+     * the appropriate model is created based on the component name.
+     *
+     * @param value The value to set the result to.
+     */
+    public function setResult(value:Mixed):Void
+    {
+        if (value instanceof Array) {
+            var aValue;
+            var newArr = [];
+            for (var i = 0; i < value.length; i++) {
+                aValue = newgroundsIO.models.objects.ObjectIndex.CreateResult(value[i].component, value[i].data);
+                newArr.push(aValue);
+            }
+            value = newArr;
+        } else {
+            value = newgroundsIO.models.objects.ObjectIndex.CreateResult(value.component, value.data);
+        }
+
+        this.result = value;
+    }

@@ -1,0 +1,146 @@
+<%  
+/**
+ * This template is written in EJS (Embedded JavaScript)
+ * 
+ * This allows you to execute javascript between `<%` and `%>` tags
+ * 
+ * If you open your tag with `<%`, anything rendered will not be printed to the output.
+ * If you open your tag with `<%=`, anything rendered will be printed to the output, but safely escaped.
+ * If you open your tag with `<%-`, anything rendered will be printed to the output, but NOT escaped (you typically want to use this when generating code).
+ *
+ * If you close your tag with `%>`, it will end javascript execution and return to the template.
+ * If you close your tag with `-%>`, it will end javascript execution and return to the template, but also trim any trailing whitespace.
+ */
+-%>
+<% 
+// We'll use this to get the key names for each property
+const propertyNames = Object.keys(model.properties);
+
+
+// we'll use this to keep track of required properties
+const requiredParams = [];
+
+-%>
+
+// IMPORT ANY UNIVERSAL DEPENDENCIES FOR COMPONENT RESULT MODELS HERE
+<%
+/**
+ * model.name is the name of the object we are modeling.
+ *
+ * 
+ * In your config file, you will set up the base path for any partials.
+ * You can use partial.get (partial must exist) or partial.getIfExists (will do nothing if partial does not exist)
+ * to include snippets of reusable template code by providing a path to the partial (relative to the base path), 
+ * and an optional data object the partial can use for dynamic content.
+ *
+ * If this was the model for the Medal object, the partial file being included would be:
+ * {partials_dir}/objects/Medal/imports.ejs
+ */
+-%>
+<%- partial.getIfExists(`objects/${model.name}/imports`) -%>
+
+<%
+/**
+ * Start the class definition
+ * 
+ * Our helper module will help us format the component description into a multiline comment
+ */
+-%>
+<%- helper.formatMultilineComment(model.description, "") %>
+class io.newgrounds.models.objects.<%- model.name %> extends io.newgrounds.models.BaseObject {
+
+<%
+/**
+ * Here's an example loop where we define all of our properties in
+ * private variables, prefixed with an underscore.
+ * 
+ * We will also track which properties are required while we're at it.
+ * 
+ * further down, we will create getter/setter methods for each property.
+ */
+-%>
+<% if (hasProperties) { -%>
+<%   for(let prop in model.properties) { -%>
+<%     // If this is a required property, add it to the list -%>
+<%     if(model.properties[prop].required) requiredParams.push(prop); -%>
+
+<%  // we're using our helper module to print the proper data type for this property -%>
+    private var _<%- prop %>:<%- helper.getDataType(model.properties[prop]) %> = <%- model.properties[prop].default === undefined ? "null" : JSON.stringify(model.properties[prop].default) %>;
+
+<%   } -%>
+<% } -%>
+
+<%
+    // You can set any universal properties here...
+-%>
+    // the name of this object for identification/debugging
+    public var objectName:String = "<%- model.name %>";
+
+    // These properties are required for this object to be valid
+    public var requiredParams:Array<String> = <%- JSON.stringify(requiredParams) %>;
+
+<% // You can use partials to add custom, object-specific properties -%>
+<%- partial.getIfExists(`objects/${model.name}/properties`) -%>
+
+    /**
+     * Constructor 
+     * @param props An object of initial properties for this instance
+     */
+    public function <%- model.name %>(props:Object)
+    {
+        super();
+
+        // fill the properties with the initial values
+        for (var prop:String in props) {
+            // if the property is defined in this component, set it
+            if (this.propertyNames.indexOf(prop) >= 0) {
+                this[prop] = props[prop];
+            } else {
+                // otherwise, throw an error
+                throw new Error("Property '" + prop + "' is not defined for component '" + this.componentName + "'.");
+            }
+        }
+    }
+
+<% // Here is a sample loop to generate getter/setter methods -%>
+<% if (propertyNames.length > 0) { -%>
+<%   for(let prop in model.properties) { -%>
+
+<%- helper.formatMultilineComment(model.properties[prop].description, "    ") %>
+    public function get <%- prop %>():<%- helper.getDataType(model.properties[prop]) %>
+    {
+        return this._<%- prop %>;
+    }
+    
+    public function set <%- prop %>(<%- prop %>:<%- helper.getDataType(model.properties[prop]) %>)
+    {
+<%
+        /**
+         * Add additional logic to the setter as needed.
+         * 
+         * Property definitions may have a few properties that will help you handle this bit.
+         * 
+         * if model.properties[prop].type is set, it will be a string like "string", "number", "boolean", etc, indicating
+         *     the type of data this property should be.
+         * 
+         * if model.properties[prop].object is set, it will be one of our core object types like "Medal", "User", etc.
+         *     This can be used to cast the data to the correct model.
+         * 
+         * if model.properties[prop].array is set, this property can be an array of values.  This will be an object
+         *     containing either a type or an object property, similar to the above.
+         * 
+         * it is possible for a property to have an array value AND a type or object value.
+         *     In this case, the value can either be a typed value, or an array of that same type.
+         */
+-%>
+
+        this._<%- prop %> = <%- prop %>;
+    }
+
+<%   } -%>
+<% } -%>
+
+<% } -%>
+<%- partial.getIfExists(`objects/${model.name}/methods`) -%>
+
+}

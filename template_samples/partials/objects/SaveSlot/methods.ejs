@@ -1,0 +1,65 @@
+    /**
+     * @return {Boolean} True if this save slot has data, false otherwise.
+     */
+    public function hasData():Boolean
+    {
+        return this.url !== null;
+    }
+    
+    /**
+     * Clears the save slot, removing any data associated with it.
+     * @param callback The function to call when the slot is cleared.
+     * @param thisArg The context to use when calling the callback.
+     */
+    public function clear(callback:Function, thisArg:Object) 
+    {
+        // Add logic to clear a save slot here.
+    }
+
+    /**
+     * Loads the raw data for the save slot.
+     * @param callback The function to call with the raw data.
+     * @param thisArg The context to use when calling the callback.
+     */
+    public function loadRaw(callback:Function, thisArg:Object)
+    {
+        // Add logic for loading raw save data from a slot here
+    }
+    
+    /**
+     * Sets the raw data for the save slot.
+     * @param data The raw data to set.
+     * @param callback The function to call when the data is set.
+     * @param thisArg The context to use when calling the callback.
+     */
+    public function setDataRaw(data:String, callback:Function, thisArg:Object)
+    {
+        // Add logic for setting raw save data to a slot here
+    }
+
+    /**
+     * Loads the data for the save slot and decodes it from JSON.
+     * @param callback The function to call with the decoded data.
+     * @param thisArg The context to use when calling the callback.
+     */
+    public function load(callback:Function, thisArg:Object)
+    {
+        this.loadRaw(function(data:String):Void
+        {
+            var decoded = null;
+            if (data) decoded = YOUR_JSON_DECODER(data);
+            callback.call(thisArg, decoded);
+
+        }, this);
+    }
+
+    /**
+     * Sets the data for the save slot, encoding it to JSON.
+     * @param data The data to set.
+     * @param callback The function to call when the data is set.
+     * @param thisArg The context to use when calling the callback.
+     */
+    public function setData(data:Object, callback:Function, thisArg:Object)
+    {
+        this.setDataRaw(YOUR_JSON_ENCODER(data), callback, thisArg);
+    }
