@@ -1,4 +1,6 @@
+#!/usr/bin/env node
 'use strict';
+
 const fs = require('fs');
 const https = require('https');
 const chokidar = require('chokidar');
@@ -6,25 +8,24 @@ const { exec } = require("child_process");
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-// use simple mustache templating for filename generation
+// We use mustache variables in config files for path definitions
 const mustache = require('mustache');
 
-// use more advanced ejs for the model templates
+// We use the more advanced ejs when generating from model templates
 const ejs = require('ejs');
 
-// the object documentation is available in a json file at this url
+// the object documentation is available in a json file at this url (it gets updated as new features are added to the API)
 const object_doc_url = "https://www.newgrounds.io/help/objects_and_components.json";
 
-// we'll save the downloaded object documentation here
+// we'll download a local version of the documentation here
 const object_doc_file = path.join(__dirname, 'docs', 'objects_and_components.json');
 
-// and note the last updated time here
-// this is used to check if the documentation is up-to-date so we don't download it every time we run the script
+// We'll store when the documentation was last updated here.  We use this to avoid re-downloading it if we don't need to.
 const object_doc_stamp = path.join(__dirname, 'docs', 'last_updated');
 
-// we should have one extra argument, pointing at the config file, relative to the project path
+// We expect one argument: the path to the config file
 if (process.argv.length < 3) {
-    console.error("Usage: node build.js <config_file>");
+    console.error("Usage: npx ngio-modgen-build <path-to-config-file>\n\nRun 'npx ngio-modgen-setup <project-destination-path>' to create a new setup first.");
     process.exit(1);
 }
 let config_file = process.argv[2];
@@ -60,6 +61,7 @@ const partialDir = path.normalize(mustache.render(config.partials_dir ?? `${conf
  * This object has methods for loading and rendering partial templates within our outer templates.
  */
 const partial = {
+
     /**
      * Checks if a partial template file exists.
      * @param {string} partial The name of the partial template (without extension).
@@ -231,6 +233,10 @@ async function ensureLatestObjectDoc() {
 
         const object = object_doc.objects[name];
         object.name = name;
+        object.ucc_name = name.charAt(0).toUpperCase() + name.slice(1);
+        object.lcc_name = name.charAt(0).toLowerCase() + name.slice(1);
+        object.uc_name = name.toUpperCase();
+        object.lc_name = name.toLowerCase();
 
         coreObjects[name] = object;
 
@@ -272,7 +278,13 @@ async function ensureLatestObjectDoc() {
             if (!componentObjects[component]) componentObjects[component] = {};
             componentObjects[component][method] = object_doc.components[component].methods[method];
             componentObjects[component][method].component = component;
+            componentObjects[component][method].lc_component = component.toLowerCase();
+            componentObjects[component][method].uc_component = component.toUpperCase();
+            componentObjects[component][method].lcc_component = component.charAt(0).toLowerCase() + component.slice(1);
+            componentObjects[component][method].ucc_component = component.charAt(0).toUpperCase() + component.slice(1);
             componentObjects[component][method].method = method;
+            componentObjects[component][method].lc_method = method.toLowerCase();
+            componentObjects[component][method].ucc_method = method.charAt(0).toUpperCase() + method.slice(1);
 
             // the method parameters will technically be properties of the model
             // so let's key them as properties for consistency
@@ -286,7 +298,15 @@ async function ensureLatestObjectDoc() {
             resultObjects[component][method] = {
                 properties: object_doc.components[component].methods[method].return,
                 component: component,
-                method: method
+                lc_component: component.toLowerCase(),
+                uc_component: component.toUpperCase(),
+                lcc_component: component.charAt(0).toLowerCase() + component.slice(1),
+                ucc_component: component.charAt(0).toUpperCase() + component.slice(1),
+                method: method,
+                lc_method: method.toLowerCase(),
+                uc_method: method.toUpperCase(),
+                lcc_method: method.charAt(0).toLowerCase() + method.slice(1),
+                ucc_method: method.charAt(0).toUpperCase() + method.slice(1)
             };
         }
     }
@@ -349,9 +369,9 @@ async function ensureLatestObjectDoc() {
     console.log("Result models generated.");
 
     // see if we need to build an object index for this library
-    if (config.template_files.object_index && config.output_files.object_index) {
-        const templateFileName = path.normalize(mustache.render(config.template_files.object_index, {__dirname: configDir}));
-        const outputFileName = path.normalize(mustache.render(config.output_files.object_index, {__dirname: configDir}));
+    if (config.template_files.object_factory && config.output_files.object_factory) {
+        const templateFileName = path.normalize(mustache.render(config.template_files.object_factory, {__dirname: configDir}));
+        const outputFileName = path.normalize(mustache.render(config.output_files.object_factory, {__dirname: configDir}));
 
         // make sure the template file exists
         if (!fs.existsSync(templateFileName)) {
