@@ -1,0 +1,181 @@
+COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR ScoreBoard OBJECT
+    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    COMMENT: ====================================================================================
+    
+    /**
+     * Loads scores from this scoreboard with optional filtering.
+     */
+    METHOD getScores(filters: Object, callback: Function, thisArg: Object)
+        
+        PURPOSE: Retrieves scores from this scoreboard with various filter options
+        
+        PARAMETERS:
+            filters: Object containing optional filters:
+                - user_id: Filter by specific user ID
+                - user_name: Filter by username
+                - period: Time period ('D'=day, 'W'=week, 'M'=month, 'Y'=year, 'A'=all-time)
+                - limit: Max number of scores to return (1-100, default: 10)
+                - skip: Number of scores to skip (for pagination, default: 0)
+                - social: Get only friends' scores (requires logged-in user)
+                - tag: Filter by score tag
+            callback: Function to call with the loaded scores
+            thisArg: Context to use when calling the callback
+        
+        WHY: Developers need flexible ways to query scoreboards - by user, time period,
+             friends-only, pagination, etc.
+        
+        BEHAVIOR:
+            COMMENT: Ensure filters is an object
+            IF filters is not an object THEN
+                SET filters TO empty object
+            END IF
+            
+            CREATE props as empty object
+            
+            COMMENT: Handle user ID filter
+            IF filters.user_id is defined THEN
+                CREATE filters.user AS new User object WITH {id: filters.user_id}
+            END IF
+            
+            COMMENT: Handle username filter
+            IF filters.user_name is defined THEN
+                IF filters.user is already defined THEN
+                    COMMENT: User object exists, just add the name
+                    SET filters.user.name TO filters.user_name
+                ELSE
+                    COMMENT: Create new user object with the name
+                    CREATE filters.user AS new User object WITH {name: filters.user_name}
+                END IF
+            END IF
+            
+            COMMENT: Set default period to daily
+            IF filters.period is undefined or null THEN
+                SET filters.period TO 'D'
+            END IF
+            SET props.period TO filters.period
+            
+            COMMENT: Validate and set limit
+            IF filters.limit is undefined or null THEN
+                SET filters.limit TO 10
+            END IF
+            
+            IF filters.limit < 1 THEN
+                THROW Error('ScoreBoard filter limit must be a number greater than 0.')
+            END IF
+            
+            IF filters.limit > 100 THEN
+                THROW Error('ScoreBoard filter limit must be a number less than or equal to 100.')
+            END IF
+            
+            SET props.limit TO filters.limit
+            
+            COMMENT: Set skip for pagination
+            IF filters.skip is not defined THEN
+                SET filters.skip TO 0
+            END IF
+            SET props.skip TO filters.skip
+            
+            COMMENT: Handle social filter (friends only)
+            IF user is logged in AND filters.social is true THEN
+                COMMENT: TODO: Replace METHOD_FOR_CHECKING_IF_USER_EXISTS with your user check
+                SET props.social TO true
+            END IF
+            
+            COMMENT: Handle tag filter
+            IF filters.tag is defined THEN
+                SET props.tag TO filters.tag
+            END IF
+            
+            COMMENT: Handle user filter (can be ID, username, or User object)
+            IF filters.user is valid user reference THEN
+                SET props.user TO filters.user
+            END IF
+            
+            COMMENT: Add this scoreboard's ID
+            SET props.id TO this.id
+            
+            COMMENT: Create the component
+            CREATE component AS new ScoreBoard.getScores WITH props
+            
+            CREATE callbackParams WITH {
+                callback: callback,
+                thisArg: thisArg
+            }
+            
+            COMMENT: TODO: Execute the component via your API wrapper
+            COMMENT: When complete, call this.onScoresLoaded with result and callbackParams
+    END METHOD
+    
+    /**
+     * Callback handler for when scores are loaded.
+     */
+    METHOD onScoresLoaded(result: ScoreBoard.getScores, callbackParams: Object)
+        
+        PURPOSE: Processes the loaded scores and executes the user's callback
+        
+        PARAMETERS:
+            result: The result object from ScoreBoard.getScores
+            callbackParams: The callback parameters stored during getScores()
+        
+        BEHAVIOR:
+            COMMENT: Call the user's callback with the scores array
+            CALL callbackParams.callback WITH context callbackParams.thisArg
+                PASSING result.scores
+    END METHOD
+
+    /**
+     * Posts a score to this scoreboard.
+     */
+    METHOD postScore(value: Number, tag: String, callback: Function, thisArg: Object)
+        
+        PURPOSE: Submits a score to this scoreboard for the current user
+        
+        PARAMETERS:
+            value: The score value to post
+            tag: Optional tag to associate with the score (e.g., level name, difficulty)
+            callback: Function to call when posting is complete
+            thisArg: Context to use when calling the callback
+        
+        WHY: This is how users submit their scores to leaderboards
+        
+        BEHAVIOR:
+            COMMENT: Build the component properties
+            CREATE props WITH {
+                id: this.id,
+                value: value
+            }
+            
+            COMMENT: Add tag if provided
+            IF tag is a non-empty string THEN
+                SET props.tag TO tag
+            END IF
+            
+            COMMENT: Create the component
+            CREATE component AS new ScoreBoard.postScore WITH props
+            
+            CREATE callbackParams WITH {
+                callback: callback,
+                thisArg: thisArg
+            }
+            
+            COMMENT: TODO: Execute the component via your API wrapper
+            COMMENT: When complete, call this.onPostScore with result and callbackParams
+    END METHOD
+
+    /**
+     * Callback handler for when a score is posted.
+     */
+    METHOD onPostScore(result: ScoreBoard.postScore, callbackParams: Object)
+        
+        PURPOSE: Processes the posted score result and executes the user's callback
+        
+        PARAMETERS:
+            result: The result object from ScoreBoard.postScore
+            callbackParams: The callback parameters stored during postScore()
+        
+        BEHAVIOR:
+            COMMENT: Call the user's callback with the posted score object
+            CALL callbackParams.callback WITH context callbackParams.thisArg
+                PASSING result.score
+    END METHOD

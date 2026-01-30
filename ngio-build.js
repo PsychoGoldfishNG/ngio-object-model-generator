@@ -4,12 +4,7 @@
 const fs = require('fs');
 const https = require('https');
 const chokidar = require('chokidar');
-const { exec } = require("child_process");
 const path = require('path');
-const { pathToFileURL } = require('url');
-
-// We use mustache variables in config files for path definitions
-const mustache = require('mustache');
 
 // We use the more advanced ejs when generating from model templates
 const ejs = require('ejs');
@@ -25,7 +20,7 @@ const object_doc_stamp = path.join(__dirname, 'docs', 'last_updated');
 
 // We expect one argument: the path to the config file
 if (process.argv.length < 3) {
-    console.error("Usage: npx ngio-modgen-build <path-to-config-file>\n\nRun 'npx ngio-modgen-setup <project-destination-path>' to create a new setup first.");
+    console.error("Usage: npx ngio-build <path-to-config-file>\n\nRun 'npx ngio-init <project-destination-path>' to create a new setup first.");
     process.exit(1);
 }
 let config_file = process.argv[2];
@@ -41,21 +36,25 @@ if (!fs.existsSync(config_file)) {
     process.exit(1);
 }
 
+// if config_file is a directory, we assume the config.js file is inside it
+if (fs.lstatSync(config_file).isDirectory()) {
+    config_file = path.join(config_file, 'config.js');
+
+    // but, does it exist?
+    if (!fs.existsSync(config_file)) {
+        console.error(`Config file not found in directory: ${config_file}`);
+        process.exit(1);
+    }
+}
+
 // load the config file
 console.log("NGIO Model Builder - Loading config file:", config_file);
 const config = require(config_file);
 
-// get the directory the config file is in.  Most of the paths in there will be relative to this directory.
-const configDir = path.dirname(config_file);
-
-// when checking paths in the config file, there are a few mustache variables we can use
-// {{__dirname}} will be replaced with the directory the config file is in
-// {{name}} will be replaced with the name of object models
-// {{component}} will be replaced with the compnent namespace that component methods and result objects belong to
-// {{method}} will be replaced with the method name of component methods and their result objects
+const fileExt = config.output_file_extension;
 
 // get the directory our partials are in
-const partialDir = path.normalize(mustache.render(config.partials_dir ?? `${configDir}/partials`, {__dirname: configDir}));
+const partialDir = path.normalize(config.partials_dir);
 
 /**
  * This object has methods for loading and rendering partial templates within our outer templates.
@@ -87,7 +86,11 @@ const partial = {
         }
 
         const template = fs.readFileSync(partialFile, 'utf8');
-        return ejs.render(template, data);
+        try {
+            return ejs.render(template, data);
+        } catch (err) {
+            throw new Error(`Error rendering partial template: ${partialFile}\n${err.message}`);
+        }
     },
 
     /**
@@ -148,7 +151,7 @@ function downloadObjectDocAsync() {
                 return reject(error);
             }
             
-            // make sure object_doc_file target direct exists, create if needed
+            // make sure object_doc_file target directory exists, create if needed
             if (!fs.existsSync(path.dirname(object_doc_file))) {
                 fs.mkdirSync(path.dirname(object_doc_file), { recursive: true });
             }
@@ -198,22 +201,6 @@ async function ensureLatestObjectDoc() {
 // everything else is wrapped in an async function so we can use await...
 (async () => {
 
-    // if we have a path set for a helper module, load that, or just use an empty object.
-    // this helper variable will be injected into the templates, so users can add custom functions to help with rendering.
-    let helper = {};
-    if (config.helper_module) {
-
-        // load the helper module if it exists
-        const helperModulePath = path.normalize(mustache.render(config.helper_module, {__dirname: configDir}));
-
-        if (fs.existsSync(helperModulePath)) {
-            helper = require(helperModulePath);
-        } else {
-            console.error(`Helper module not found: ${helperModulePath}`);
-            process.exit(1);
-        }
-    }
-
     // Make sure we have the latest model documentation.
     await ensureLatestObjectDoc();
 
@@ -233,15 +220,11 @@ async function ensureLatestObjectDoc() {
 
         const object = object_doc.objects[name];
         object.name = name;
-        object.ucc_name = name.charAt(0).toUpperCase() + name.slice(1);
-        object.lcc_name = name.charAt(0).toLowerCase() + name.slice(1);
-        object.uc_name = name.toUpperCase();
-        object.lc_name = name.toLowerCase();
 
         coreObjects[name] = object;
 
-        const templateFileName = path.normalize(mustache.render(config.template_files.objects, {__dirname: configDir}));
-        const outputFileName = path.normalize(mustache.render(config.output_files.objects, {__dirname: configDir, name: name}));
+        const templateFileName = path.normalize(config.template_files.objects(config));
+        const outputFileName = path.normalize(config.model_files.objects(config, name));
 
         // make sure the template file exists
         if (!fs.existsSync(templateFileName)) {
@@ -257,8 +240,12 @@ async function ensureLatestObjectDoc() {
 
         // run the object through the template using ejs
         const template = fs.readFileSync(templateFileName, 'utf8');
-        const output = ejs.render(template, {model:object, helper: helper, partial: partial, config: config});
-        fs.writeFileSync(outputFileName, output);
+        try {
+            const output = ejs.render(template, {model:object, helpers: config.helpers, partial: partial, config: config});
+            fs.writeFileSync(outputFileName, output);
+        } catch (err) {
+            throw new Error(`Error rendering object template: ${templateFileName}\nObject: ${name}\n${err.message}`);
+        }
     }
 
     console.log("Object models generated.");
@@ -278,13 +265,7 @@ async function ensureLatestObjectDoc() {
             if (!componentObjects[component]) componentObjects[component] = {};
             componentObjects[component][method] = object_doc.components[component].methods[method];
             componentObjects[component][method].component = component;
-            componentObjects[component][method].lc_component = component.toLowerCase();
-            componentObjects[component][method].uc_component = component.toUpperCase();
-            componentObjects[component][method].lcc_component = component.charAt(0).toLowerCase() + component.slice(1);
-            componentObjects[component][method].ucc_component = component.charAt(0).toUpperCase() + component.slice(1);
             componentObjects[component][method].method = method;
-            componentObjects[component][method].lc_method = method.toLowerCase();
-            componentObjects[component][method].ucc_method = method.charAt(0).toUpperCase() + method.slice(1);
 
             // the method parameters will technically be properties of the model
             // so let's key them as properties for consistency
@@ -298,15 +279,7 @@ async function ensureLatestObjectDoc() {
             resultObjects[component][method] = {
                 properties: object_doc.components[component].methods[method].return,
                 component: component,
-                lc_component: component.toLowerCase(),
-                uc_component: component.toUpperCase(),
-                lcc_component: component.charAt(0).toLowerCase() + component.slice(1),
-                ucc_component: component.charAt(0).toUpperCase() + component.slice(1),
                 method: method,
-                lc_method: method.toLowerCase(),
-                uc_method: method.toUpperCase(),
-                lcc_method: method.charAt(0).toLowerCase() + method.slice(1),
-                ucc_method: method.charAt(0).toUpperCase() + method.slice(1)
             };
         }
     }
@@ -318,8 +291,8 @@ async function ensureLatestObjectDoc() {
 
             const model = componentObjects[component][method];
 
-            const templateFileName = path.normalize(mustache.render(config.template_files.components, {__dirname: configDir}));
-            const outputFileName = path.normalize(mustache.render(config.output_files.components, {__dirname: configDir, component: component, method: method}));
+            const templateFileName = path.normalize(config.template_files.components(config));
+            const outputFileName = path.normalize(config.model_files.components(config, component, method));
 
             // make sure the template file exists
             if (!fs.existsSync(templateFileName)) {
@@ -335,8 +308,12 @@ async function ensureLatestObjectDoc() {
 
             // run the object through the template using ejs
             const template = fs.readFileSync(templateFileName, 'utf8');
-            const output = ejs.render(template, {model:model, helper: helper, partial: partial, config: config});
-            fs.writeFileSync(outputFileName, output);
+            try {
+                const output = ejs.render(template, {model:model, helpers: config.helpers, partial: partial, config: config});
+                fs.writeFileSync(outputFileName, output);
+            } catch (err) {
+                throw new Error(`Error rendering component template: ${templateFileName}\nComponent: ${component}.${method}\n${err.message}`);
+            }
         }
     }
     
@@ -344,8 +321,8 @@ async function ensureLatestObjectDoc() {
         for (const method in resultObjects[component]) {
             const result = resultObjects[component][method];
             
-            const templateFileName = path.normalize(mustache.render(config.template_files.results, {__dirname: configDir}));
-            const outputFileName = path.normalize(mustache.render(config.output_files.results, {__dirname: configDir, component: component, method: method}));
+            const templateFileName = path.normalize(config.template_files.results(config));
+            const outputFileName = path.normalize(config.model_files.results(config, component, method));
 
             // make sure the template file exists
             if (!fs.existsSync(templateFileName)) {
@@ -361,17 +338,21 @@ async function ensureLatestObjectDoc() {
 
             // run the object through the template using ejs
             const template = fs.readFileSync(templateFileName, 'utf8');
-            const output = ejs.render(template, {model:result, helper: helper, partial: partial, config: config});
-            fs.writeFileSync(outputFileName, output);
+            try {
+                const output = ejs.render(template, {model:result, helpers: config.helpers, partial: partial, config: config});
+                fs.writeFileSync(outputFileName, output);
+            } catch (err) {
+                throw new Error(`Error rendering result template: ${templateFileName}\nResult: ${component}.${method}\n${err.message}`);
+            }
         }
     }
 
     console.log("Result models generated.");
 
     // see if we need to build an object index for this library
-    if (config.template_files.object_factory && config.output_files.object_factory) {
-        const templateFileName = path.normalize(mustache.render(config.template_files.object_factory, {__dirname: configDir}));
-        const outputFileName = path.normalize(mustache.render(config.output_files.object_factory, {__dirname: configDir}));
+    if (config.template_files.object_factory && config.model_files.object_factory) {
+        const templateFileName = path.normalize(config.template_files.object_factory(config));
+        const outputFileName = path.normalize(config.model_files.object_factory(config));
 
         // make sure the template file exists
         if (!fs.existsSync(templateFileName)) {
@@ -394,7 +375,11 @@ async function ensureLatestObjectDoc() {
 
         // run the object through the template using ejs
         const template = fs.readFileSync(templateFileName, 'utf8');
-        const output = ejs.render(template, {models:models, helper: helper, partial: partial, config: config});
-        fs.writeFileSync(outputFileName, output);
+        try {
+            const output = ejs.render(template, {models:models, helpers: config.helpers, partial: partial, config: config});
+            fs.writeFileSync(outputFileName, output);
+        } catch (err) {
+            throw new Error(`Error rendering object factory template: ${templateFileName}\n${err.message}`);
+        }
     }
 })();

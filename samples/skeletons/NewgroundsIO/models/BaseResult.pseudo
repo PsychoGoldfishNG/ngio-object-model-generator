@@ -1,0 +1,185 @@
+CLASS BaseResult
+    DESCRIPTION: Base class for all component result models received from server
+    NAMESPACE: NewgroundsIO.models
+    EXTENDS: BaseObject
+    
+    PURPOSE: When you send a component to the server, the server sends back a result.
+    This base class provides the common structure for all result objects.
+    
+    KEY CONCEPT: Results are INCOMING - received FROM the server.
+    Components are the REQUEST. Results are the RESPONSE.
+    
+    RESULT PATTERN:
+    Every component produces a result:
+    - Medal.unlock component -> Medal.unlockResult
+    - Score.postScore component -> Score.postScoreResult
+    - CheckSession component -> CheckSessionResult
+    - etc.
+    
+    All results extend BaseResult and contain:
+    1. Success flag (did it work?)
+    2. Error object (if it failed)
+    3. Component-specific response data
+    
+    ====================
+    PUBLIC PROPERTIES (beyond BaseObject)
+    ====================
+    
+    success: boolean = false
+        PURPOSE: Whether the component execution succeeded
+        WHY: Developers need to know if the action completed successfully
+        ALWAYS SET: The server ALWAYS sets this - never null or undefined
+        MEANING:
+            - true: Component executed successfully
+            - false: Component failed (check error property for why)
+        USAGE: Check this first - if false, something went wrong
+    
+    error: NewgroundsIO.models.objects.Error | null = null
+        PURPOSE: Details about what went wrong (if success=false)
+        WHY: Provides specific error code and message
+        WHEN SET: Only when success=false
+        WHEN NULL: When success=true (no error)
+        CONTENTS: { code, message }
+        ERROR CODES: Defined in NewgroundsIO.Errors
+        EXAMPLES:
+            - code=110 (LOGIN_REQUIRED): User must be logged in
+            - code=202 (INVALID_MEDAL_ID): Medal doesn't exist
+            - code=500 (SERVER_ERROR): Server encountered a problem
+    
+    ====================
+    COMPONENT-SPECIFIC PROPERTIES
+    ====================
+    
+    COMMENT: Each component type adds its own properties. Examples:
+    COMMENT:
+    COMMENT: Medal.unlockResult adds:
+    COMMENT:   - medal: Medal object (the medal that was unlocked)
+    COMMENT:   - medalScore: number (new total score)
+    COMMENT:
+    COMMENT: Score.postScoreResult adds:
+    COMMENT:   - scoreboard: ScoreBoard object (updated board info)
+    COMMENT:   - score: Score object (the score that was posted)
+    COMMENT:
+    COMMENT: Scoreboard.getScoresResult adds:
+    COMMENT:   - scoreboard: ScoreBoard object
+    COMMENT:   - scores: array of Score objects
+    COMMENT:
+    COMMENT: CloudSave.loadSlotResult adds:
+    COMMENT:   - saveSlot: SaveSlot object (with data loaded from cloud)
+    COMMENT:
+    COMMENT: Subclasses define:
+    COMMENT: - propertyNames: include 'success', 'error', plus component-specific props
+    COMMENT: - castTypes: define how to convert each property
+    COMMENT: - requiredProperties: usually just ['success']
+    
+    ====================
+    CONSTRUCTOR
+    ====================
+    
+    CONSTRUCTOR()
+        
+        PURPOSE: Initialize the result with default property values
+        
+        BEHAVIOR:
+            COMMENT: Call parent constructor
+            CALL super()
+            
+            COMMENT: Set default values
+            COMMENT: Most results start with success=false and no error set
+            COMMENT: (These will be overwritten when imported from server response)
+            SET this.success TO false
+            SET this.error TO null
+    END CONSTRUCTOR
+    
+    ====================
+    USAGE PATTERN
+    ====================
+    
+    COMMENT: Typical usage in developer code:
+    COMMENT:
+    COMMENT: NGIO.core.queueComponent(medalComponent)
+    COMMENT: NGIO.core.executeQueue(function(response) {
+    COMMENT:     COMMENT: response is a Response object containing an array of results
+    COMMENT:     IF response is null THEN
+    COMMENT:         COMMENT: Network error
+    COMMENT:         showError("Network error")
+    COMMENT:         RETURN
+    COMMENT:     END IF
+    COMMENT:
+    COMMENT:     COMMENT: Loop through the results
+    COMMENT:     FOR EACH result IN response.results
+    COMMENT:         IF result.success THEN
+    COMMENT:             COMMENT: Component succeeded
+    COMMENT:             COMMENT: result contains component-specific data
+    COMMENT:             IF result is Medal.unlockResult THEN
+    COMMENT:                 showNotification("Medal unlocked: " + result.medal.name)
+    COMMENT:                 updateScoreDisplay(result.medalScore)
+    COMMENT:             END IF
+    COMMENT:         ELSE
+    COMMENT:             COMMENT: Component failed
+    COMMENT:             COMMENT: result.error explains why
+    COMMENT:             showError("Failed: " + result.error.message)
+    COMMENT:         END IF
+    COMMENT:     END FOR
+    COMMENT: })
+    
+    ====================
+    DESIGN PATTERNS
+    ====================
+    
+    COMMENT: Observer Pattern Support:
+    COMMENT:   Results often trigger observers when properties change
+    COMMENT:   Example: When medal is unlocked, observers listening to
+    COMMENT:   appState.medals are notified of the change
+    COMMENT:   This allows the UI to automatically update
+    COMMENT:
+    COMMENT: Object Updates:
+    COMMENT:   When a result contains an object (like Medal), it often
+    COMMENT:   updates an existing object instead of replacing it
+    COMMENT:   This preserves object references used by the rest of the code
+    COMMENT:
+    COMMENT: Cascading Updates:
+    COMMENT:   A single result might update multiple app state properties
+    COMMENT:   Example: Unlock medal updates:
+    COMMENT:   - The specific medal object (unlocked=true)
+    COMMENT:   - The medals array (triggers observer)
+    COMMENT:   - The user's medal score (medalScore property)
+    COMMENT:   All in one result
+    
+    ====================
+    IMPORTANT NOTES
+    ====================
+    
+    COMMENT: Always Check Success:
+    COMMENT:   Never assume a component succeeded. Always check:
+    COMMENT:   IF result.success THEN
+    COMMENT:       COMMENT: Safe to use component-specific properties
+    COMMENT:   ELSE
+    COMMENT:       COMMENT: Use result.error for error details
+    COMMENT:   END IF
+    COMMENT:
+    COMMENT: Error Handling:
+    COMMENT:   If success=false, result.error is guaranteed to exist
+    COMMENT:   - result.error.code: Numeric error code
+    COMMENT:   - result.error.message: Human-readable message
+    COMMENT:
+    COMMENT: Component-Specific Data:
+    COMMENT:   The specific properties in a result depend on the component
+    COMMENT:   Refer to component documentation for what properties are available
+    COMMENT:   Example: Medal.unlockResult will have medal and medalScore,
+    COMMENT:   but Score.postScoreResult might have different properties
+    COMMENT:
+    COMMENT: Server Authority:
+    COMMENT:   The server is the authority. The values in the result represent
+    COMMENT:   the server's state, not what you sent. For example:
+    COMMENT:   - You might request unlocking medal ID 5
+    COMMENT:   - Server returns updated medal object with current unlock status
+    COMMENT:   - Medal might already have been unlocked (no change in result)
+    COMMENT:
+    COMMENT: Immutable Results:
+    COMMENT:   Results from the server shouldn't be modified by application code
+    COMMENT:   They represent a snapshot of server state at a moment in time
+    COMMENT:   If you want to change something, send another component
+    COMMENT:   Don't directly modify result properties
+
+END CLASS

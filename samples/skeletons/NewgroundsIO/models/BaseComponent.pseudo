@@ -1,0 +1,244 @@
+CLASS BaseComponent
+    DESCRIPTION: Base class for all component models sent to servers
+    NAMESPACE: NewgroundsIO.models
+    EXTENDS: BaseObject
+    
+    PURPOSE: Components are the building blocks of API calls. Every action you send to
+    the server (unlock a medal, post a score, check session, etc.) is done via a component.
+    This base class provides common functionality for all component types.
+    
+    KEY CONCEPT: Components are OUTGOING - sent FROM the app TO the server.
+    (Results are the INCOMING response FROM server TO app)
+    
+    WHY SEPARATE CLASS: Components have special requirements that regular models don't:
+    - Some must be encrypted before transmission
+    - Some require the user to be logged in
+    - Some open browser windows (redirects)
+    - Some need special validation (can't execute without a valid session)
+    
+    COMPONENT HIERARCHY:
+    - BaseComponent is the foundation
+    - All specific components (Medal.unlock, Score.postScore, etc.) extend BaseComponent
+    - Each component defines its own properties and requirements
+    
+    ====================
+    PUBLIC PROPERTIES (beyond BaseObject)
+    ====================
+    
+    isSecure: boolean = false
+        PURPOSE: Whether this component must be encrypted before sending
+        WHY: Sensitive operations like unlocking medals or posting scores are encrypted
+        to prevent hackers from cheating
+        ENCRYPTION PROCESS: When true, the component is encrypted using the app's
+        encryption key before being sent to the server
+        WHEN TRUE: Medal.unlock, Score.postScore, Scoreboard operations
+        WHEN FALSE: Read-only operations like Medal.getList, Scoreboard.getBoards
+    
+    requiresSession: boolean = false
+        PURPOSE: Whether the user must be logged in to execute this component
+        WHY: Some actions are only available to authenticated users
+        EXAMPLES: 
+            - requiresSession=true: Post a score to scoreboard (user must be logged in)
+            - requiresSession=false: Get list of all medals (anyone can view)
+        VALIDATION: If requiresSession=true and user is not logged in,
+        hasValidProperties() will fail with an error
+    
+    isRedirect: boolean = false
+        PURPOSE: Whether this component opens a browser window
+        WHY: Login (Passport) is handled via browser window, not JSON API
+        REDIRECT PROCESS: When true, instead of making AJAX request with JSON,
+        the browser is redirected to the gateway with component data in URL
+        EXAMPLES:
+            - Passport login opens a window for authentication
+            - Once complete, window closes and session is updated
+        WHEN TRUE: Usually only Passport.login
+    
+    browserTarget: string | null = null
+        PURPOSE: The window/frame to open redirect in (if isRedirect=true)
+        WHY: Specifies where the browser window/tab should open
+        VALUES: 
+            - "_blank": Open in new window/tab
+            - "_self": Replace current window
+            - "_parent": Open in parent frame
+            - "_top": Open at top level
+        DEFAULT: "_blank" for popups
+    
+    ====================
+    CONSTRUCTOR
+    ====================
+    
+    CONSTRUCTOR()
+        
+        PURPOSE: Initialize the component with default property values
+        
+        BEHAVIOR:
+            COMMENT: Call parent constructor
+            CALL super()
+            
+            COMMENT: Set component-specific defaults
+            SET this.isSecure TO false
+            SET this.requiresSession TO false
+            SET this.isRedirect TO false
+            SET this.browserTarget TO null
+    END CONSTRUCTOR
+    
+    ====================
+    OVERRIDDEN METHODS
+    ====================
+    
+    FUNCTION hasValidProperties(): boolean
+        
+        PURPOSE: Enhanced validation that includes session requirements
+        WHY: Components have special validation - they might require a logged-in user
+        
+        RETURNS: true if valid, false if any validation fails
+        
+        EXPLANATION:
+            This method enhances BaseObject.hasValidProperties() with extra checks:
+            1. First runs the parent validation (check required properties)
+            2. Then checks component-specific requirements (session validation)
+        
+        BEHAVIOR:
+            COMMENT: ==================== RUN PARENT VALIDATION ====================
+            COMMENT: Check all the basic required properties first
+            CREATE parentIsValid AS CALL super.hasValidProperties()
+            IF parentIsValid is false THEN
+                COMMENT: Parent validation failed - this component is incomplete
+                RETURN false
+            END IF
+            
+            COMMENT: ==================== CHECK SESSION REQUIREMENT ====================
+            IF this.requiresSession is true THEN
+                COMMENT: This component requires the user to be logged in
+                COMMENT: Check if we have a valid authenticated session
+                
+                COMMENT: First check if core is available
+                IF this.core is null THEN
+                    COMMENT: No core reference - can't check session
+                    RETURN false
+                END IF
+                
+                COMMENT: Check if appState is available
+                IF this.core.appState is null THEN
+                    COMMENT: No app state - can't check session
+                    RETURN false
+                END IF
+                
+                COMMENT: Get the current session from app state
+                CREATE session AS this.core.appState.session
+                
+                COMMENT: Validate the session exists
+                IF session is null THEN
+                    COMMENT: No session at all - can't execute
+                    RETURN false
+                END IF
+                
+                COMMENT: Validate that session has an ID
+                IF session.id is null OR session.id is empty THEN
+                    COMMENT: No session token - can't execute
+                    RETURN false
+                END IF
+                
+                COMMENT: Validate that a user is logged in
+                IF session.user is null THEN
+                    COMMENT: Session exists but no user logged in - can't execute
+                    RETURN false
+                END IF
+                
+                COMMENT: Validate that user has an ID
+                IF session.user.id is null OR session.user.id is empty THEN
+                    COMMENT: User exists but has no ID - invalid state
+                    RETURN false
+                END IF
+            END IF
+            
+            COMMENT: ==================== ALL VALIDATION PASSED ====================
+            COMMENT: Component is properly formatted and can be executed
+            RETURN true
+    END FUNCTION
+    
+    ====================
+    COMPONENT EXECUTION FLOW (FOR DEVELOPERS)
+    ====================
+    
+    COMMENT: Understanding how a component gets executed:
+    COMMENT:
+    COMMENT: STEP 1: Create the component
+    COMMENT:    var component = new Medal.unlock()
+    COMMENT:    component.id = 5
+    COMMENT:
+    COMMENT: STEP 2: (Optional) Queue it or execute immediately
+    COMMENT:    NGIO.core.queueComponent(component)
+    COMMENT:    NGIO.core.executeQueue(onComplete)
+    COMMENT:    OR
+    COMMENT:    NGIO.core.executeComponent(component, onComplete)
+    COMMENT:
+    COMMENT: STEP 3: Core wraps it in an Execute object
+    COMMENT:    var execute = new Execute()
+    COMMENT:    execute.setComponent(component)
+    COMMENT:
+    COMMENT: STEP 4: Core wraps all executes in a Request object
+    COMMENT:    var request = new Request()
+    COMMENT:    request.setExecute([execute1, execute2])
+    COMMENT:
+    COMMENT: STEP 5: Request converts to plain object (triggering encryption if needed)
+    COMMENT:    This is where:
+    COMMENT:    - isSecure components get encrypted
+    COMMENT:    - Properties are validated
+    COMMENT:    - The request is prepared for transmission
+    COMMENT:
+    COMMENT: STEP 6: Request is converted to JSON and sent via HTTP POST
+    COMMENT:    JSON is sent to gateway_v3.php on Newgrounds server
+    COMMENT:
+    COMMENT: STEP 7: Server processes the components
+    COMMENT:    - Validates that properties are correct
+    COMMENT:    - Decrypts any secure components
+    COMMENT:    - Executes the component logic (unlock medal, post score, etc.)
+    COMMENT:    - Generates a Result object with the outcome
+    COMMENT:
+    COMMENT: STEP 8: Server returns JSON response
+    COMMENT:    Response contains:
+    COMMENT:    - success flag (true/false)
+    COMMENT:    - result object (specific to the component type)
+    COMMENT:    - error object (if success=false)
+    COMMENT:
+    COMMENT: STEP 9: Core parses the response
+    COMMENT:    - Response object is created and populated from JSON
+    COMMENT:    - AppState is updated with any new data
+    COMMENT:    - Result objects are created and populated
+    COMMENT:
+    COMMENT: STEP 10: Callback is invoked with the Response
+    COMMENT:    Developer's callback is called with the results
+    COMMENT:    Developer can check result.success and react appropriately
+    
+    ====================
+    IMPORTANT DESIGN NOTES
+    ====================
+    
+    COMMENT: Session Validation Timing:
+    COMMENT:   The requiresSession check happens in hasValidProperties()
+    COMMENT:   This is called BEFORE sending to the server
+    COMMENT:   So if user logs out, component validation will fail locally
+    COMMENT:   (no network request wasted on impossible operation)
+    COMMENT:
+    COMMENT: Encryption:
+    COMMENT:   If isSecure=true, the component is encrypted by Core.encryptData()
+    COMMENT:   This prevents cheaters from modifying the component in transit
+    COMMENT:   Example: Medal unlock rewards must be encrypted or hacker could fake it
+    COMMENT:
+    COMMENT: Redirects:
+    COMMENT:   Some components (usually login) use isRedirect=true
+    COMMENT:   These don't get responses back to the app
+    COMMENT:   Instead, the browser is redirected to complete the action
+    COMMENT:   After redirect completes, session is updated server-side
+    COMMENT:   App detects the change on next checkSession() call
+    COMMENT:
+    COMMENT: Server-Side Validation:
+    COMMENT:   Just because a component passes hasValidProperties() locally doesn't mean
+    COMMENT:   the server will accept it. The server does additional validation:
+    COMMENT:   - Are values in valid range?
+    COMMENT:   - Does the medal/scoreboard exist?
+    COMMENT:   - Does the user have permission?
+    COMMENT:   If server rejects it, the result.error will contain the reason
+
+END CLASS

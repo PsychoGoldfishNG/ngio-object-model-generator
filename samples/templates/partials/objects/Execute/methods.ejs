@@ -1,0 +1,53 @@
+COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR Execute OBJECT
+    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    COMMENT: ====================================================================================
+    
+    /**
+     * Sets the component to be executed.
+     */
+    METHOD setComponent(component: BaseComponent)
+        
+        PURPOSE: Assigns a component to this Execute object for queuing
+        
+        PARAMETERS:
+            component: Any component model (must extend BaseComponent)
+        
+        WHY: Execute objects wrap components so they can be batched and sent together
+        
+        BEHAVIOR:
+            SET this._componentObject TO component
+    END METHOD
+    
+    /**
+     * Converts this Execute object to a JSON-compatible format.
+     * Handles encryption for secure components.
+     */
+    METHOD toJsonObject(): Object
+        
+        PURPOSE: Serializes this Execute object for sending to the API
+        
+        RETURNS: A plain object that can be converted to JSON
+        
+        WHY: The API needs Execute objects in a specific format. Secure components
+             (like medal unlocks) must be encrypted to prevent cheating.
+        
+        BEHAVIOR:
+            COMMENT: Build the basic execute object structure
+            CREATE obj WITH {
+                component: this._componentObject.getObjectName(),
+                parameters: this._componentObject.toJsonObject()
+            }
+            
+            COMMENT: If this component requires encryption, wrap it in a secure object
+            IF this._componentObject.isSecure THEN
+                COMMENT: TODO: Replace YOUR_ENCRYPTION_HANDLER with your actual encryption logic
+                RETURN {
+                    secure: YOUR_ENCRYPTION_HANDLER(obj)
+                }
+            END IF
+            
+            COMMENT: Not secure, return as-is
+            RETURN obj
+    END METHOD
+    

@@ -1,0 +1,45 @@
+COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR Response OBJECT
+    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    COMMENT: ====================================================================================
+    
+    /**
+     * Special handler for result objects that creates the appropriate result model
+     * based on the component name.
+     */
+    METHOD setResult(value: Mixed)
+        
+        PURPOSE: Sets the result property with proper result object instantiation
+        
+        PARAMETERS:
+            value: The raw result data from the API (can be object or array)
+        
+        WHY: The API returns result data as plain objects with a component name.
+             We need to convert these to actual result model instances.
+        
+        BEHAVIOR:
+            COMMENT: Check if this is an array of results (batch execution)
+            IF value is an Array THEN
+                CREATE newArr as empty array
+                
+                COMMENT: Convert each result object to the appropriate model instance
+                FOR EACH item IN value
+                    CREATE resultInstance using ObjectIndex.CreateResult(
+                        item.component, 
+                        item.data
+                    )
+                    ADD resultInstance TO newArr
+                END FOR
+                
+                SET value TO newArr
+            ELSE
+                COMMENT: Single result - convert to appropriate model instance
+                SET value TO ObjectIndex.CreateResult(
+                    value.component, 
+                    value.data
+                )
+            END IF
+            
+            COMMENT: Set the result property with the converted value(s)
+            SET this.result TO value
+    END METHOD

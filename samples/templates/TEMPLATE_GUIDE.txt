@@ -1,0 +1,336 @@
+================================================================================
+NEWGROUNDS.IO MODEL GENERATOR - TEMPLATE GUIDE
+================================================================================
+
+This guide explains how the EJS template system works and how to customize
+templates for your target programming language.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. What Are Templates?
+2. EJS Template Syntax
+3. Available Variables
+4. Template Structure
+5. The Partial System
+6. Customizing Templates
+7. Helper Functions
+8. Best Practices
+
+
+================================================================================
+1. WHAT ARE TEMPLATES?
+================================================================================
+
+Templates are EJS files that generate your model classes. The model builder
+reads the Newgrounds.io API documentation and passes object/component data
+through these templates to create code in your target language.
+
+There are four main template types:
+
+  object.ejs         - Generates classes for core objects (Medal, User, etc.)
+  component.ejs      - Generates classes for API components (Medal.unlock, etc.)
+  result.ejs         - Generates result classes for API responses
+  object_factory.ejs - Generates a factory for creating object instances
+
+
+================================================================================
+2. EJS TEMPLATE SYNTAX
+================================================================================
+
+EJS (Embedded JavaScript) allows you to generate text output using JavaScript.
+
+Full documentation: https://ejs.co/
+
+Key syntax patterns:
+
+  <% code %>         Execute JavaScript code (nothing printed)
+  <%= value %>       Print value with HTML escaping
+  <%- value %>       Print value without escaping (use this for code generation)
+  <%# comment %>     Comment (not included in output)
+
+Examples:
+
+  <% const name = "Medal"; %>                      // Execute code
+  <%- model.name %>                                // Output: Medal
+  <% if (model.properties) { %>...code...<% } %>  // Conditional output
+
+
+================================================================================
+3. AVAILABLE VARIABLES
+================================================================================
+
+All templates receive these variables:
+
+  model
+    - The object/component/result model being generated
+    - Contains: name, description, properties, etc.
+    
+  helpers
+    - Your custom helper functions from helpers.js
+    - Use for name transformations, type conversions, etc.
+    - Examples: helpers.convertToSnakeCase(name)
+                helpers.getDataType(property)
+    
+  partial
+    - Methods to include partial templates
+    - Methods: partial.get(path, data)
+               partial.getIfExists(path, data)
+               partial.has(path)
+    
+  config
+    - Your full config object
+    - Access to all config settings and functions
+
+
+Object-specific variables (object.ejs):
+  - model.name          // "Medal", "User", "ScoreBoard", etc.
+  - model.description   // Human-readable description
+  - model.properties    // Object with all properties
+
+Component-specific variables (component.ejs):
+  - model.component     // "Medal", "App", "ScoreBoard", etc.
+  - model.method        // "unlock", "checkSession", "getScores", etc.
+  - model.properties    // Parameters this component accepts
+  - model.secure        // Boolean - must be encrypted?
+  - model.require_session // Boolean - requires logged-in user?
+  - model.redirect      // Boolean - opens in new tab?
+
+Result-specific variables (result.ejs):
+  - model.component     // Parent component namespace
+  - model.method        // Parent method name
+  - model.properties    // Properties this result returns
+
+
+================================================================================
+4. TEMPLATE STRUCTURE
+================================================================================
+
+Templates in this project use a "pseudo-code" format that makes them readable
+by both humans and LLMs while still being flexible for code generation.
+
+Example structure from object.ejs:
+
+    COMMENT: ====================================================================================
+    COMMENT: CLASS DEFINITION
+    COMMENT: ====================================================================================
+    
+    CLASS <%- model.name %>
+        PURPOSE: Represents a <%- model.description.toLowerCase() %>
+        
+        COMMENT: ====================================================================================
+        COMMENT: PROPERTIES
+        COMMENT: ====================================================================================
+        
+    <% for (let prop in model.properties) { %>
+        PRIVATE _<%- prop %>: <%- helpers.getDataType(model.properties[prop]) %>
+    <% } %>
+    
+    END CLASS
+
+This pseudo-code format:
+  - Makes templates easier to read and understand
+  - Provides clear structure for LLMs to work with
+  - Can be easily adapted to any target language
+  - Documents the purpose and behavior inline
+
+
+================================================================================
+5. THE PARTIAL SYSTEM
+================================================================================
+
+Partials allow you to add custom code to specific objects without modifying
+the main templates.
+
+Directory structure:
+
+    partials/
+      objects/
+        Medal/
+          methods.ejs       - Custom methods for Medal objects
+          properties.ejs    - Custom properties for Medal objects
+        Execute/
+          methods.ejs
+          properties.ejs
+        SaveSlot/
+          methods.ejs
+      components/
+        (future: custom component code)
+      results/
+        (future: custom result code)
+
+
+Using partials in templates:
+
+    <%- partial.getIfExists(`objects/${model.name}/methods`) %>
+    
+    This will:
+      1. Check if partials/objects/Medal/methods.ejs exists (where model.name is "Medal")
+      2. If yes, render it and include the output
+      3. If no, output nothing (no error)
+
+
+Partial methods:
+
+    partial.has(path)
+      - Returns true/false if partial exists
+      - Example: <% if (partial.has('objects/Medal/methods')) { %>
+    
+    partial.get(path, data)
+      - Loads and renders a partial (throws error if missing)
+      - Pass additional data to the partial if needed
+      - Example: <%- partial.get('objects/Medal/methods', {extra: 'data'}) %>
+    
+    partial.getIfExists(path, data)
+      - Loads and renders a partial if it exists, otherwise returns ""
+      - Safe to use - won't throw errors
+      - Most commonly used method
+
+
+Partials receive the same variables as the parent template (model, helpers,
+partial, config).
+
+
+================================================================================
+6. CUSTOMIZING TEMPLATES
+================================================================================
+
+To adapt templates to your target language:
+
+1. SYNTAX CONVERSION
+   Replace pseudo-code keywords with your language's syntax:
+   
+   Pseudo-code          →  JavaScript       →  C#              →  Python
+   ─────────────────────────────────────────────────────────────────────────
+   CLASS Medal          →  class Medal      →  class Medal     →  class Medal:
+   PRIVATE _id          →  #_id             →  private int _id →  def __init__
+   GETTER id()          →  get id()         →  public int Id   →  @property
+   METHOD unlock()      →  unlock()         →  public void     →  def unlock(self)
+   END CLASS            →  }                →  }               →  (indentation)
+
+2. TYPE MAPPING
+   Update helpers.getDataType() to return types for your language:
+   
+   API Type    →  JavaScript  →  C#        →  Python
+   ──────────────────────────────────────────────────
+   String      →  string      →  string    →  str
+   Number      →  number      →  int       →  int
+   Boolean     →  boolean     →  bool      →  bool
+   Array       →  Array       →  List<T>   →  list
+
+3. NAMING CONVENTIONS
+   Use helper functions to transform names:
+   
+   helpers.convertToSnakeCase()          // medal_unlock
+   helpers.convertToKebabCase()          // medal-unlock
+   helpers.convertToPascalCase()         // MedalUnlock
+   helpers.convertToCamelCase()          // medalUnlock
+   helpers.convertToScreamingSnakeCase() // MEDAL_UNLOCK
+
+4. FILE ORGANIZATION
+   Update config.js model_files functions to control where files are generated
+   and what extensions they use.
+
+
+================================================================================
+7. HELPER FUNCTIONS
+================================================================================
+
+The helpers module (helpers.js) contains utility functions for templates.
+
+Common helper functions:
+
+  helpers.getDataType(property)
+    - Converts API property types to your language's types
+    - Handles objects, arrays, primitives
+    - Update this function to suit your needs!
+    
+  helpers.convertToSnakeCase(str)
+  helpers.convertToCamelCase(str)
+  helpers.convertToPascalCase(str)
+  helpers.convertToKebabCase(str)
+  helpers.convertToScreamingSnakeCase(str)
+    - Name transformation utilities
+    
+  helpers.formatMultilineComment(text, indent)
+    - Formats descriptions as multi-line comments
+    - Automatically handles line wrapping
+    - Assumes ES style comments, may need editing
+
+You can add your own helper functions in helpers.js. The helpers object is
+available in all templates and config functions.
+
+
+================================================================================
+8. BEST PRACTICES
+================================================================================
+
+DO:
+  ✓ Use <%- %> for code output (not <%= %>)
+  ✓ Use helpers.getDataType() for consistent type mapping
+  ✓ Use partial.getIfExists() instead of partial.get() for optional partials
+  ✓ Add comments explaining complex template logic
+  ✓ Use helpers for name transformations (don't hardcode casing)
+  ✓ Test templates with multiple objects/components
+
+DON'T:
+  ✗ Don't use <%= %> for code generation (it escapes special characters)
+  ✗ Don't put EJS syntax examples in EJS comments (EJS will try to parse them)
+  ✗ Don't repeat logic - use helpers or partials
+  ✗ Don't forget to handle edge cases (objects with no properties, etc.)
+
+
+================================================================================
+EXAMPLE: CUSTOMIZING FOR JAVASCRIPT
+================================================================================
+
+Here's a snippet from object.ejs customized for JavaScript:
+
+    class <%- model.name %> {
+        
+        /**
+         * <%- model.description %>
+         */
+        constructor() {
+    <% for (let prop in model.properties) { %>
+            this._<%- prop %> = null;
+    <% } %>
+        }
+        
+    <% for (let prop in model.properties) { %>
+        /**
+         * <%- model.properties[prop].description %>
+         */
+        get <%- prop %>() {
+            return this._<%- prop %>;
+        }
+        
+        set <%- prop %>(value) {
+            this._<%- prop %> = value;
+        }
+        
+    <% } %>
+        <%- partial.getIfExists(`objects/${model.name}/methods`) %>
+    }
+    
+    module.exports = <%- model.name %>;
+
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Review the existing templates (object.ejs, component.ejs, etc.)
+2. Look at the partials/ directory to see examples of custom code
+3. Modify helpers.js to return correct types for your language
+4. Update templates to use your language's syntax
+5. Test with: npx ngio-build <config.js>
+6. Check the generated files in your build directory
+
+For more information:
+  - EJS Documentation: https://ejs.co/
+  - Newgrounds.io API: https://www.newgrounds.io/help/
+  - API Objects & Components: https://www.newgrounds.io/help/objects_and_components.json
+
+================================================================================

@@ -1,0 +1,55 @@
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHOD: unlock
+    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    COMMENT: ====================================================================================
+    
+    /**
+     * Unlocks this medal for the current user.
+     */
+    METHOD unlock(callback: Function, thisArg: Object)
+        
+        PURPOSE: Unlocks this medal and notifies the callback when complete
+        
+        PARAMETERS:
+            callback: Function to call when the unlock completes
+            thisArg: Context to use when calling the callback
+        
+        BEHAVIOR:
+            COMMENT: Store callback parameters for later use
+            CREATE callbackParams object WITH {
+                callback: callback,
+                thisArg: thisArg
+            }
+            
+            COMMENT: TODO: Add your medal unlocking logic here
+            COMMENT: This should call the Medal.unlock component via your API wrapper
+            COMMENT: When complete, call this.onUnlock with the result and callbackParams
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: CALLBACK METHOD: onUnlock
+    COMMENT: ====================================================================================
+    
+    /**
+     * Callback handler for when the medal unlock completes.
+     */
+    METHOD onUnlock(result: Object, callbackParams: Object)
+        
+        PURPOSE: Processes the result of the medal unlock and executes the user's callback
+        
+        PARAMETERS:
+            result: The result object from the Medal.unlock component call
+            callbackParams: The callback parameters stored during unlock()
+        
+        BEHAVIOR:
+            COMMENT: If the unlock was successful, update this medal's state
+            IF result.success THEN
+                SET this.unlocked TO true
+            END IF
+            
+            COMMENT: Call the user's callback if one was provided
+            IF callbackParams.callback is defined THEN
+                CALL callbackParams.callback WITH context callbackParams.thisArg
+                    PASSING result.medal, result.medal_score
+            END IF
+    END METHOD

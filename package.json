@@ -2,10 +2,11 @@
   "name": "@psychogoldfish/ngio-object-model-generator",
   "version": "1.0.0",
   "description": "A framework for building Newgrounds.io API model files.",
-  "main": "ngio-modgen-build.js",
+  "main": "ngio-build.js",
   "bin": {
-    "ngio-modgen-build": "./ngio-modgen-build.js",
-    "ngio-modgen-setup": "./ngio-modgen-setup.js"
+    "ngio-init": "./ngio-init.js",
+    "ngio-scaffold": "./ngio-scaffold.js",
+    "ngio-build": "./ngio-build.js"
   },
   "repository": {
     "type": "git",

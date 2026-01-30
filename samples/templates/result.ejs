@@ -1,0 +1,161 @@
+<%
+/**
+ * ====================================================================================
+ * TEMPLATE: Component Result Model
+ * ====================================================================================
+ * 
+ * PURPOSE: Generates class files for component result objects.
+ * 
+ * WHAT ARE RESULTS?: When you call a component (API method), the server responds with
+ * a result object containing the data returned. For example:
+ * - Medal.unlock returns: { medal_score: number, unlocked_medals: array<Medal> }
+ * - ScoreBoard.getScores returns: { scores: array<Score>, user: User }
+ * - App.checkSession returns: { session: Session }
+ * 
+ * WHY SEPARATE FROM COMPONENTS?: Components are what you SEND to the server (input),
+ * Results are what you GET BACK from the server (output). They're modeled separately.
+ * 
+ * AVAILABLE VARIABLES:
+ * - model: Object containing all properties and metadata for this result
+ * - model.component: The component namespace (e.g., "Medal", "App", "ScoreBoard")
+ * - model.method: The method name (e.g., "unlock", "checkSession", "getScores")
+ * - model.properties: Object containing all properties this result returns
+ * - helpers: Your custom helper methods (from helpers.js)
+ * - partial: Methods to include partial templates (partial.get, partial.getIfExists)
+ * - config: Your full config object with all settings
+ * 
+ * EJS DOCUMENTATION: https://ejs.co/
+ * 
+ * ====================================================================================
+ */
+
+// COMMENT: Prepare data structures we'll need while generating this class
+const propertyNames = Object.keys(model.properties);
+const requiredParams = [];
+const hasProperties = propertyNames.length > 0;
+-%>
+
+COMMENT: ====================================================================================
+COMMENT: IMPORTS / DEPENDENCIES
+COMMENT: ====================================================================================
+COMMENT: Include any imports needed for this result type.
+COMMENT: Use partials to add result-specific imports. Example partial path for Medal.unlock:
+COMMENT: {partials_dir}/results/Medal/unlock/imports.ejs
+<%- partial.getIfExists(`results/${model.component}/${model.method}/imports`) -%>
+
+COMMENT: ====================================================================================
+COMMENT: CLASS DEFINITION
+COMMENT: ====================================================================================
+/**
+ * Returned when the <%- model.component %>.<%- model.method %> component is called.
+ */
+CLASS <%- model.method %>Result
+    EXTENDS: BaseResult
+    NAMESPACE: [Your namespace here, e.g., io.newgrounds.models.results.<%- model.component %>]
+    
+    PURPOSE: Contains the data returned by the <%- model.component %>.<%- model.method %> API call.
+    
+    RESULT INFO:
+        Component: <%- model.component %>
+        Method: <%- model.method %>
+    RESULT INFO:
+        Component: <%- model.component %>
+        Method: <%- model.method %>
+    
+    COMMENT: ====================================================================================
+    COMMENT: PRIVATE PROPERTIES
+    COMMENT: ====================================================================================
+    COMMENT: Store all properties as private variables with underscore prefix.
+    COMMENT: Public getters/setters will be generated below.
+    
+<% if (hasProperties) { -%>
+<%   for (let prop in model.properties) { -%>
+<%     if (model.properties[prop].required) requiredParams.push(prop); -%>
+    COMMENT: <%- model.properties[prop].description %>
+    PRIVATE <%- prop %>: <%- helpers.getDataType(model.properties[prop]) %> = <%- model.properties[prop].default === undefined ? "null" : JSON.stringify(model.properties[prop].default) %>
+    
+<%   } -%>
+<% } -%>
+    COMMENT: ====================================================================================
+    COMMENT: PUBLIC PROPERTIES
+    COMMENT: ====================================================================================
+    
+    PUBLIC componentName: string = "<%- model.component %>.<%- model.method %>"
+        PURPOSE: Identifies which component method returned this result
+        WHY: Useful for debugging - knowing which API call produced this data
+    
+    PUBLIC propertyNames: array<string> = <%- JSON.stringify(propertyNames) %>
+        PURPOSE: Lists all property names this result contains
+    
+    PUBLIC requiredParams: array<string> = <%- JSON.stringify(requiredParams) %>
+        PURPOSE: Lists which properties should always be present in a valid result
+        WHY: Used for validation - ensures the server returned all expected data
+    
+<%- partial.getIfExists(`results/${model.component}/${model.method}/properties`) -%>
+
+    COMMENT: ====================================================================================
+    COMMENT: CONSTRUCTOR
+    COMMENT: ====================================================================================
+    
+    CONSTRUCTOR(props: object)
+        
+        PURPOSE: Initialize this result object with data returned from the server.
+        
+        PARAMETERS:
+            props: An object containing the result data from the API response
+        
+        BEHAVIOR:
+            COMMENT: Call the parent BaseResult constructor
+            CALL super()
+            
+<%- partial.getIfExists(`results/${model.component}/${model.method}/constructor`) -%>
+            
+            COMMENT: Set all properties from the props object
+            FOR EACH property IN props
+                IF property exists in this.propertyNames THEN
+                    COMMENT: Use the setter to apply the value (handles type conversion, validation)
+                    SET this[property] TO props[property]
+                ELSE
+                    COMMENT: Unexpected property in server response
+                    THROW Error("Property '" + property + "' is not defined for result '" + this.componentName + "'")
+                END IF
+            END FOR
+    END CONSTRUCTOR
+    
+    COMMENT: ====================================================================================
+    COMMENT: GETTERS AND SETTERS
+    COMMENT: ====================================================================================
+    
+<% if (hasProperties) { -%>
+<%   for (let prop in model.properties) { -%>
+    <%- helpers.formatMultilineComment(model.properties[prop].description, "    ") %>
+    GETTER <%- prop %>(): <%- helpers.getDataType(model.properties[prop]) %>
+        PURPOSE: Returns the current value of <%- prop %>
+        RETURN this._<%- prop %>
+    END GETTER
+    
+    SETTER <%- prop %>(value: <%- helpers.getDataType(model.properties[prop]) %>)
+        PURPOSE: Sets the value of <%- prop %>
+        
+        COMMENT: Add type conversion/validation logic here as needed
+        COMMENT: Property type: <%- model.properties[prop].type || 'N/A' %>
+<%     if (model.properties[prop].object) { -%>
+        COMMENT: This property is an object type: <%- model.properties[prop].object %>
+<%     } -%>
+<%     if (model.properties[prop].array) { -%>
+        COMMENT: This property can be an array
+<%     } -%>
+        
+        SET this._<%- prop %> TO value
+    END SETTER
+    
+<%   } -%>
+<% } -%>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS
+    COMMENT: ====================================================================================
+    COMMENT: Add result-specific methods using partials
+    COMMENT: Example: {partials_dir}/results/Medal/unlock/methods.ejs
+<%- partial.getIfExists(`results/${model.component}/${model.method}/methods`) -%>
+
+END CLASS

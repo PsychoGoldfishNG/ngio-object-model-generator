@@ -1,0 +1,155 @@
+CLASS SessionStatus
+    DESCRIPTION: Represents the current status of a client session (result of checkSession call)
+    NAMESPACE: NewgroundsIO
+    NOTE: This is a simple data model that does NOT extend BaseObject
+    
+    PURPOSE: This class is the result/response object returned by NGIO.checkSession().
+    It provides a simple, easy-to-understand snapshot of the session state.
+    
+    WHY SEPARATE?: The actual Session object is complex and tracks many properties.
+    SessionStatus simplifies this into just three properties and a status code, making
+    it much easier for developers to understand the session state at a glance.
+    
+    RELATIONSHIP: SessionStatus is a SNAPSHOT of the session at one moment in time.
+    It doesn't track changes - it's just what the status WAS when you called checkSession().
+    The actual session data is in NGIO.appState.session (a Session object).
+    
+    ====================
+    STATUS CONSTANTS
+    ====================
+    
+    UNINITIALIZED = "uninitialized"
+        PURPOSE: No session exists yet
+        WHY: Initial state when app first loads
+        WHAT TO DO: Call NGIO.checkSession() to create a session
+    
+    UNVERIFIED = "unverified"
+        PURPOSE: Session exists but hasn't been verified with the server yet
+        WHY: We have a session ID but haven't received verification from the server yet
+        (This can occur before sending a request OR while waiting for the server response)
+        WHAT TO DO: Call NGIO.checkSession() to verify with the server, or wait for any pending request to complete
+    
+    NOT_LOGGED_IN = "not-logged-in"
+        PURPOSE: Session is valid but no user is logged in (guest session)
+        WHY: User hasn't used the login feature yet
+        WHAT TO DO: Call NGIO.openPassport() to open the login window
+    
+    WAITING_FOR_PASSPORT = "waiting-for-passport"
+        PURPOSE: Login window is open, waiting for user to log in
+        WHY: Passport window was opened but user hasn't finished logging in
+        WHAT TO DO: Wait for user to finish. Call NGIO.checkSession() intermittently to see if status has changed
+    
+    LOGGED_IN = "logged-in"
+        PURPOSE: User is fully logged in
+        WHY: Session is valid AND user has authenticated
+        WHAT TO DO: You're good to go! Proceed with gameplay
+    
+    LOGIN_CANCELLED = "login-cancelled"
+        PURPOSE: User clicked "cancel" on the login form
+        WHY: User started the login process but changed their mind
+        WHAT TO DO: Session is destroyed. You can call NGIO.checkSession() to start a new one
+    
+    EXPIRED = "expired"
+        PURPOSE: The session ID has expired on the server
+        WHY: Sessions expire after inactivity (hours to days depending on settings)
+        WHAT TO DO: Get a new session by calling NGIO.checkSession()
+    
+    ERROR = "error"
+        PURPOSE: Something went wrong
+        WHY: Network error, server error, invalid app ID, etc.
+        WHAT TO DO: Check the error property for details. Might be temporary.
+    
+    ====================
+    PUBLIC PROPERTIES
+    ====================
+    
+    status: string = UNINITIALIZED
+        PURPOSE: The current session status
+        WHY: Tells the developer what state the session is in
+        VALUES: Must be one of the status constants above
+        USAGE: Check this value in an if/switch statement to decide what to do next
+    
+    user: NewgroundsIO.models.objects.User | null = null
+        PURPOSE: The logged-in user (if status = LOGGED_IN), otherwise null
+        WHY: Provides user info when needed
+        CONTENTS WHEN SET: { id, name, supporter, url }
+        WHEN NULL: In all other statuses (not logged in, error, etc.)
+    
+    error: NewgroundsIO.models.objects.Error | null = null
+        PURPOSE: Error details (if status = ERROR), otherwise null
+        WHY: Helps developer understand what went wrong
+        CONTENTS WHEN SET: { code, message }
+        CODE VALUES: Matches NewgroundsIO.Errors constants
+        MESSAGE: Human-readable explanation
+        WHEN NULL: In success states (LOGGED_IN) and transient states
+    
+    ====================
+    CONSTRUCTOR
+    ====================
+    
+    CONSTRUCTOR()
+        
+        PURPOSE: Initialize the SessionStatus object with default values
+        
+        BEHAVIOR:
+            COMMENT: Set initial values - uninitialized with no user or error
+            SET this.status TO SessionStatus.UNINITIALIZED
+            SET this.user TO null
+            SET this.error TO null
+    END CONSTRUCTOR
+    
+    ====================
+    TYPICAL USAGE EXAMPLE
+    ====================
+    
+    COMMENT: Developer code might look like:
+    COMMENT:
+    COMMENT:   NGIO.checkSession(function(sessionStatus) {
+    COMMENT:       SWITCH sessionStatus.status
+    COMMENT:           CASE LOGGED_IN:
+    COMMENT:               COMMENT: User is authenticated!
+    COMMENT:               var userName = sessionStatus.user.name
+    COMMENT:               startGame()
+    COMMENT:           CASE NOT_LOGGED_IN:
+    COMMENT:               COMMENT: Show login button
+    COMMENT:               showLoginButton()
+    COMMENT:           CASE WAITING_FOR_PASSPORT:
+    COMMENT:               COMMENT: Tell user to complete login, offer a button to cancel login
+    COMMENT:               showWaitingForUserMessage()
+    COMMENT:           CASE ERROR:
+    COMMENT:               COMMENT: Show error message to user
+    COMMENT:               alert("Error: " + sessionStatus.error.message)
+    COMMENT:           DEFAULT:
+    COMMENT:               COMMENT: Waiting for session info to download
+    COMMENT:               showWaitingForServerMessage()
+    COMMENT:       END SWITCH
+    COMMENT:   })
+    
+    ====================
+    STATUS LIFECYCLE
+    ====================
+    
+    COMMENT: Typical successful login flow:
+    COMMENT: 1. App loads -> UNINITIALIZED
+    COMMENT: 2. Call checkSession() -> creates session -> NOT_LOGGED_IN or UNVERIFIED
+    COMMENT: 3. User clicks login -> passportIsOpen = true
+    COMMENT: 4. Call checkSession() -> sees passport window -> WAITING_FOR_PASSPORT
+    COMMENT: 5. User logs in -> server updates session
+    COMMENT: 6. Call checkSession() -> server confirms -> LOGGED_IN
+    COMMENT:
+    COMMENT: Alternative outcomes:
+    COMMENT: - User cancels login -> LOGIN_CANCELLED
+    COMMENT: - Network error -> ERROR
+    COMMENT: - Session expires -> EXPIRED
+    
+    ====================
+    IMPORTANT NOTES
+    ====================
+    
+    COMMENT: This object is READ-ONLY. Don't modify its properties after creation.
+    COMMENT: It's a snapshot - creating a new SessionStatus won't affect the real session.
+    COMMENT:
+    COMMENT: The real session data is in: NGIO.appState.session (Session object)
+    COMMENT: This is just: A simplified status report for easy understanding
+
+END CLASS

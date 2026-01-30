@@ -19,10 +19,84 @@ module.exports = {
     },
 
     /**
+     * Converts a string from kebab-case, snake_case, or camelCase to an array of words in lowercase.
+     * @param {string} str The string to convert.
+     * @returns {string[]} An array of words in lowercase.
+     */
+    convertToWords(str) {
+        if (!str) return "";
+        let words = str.replace(/[-_]/g, " "); // replace - and _ with spaces
+        words = words.replace(/([a-z])ID$/i, '$1 id'); // replace trailing ID with id
+        words = words.replace(/([a-z])([A-Z])/g, '$1 $2'); // add space before capital letters
+        // eliminate any double spaces
+        words = words.replace(/\s+/g, ' ');
+        // send an array of words back in all lowercase
+        return words.toLowerCase().split(" ").filter(w => w);
+    },
+
+    /**
+     * Converts a string to camelCase.
+     * @param {string} str The string to convert.
+     * @returns {string} The converted string in camelCase.
+     */
+    convertToCamelCase(str) {
+        if (!str) return "";
+        const words = this.convertToWords(str);
+        return words.map((word, index) => {
+            if (index === 0) return word;
+            return this.firstCharToUpper(word);
+        }).join("");
+    },
+
+    /**
+     * Converts a string to PascalCase.
+     * @param {string} str The string to convert.
+     * @returns {string} The converted string in PascalCase.
+     */
+    convertToPascalCase(str) {
+        if (!str) return "";
+        const words = this.convertToWords(str);
+        return words.map(word => this.firstCharToUpper(word)).join("");
+    },
+
+    /**
+     * Converts a string to snake_case.
+     * @param {string} str The string to convert.
+     * @returns {string} The converted string in snake_case.
+     */
+    convertToSnakeCase(str) {
+        if (!str) return "";
+        const words = this.convertToWords(str);
+        return words.join("_");
+    },
+
+    /**
+     * Converts a string to SCREAMING_SNAKE_CASE.
+     * @param {string} str The string to convert.
+     * @returns {string} The converted string in SCREAMING_SNAKE_CASE.
+     */
+    convertToScreamingSnakeCase(str) {
+        if (!str) return "";
+        const words = this.convertToWords(str);
+        return words.join("_").toUpperCase();
+    },
+
+    /**
+     * Converts a string to kebab-case.
+     * @param {string} str The string to convert.
+     * @returns {string} The converted string in kebab-case.
+     */
+    convertToKebabCase(str) {
+        if (!str) return "";
+        const words = this.convertToWords(str);
+        return words.join("-");
+    },
+
+    /**
      * Formats a multiline comment with the given indentation.
      * @param {string} comment The comment text to format. Each line should be separated by a newline character.
      * @param {string} indent The indentation string to prepend to each line of the comment.
-     * @returns 
+     * @returns {string} The formatted multiline comment.
      */
     formatMultilineComment(comment, indent = "") {
         if (!comment) return "";

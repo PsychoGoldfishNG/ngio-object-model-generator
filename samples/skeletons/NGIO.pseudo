@@ -1,0 +1,1291 @@
+CLASS NGIO
+    DESCRIPTION: Static wrapper class that simplifies Newgrounds.io API usage
+    
+    PURPOSE: This class provides an easy-to-use interface for developers. Instead of dealing with
+    complex Core objects and component models, developers can call simple static methods like
+    NGIO.unlockMedal() or NGIO.checkSession() and the wrapper handles all the complexity behind
+    the scenes.
+    
+    DESIGN: All properties and methods are static (class-level), so developers never need to create
+    an instance - they just use NGIO.methodName() directly. This is convenient and prevents
+    accidental creation of multiple wrapper instances.
+    
+    NAMESPACE: (none - this is intentionally the only non-namespaced class for developer convenience)
+    
+    ====================
+    READ-ONLY STATIC PROPERTIES
+    ====================
+    
+    core: NewgroundsIO.Core | null
+        PURPOSE: Reference to the Core instance for advanced users needing direct access.
+        WHY: Allows developers to execute custom components or access lower-level API if needed.
+        USAGE: Most developers won't need this - use the public NGIO methods instead.
+    
+    ====================
+    CONSTANTS
+    ====================
+    
+    CHECKSESSION_THROTTLE_TIME = 3
+        PURPOSE: Prevents flooding the server with repeated session check requests.
+        WHY: The server might get overloaded if we check the session status too frequently.
+        This value means we won't check more than once every 3 seconds.
+    
+    KEEP_ALIVE_TIME = 300
+        PURPOSE: How often to keep active user sessions alive by "pinging" the server.
+        WHY: Sessions can expire if the user is inactive. This periodic ping tells the server
+        "hey, this user is still here" and resets the expiration timer. 300 seconds = 5 minutes.
+    
+    ====================
+    PRIVATE STATIC PROPERTIES
+    ====================
+    
+    lastCheckSessionTime: Date|Timestamp | null = null
+        PURPOSE: Tracks the last time we called checkSession on the server.
+        WHY: We use this to implement the throttle - we compare the current time to this
+        value to avoid checking too frequently. See CHECKSESSION_THROTTLE_TIME.
+    
+    lastKeepAliveTime: Date|Timestamp | null = null
+        PURPOSE: Tracks the last time we pinged the server to keep the session alive.
+        WHY: Similar to lastCheckSessionTime, we use this to avoid flooding the server
+        with too many keep-alive pings.
+        NOTE: This is optional - if your platform supports timers, you might not need this.
+    
+    ====================
+    PUBLIC STATIC METHODS
+    ====================
+    
+    COMMENT: ==================== CORE INITIALIZATION & SESSION MANAGEMENT ====================
+    COMMENT: Essential methods for starting your app and managing user authentication.
+    COMMENT: These are typically called first and used throughout your app's lifecycle.
+    
+    FUNCTION init(appId: string, encryptionKey: string, buildVersion: string|null = null, useDebugMode: boolean = false)
+        
+        PURPOSE: Sets up the entire Newgrounds.io system. Must be called before using any other methods.
+        
+        PARAMETERS:
+            appId: (required) Your app's unique identifier from Newgrounds
+            encryptionKey: (required) The encryption key from Newgrounds (used to encrypt secure components)
+            buildVersion: (optional, default: null) Your app's version number in XX.XX.XXXX format
+            useDebugMode: (optional, default: false) If true, API calls won't actually save to the server - useful for testing
+        
+        BEHAVIOR:
+            COMMENT: First, check if we've already initialized. We should only do this once.
+            IF core is already set THEN
+                THROW error "Core already initialized"
+            END IF
+            
+            COMMENT: Create the Core instance with the provided settings.
+            COMMENT: Core handles all the low-level network communication, encryption, and state management.
+            SET core TO new NewgroundsIO.Core(appId, encryptionKey, buildVersion, useDebugMode)
+            
+            COMMENT: Create a logView component - this tells the server we viewed this app.
+            COMMENT: This tracks view counts, which is useful for analytics.
+            CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
+            CALL core.executeComponent(logViewComponent, null)
+            
+            COMMENT: Start the keep-alive timer if the platform supports it.
+            COMMENT: This will automatically ping the server every KEEP_ALIVE_TIME seconds
+            COMMENT: to prevent active sessions from expiring.
+            CALL startKeepAliveTimer()
+    END FUNCTION
+    
+    FUNCTION hasSession(): boolean
+        
+        PURPOSE: Quickly check if we have an active session without contacting the server.
+        RETURNS: true if we have a valid session that hasn't expired, false otherwise.
+        NOTE: This is a local check only - it doesn't verify the session with the server.
+        
+        BEHAVIOR:
+            COMMENT: First verify the wrapper is initialized
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Check if session exists and is valid:
+            COMMENT: - session must exist (not null)
+            COMMENT: - session must have an ID value (not null or empty string)
+            COMMENT: - session must not be expired
+            COMMENT: If any of these are false, we don't have a valid session.
+            IF core.appState.session is null OR 
+               core.appState.session.id is empty OR 
+               core.appState.session.expired is true THEN
+                RETURN false
+            END IF
+            
+            RETURN true
+    END FUNCTION
+    
+    FUNCTION hasUser(): boolean
+        
+        PURPOSE: Check if we have a logged-in user (authenticated session).
+        RETURNS: true if user is logged in, false otherwise.
+        NOTE: A session might exist without a user (guest session). This checks for user.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: First check if we even have a valid session
+            IF hasSession() is false THEN
+                RETURN false
+            END IF
+            
+            COMMENT: Then check if there's a user object attached to that session
+            IF core.appState.session.user is null THEN
+                RETURN false
+            END IF
+            
+            RETURN true
+    END FUNCTION
+    
+    FUNCTION getUser(): NewgroundsIO.models.objects.User | null
+        
+        PURPOSE: Get the logged-in user object, or null if no user is logged in.
+        RETURNS: A User object containing user info (name, ID, supporter status, etc.), or null.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: If we have a user, return it
+            IF hasUser() is true THEN
+                RETURN core.appState.session.user
+            END IF
+            
+            COMMENT: Otherwise return null to indicate no user
+            RETURN null
+    END FUNCTION
+    
+    FUNCTION openPassport(target: string = "_blank"): boolean
+        
+        PURPOSE: Opens the Newgrounds login window so the user can authenticate.
+        PARAMETERS:
+            target: (optional) Browser window target ("_blank" = new tab)
+        RETURNS: true if passport was opened, false if it couldn't be opened for some reason.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: We can only open passport if:
+            COMMENT: 1. We have a valid session (to attach the user to)
+            COMMENT: 2. We don't already have a logged-in user
+            IF hasSession() is false OR hasUser() is true THEN
+                RETURN false
+            END IF
+            
+            COMMENT: Don't try to open if we've already opened it (user might be filling it out)
+            IF core.appState.passportIsOpen is true THEN
+                RETURN false
+            END IF
+            
+            COMMENT: We need to have the passport URL from a previous session check
+            IF core.appState.session.passport_url is empty THEN
+                RETURN false
+            END IF
+            
+            COMMENT: Actually open the browser window with the passport URL
+            OPEN_BROWSER_WINDOW(core.appState.session.passport_url, target)
+            
+            COMMENT: Mark that we've opened the passport so checkSession() knows to expect login activity
+            SET core.appState.passportIsOpen TO true
+            
+            RETURN true
+    END FUNCTION
+    
+    FUNCTION keepAlive()
+        
+        PURPOSE: Pings the server to keep the current authenticated session alive.
+        WHY: Sessions expire after a period of inactivity. This ping resets the expiration timer.
+        NOTE: Usually called automatically by a timer. Manual call is for advanced use.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Only keep alive authenticated sessions (sessions with a logged-in user)
+            COMMENT: Guest sessions don't need to be kept alive
+            IF hasUser() is false THEN
+                RETURN
+            END IF
+            
+            COMMENT: If we don't have an automatic timer, manually throttle the requests
+            COMMENT: to avoid flooding the server
+            IF startKeepAliveTimer is not implemented THEN
+                COMMENT: Check if enough time has passed since the last keep-alive
+                IF lastKeepAliveTime is set AND 
+                   (CURRENT_TIME - lastKeepAliveTime) < KEEP_ALIVE_TIME THEN
+                    RETURN
+                END IF
+                COMMENT: Update the timestamp since we're about to make the request
+                SET lastKeepAliveTime TO CURRENT_TIME
+            END IF
+            
+            COMMENT: Send a ping to the server to keep the session alive
+            CALL sendPing()
+    END FUNCTION
+    
+    FUNCTION checkSession(callback: function)
+        
+        PURPOSE: Check the current session status and report back via callback.
+        PARAMETERS:
+            callback: (required) Function to call when done. Receives SessionStatus object.
+        CALLBACK PARAMETERS:
+            sessionStatus: (required) SessionStatus - The current session status information
+        NOTE: This is asynchronous - the callback will be called later when the server responds.
+        
+        EXPLANATION:
+            This is the main method for managing sessions. It handles several scenarios:
+            1. If user is already logged in, return immediately with logged-in status
+            2. If we have no session, create one
+            3. If we have a session but no user, check with server if user logged in
+            This manages the session lifecycle and reports status to the app.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Create the status object we'll return to the callback
+            CREATE sessionStatus AS new NewgroundsIO.SessionStatus()
+            SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNINITIALIZED
+            SET sessionStatus.user TO null
+            SET sessionStatus.error TO null
+            
+            COMMENT: Quick path: If user is already logged in, we're done!
+            COMMENT: No need to contact the server, just report the current status.
+            IF hasUser() is true THEN
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
+                SET sessionStatus.user TO core.appState.session.user
+                CALL callback(sessionStatus)
+                RETURN
+            END IF
+            
+            COMMENT: Check if user has passport window open (they're logging in)
+            COMMENT: If so, don't check the server - they're still typing their credentials
+            IF core.appState.passportIsOpen is true THEN
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_USER
+                CALL callback(sessionStatus)
+                RETURN
+            END IF
+            
+            COMMENT: Throttle check - don't contact server too frequently
+            COMMENT: This prevents flooding the server with repeated requests
+            IF lastCheckSessionTime is set AND 
+               (CURRENT_TIME - lastCheckSessionTime) < CHECKSESSION_THROTTLE_TIME THEN
+                COMMENT: Check if session has been verified with server
+                IF core.appState.session.verified is false THEN
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNVERIFIED
+                ELSE
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                END IF
+                CALL callback(sessionStatus)
+                RETURN
+            END IF
+            
+            COMMENT: Update timestamp now to prevent multiple requests from racing
+            SET lastCheckSessionTime TO CURRENT_TIME
+            
+            COMMENT: If we don't have any session yet, we need to create one on the server
+            IF hasSession() is false THEN
+                CREATE startSessionComponent AS new NewgroundsIO.models.components.App.startSession()
+                CALL core.executeComponent(startSessionComponent, 
+                    FUNCTION onComplete(result)
+                        COMMENT: Check if the server request succeeded
+                        IF result.success is true THEN
+                            COMMENT: Session created successfully (user will not be logged in yet)
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                        ELSE IF result.error exists THEN
+                            COMMENT: Something went wrong creating the session
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                            SET sessionStatus.error TO result.error
+                        ELSE
+                            COMMENT: Got an error but no details - create a generic one
+                            SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        END IF
+                        
+                        COMMENT: Call the callback to report the result
+                        CALL callback(sessionStatus)
+                    END FUNCTION
+                )
+                RETURN
+            END IF
+            
+            COMMENT: We have a session but no user. Check with the server if that's changed.
+            CREATE checkSessionComponent AS new NewgroundsIO.models.components.App.checkSession()
+            CALL core.executeComponent(checkSessionComponent, 
+                FUNCTION onComplete(result)
+                    IF result.success is true THEN
+                        COMMENT: Server confirmed the session is valid
+                        COMMENT: Check if user logged in while we weren't looking
+                        IF core.appState.session.user exists THEN
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
+                            SET sessionStatus.user TO core.appState.session.user
+                        ELSE
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                        END IF
+                    ELSE
+                        COMMENT: Server returned an error - something went wrong
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        
+                        IF result.error exists THEN
+                            COMMENT: Check for specific error types
+                            IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                                COMMENT: User cancelled the session - it's gone
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
+                            ELSE
+                                COMMENT: Some other error - pass it along
+                                SET sessionStatus.error TO result.error
+                            END IF
+                        ELSE
+                            COMMENT: Error occurred but no details from server
+                            SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                        END IF
+                    END IF
+                    
+                    CALL callback(sessionStatus)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION endSession(callback: function|null = null)
+        
+        PURPOSE: Log the user out and end the session.
+        PARAMETERS:
+            callback: (optional, default: null) Function to call when logout is complete.
+        CALLBACK PARAMETERS:
+            None - callback receives no parameters
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Only end the session if one exists
+            IF hasSession() is false THEN
+                COMMENT: No session to end, but call callback if provided to avoid hanging
+                IF callback is not null THEN
+                    CALL callback()
+                END IF
+                RETURN
+            END IF
+            
+            COMMENT: Create the end session component and send it to the server
+            CREATE endSessionComponent AS new NewgroundsIO.models.components.App.endSession()
+            CALL core.executeComponent(endSessionComponent, 
+                FUNCTION onComplete(result)
+                    COMMENT: Ignore result and call user callback with no parameters
+                    IF callback is not null THEN
+                        CALL callback()
+                    END IF
+                END FUNCTION
+            )
+            
+            COMMENT: Clear the session locally right away (don't wait for server response)
+            COMMENT: This provides immediate feedback to the user
+            CALL core.appState.clearSession()
+    END FUNCTION
+    
+    COMMENT: ==================== APP CONFIGURATION & METADATA ====================
+    COMMENT: Methods for checking app version status, host approval, and gateway information.
+    COMMENT: Use these to ensure your app is running the correct version on an approved domain.
+    
+    FUNCTION loadAppData(propertyNames: array, callback: function|null = null)
+        
+        PURPOSE: Load metadata about the app from the server (versions, medals, scoreboards, etc.)
+        PARAMETERS:
+            propertyNames: (required) Array of property names to load (e.g., ['medals', 'scoreboards'])
+            callback: (optional, default: null) Function called when done - receives (appState, error)
+        CALLBACK PARAMETERS:
+            appState: (required) Updated AppState object with loaded data
+            error: (optional, default: null) Error object if something went wrong, or null on success
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: This is a convenience wrapper around AppState.loadData()
+            COMMENT: It lets developers load app data through the simplified wrapper
+            CALL core.appState.loadData(propertyNames, callback)
+    END FUNCTION
+    
+    FUNCTION getGatewayVersion(): string | null
+        
+        PURPOSE: Get the cached gateway version, or null if not yet loaded.
+        NOTE: This doesn't contact the server - it just returns what's cached locally.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.gatewayVersion
+    END FUNCTION
+    
+    FUNCTION loadGatewayVersion(callback: function|null)
+        
+        PURPOSE: Load the current Newgrounds gateway version from the server.
+        PARAMETERS:
+            callback: Function called with (gatewayVersion, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Load just the gateway version via AppState
+            CALL core.appState.loadData(['gatewayVersion'], 
+                FUNCTION onComplete(appState, error)
+                    COMMENT: Extract the version and pass to callback
+                    IF callback is not null THEN
+                        CALL callback(core.appState.gatewayVersion, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getCurrentVersion(): string | null
+        
+        PURPOSE: Get the cached current app version from the server, or null if not loaded.
+        NOTE: This is what developers set in their Newgrounds project settings.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.currentVersion
+    END FUNCTION
+    
+    FUNCTION loadCurrentVersion(callback: function|null)
+        
+        PURPOSE: Load the current production version from server.
+        PARAMETERS:
+            callback: Function called with (currentVersion, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['currentVersion'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.currentVersion, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getClientDeprecated(): boolean | null
+        
+        PURPOSE: Check if current version differs from server's production version.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.clientDeprecated
+    END FUNCTION
+    
+    FUNCTION loadClientDeprecated(callback: function|null)
+        
+        PURPOSE: Check if the local build version differs from server's production version.
+        PARAMETERS:
+            callback: Function called with (clientDeprecated, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['currentVersion'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.clientDeprecated, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getHostApproved(): boolean | null
+        
+        PURPOSE: Check if current domain is approved to run this app.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.hostApproved
+    END FUNCTION
+    
+    FUNCTION loadHostApproved(callback: function|null)
+        
+        PURPOSE: Load host approval status from server.
+        PARAMETERS:
+            callback: Function called with (hostApproved, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['hostApproved'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.hostApproved, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    COMMENT: ==================== GAME CONTENT - MEDALS ====================
+    COMMENT: Methods for accessing achievement/medal data.
+    COMMENT: Medals are a core feature for tracking player accomplishments.
+    
+    FUNCTION getMedals(): array | null
+        
+        PURPOSE: Get cached list of medals, or null if not loaded.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.medals
+    END FUNCTION
+    
+    FUNCTION loadMedals(callback: function|null)
+        
+        PURPOSE: Load list of medals from server.
+        PARAMETERS:
+            callback: Function called with (medals, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['medals'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.medals, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getMedalScore(): number | null
+        
+        PURPOSE: Get cached total medal score, or null if not loaded.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.medalScore
+    END FUNCTION
+    
+    FUNCTION loadMedalScore(callback: function|null)
+        
+        PURPOSE: Load user's total medal score from server.
+        PARAMETERS:
+            callback: Function called with (medalScore, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['medalScore'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.medalScore, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getMedal(medalId: number): NewgroundsIO.models.objects.Medal | null
+        
+        PURPOSE: Find and return a specific medal by ID.
+        PARAMETERS:
+            medalId: The ID of the medal to find
+        
+        RETURNS: Medal object or null if not found
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Check if medals have been loaded
+            IF NOT (CALL core.appState.hasLoaded('medals')) THEN
+                COMMENT: No medals loaded yet - log warning and return null
+                LOG_WARNING("Medal data not loaded. Call loadMedals() first.")
+                RETURN null
+            END IF
+            
+            COMMENT: Search for matching medal
+            IF core.appState.medals is not null THEN
+                FOR EACH medal IN core.appState.medals
+                    IF medal.id equals medalId THEN
+                        RETURN medal
+                    END IF
+                END FOR
+            END IF
+            
+            COMMENT: Not found
+            RETURN null
+    END FUNCTION
+    
+    COMMENT: ==================== GAME CONTENT - SCOREBOARDS ====================
+    COMMENT: Methods for accessing leaderboard/scoreboard data.
+    COMMENT: Use these to display high scores and competitive rankings.
+    
+    FUNCTION getScoreBoards(): array | null
+        
+        PURPOSE: Get cached list of scoreboards, or null if not loaded.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.scoreBoards
+    END FUNCTION
+    
+    FUNCTION loadScoreBoards(callback: function|null)
+        
+        PURPOSE: Load list of scoreboards from server.
+        PARAMETERS:
+            callback: Function called with (scoreBoards, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['scoreBoards'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.scoreBoards, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getScoreBoard(boardId: number): NewgroundsIO.models.objects.ScoreBoard | null
+        
+        PURPOSE: Find and return a specific scoreboard by ID.
+        PARAMETERS:
+            boardId: The ID of the scoreboard to find
+        
+        RETURNS: ScoreBoard object or null if not found
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF NOT (CALL core.appState.hasLoaded('scoreBoards')) THEN
+                LOG_WARNING("ScoreBoard data not loaded. Call loadScoreBoards() first.")
+                RETURN null
+            END IF
+            
+            IF core.appState.scoreBoards is not null THEN
+                FOR EACH scoreBoard IN core.appState.scoreBoards
+                    IF scoreBoard.id equals boardId THEN
+                        RETURN scoreBoard
+                    END IF
+                END FOR
+            END IF
+            
+            RETURN null
+    END FUNCTION
+    
+    COMMENT: ==================== GAME CONTENT - CLOUD SAVES ====================
+    COMMENT: Methods for accessing cloud save slot data.
+    COMMENT: Cloud saves allow players to sync their progress across devices.
+    
+    FUNCTION getSaveSlots(): array | null
+        
+        PURPOSE: Get cached list of cloud save slots, or null if not loaded.
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            RETURN core.appState.saveSlots
+    END FUNCTION
+    
+    FUNCTION loadSaveSlots(callback: function|null)
+        
+        PURPOSE: Load list of cloud save slots from server.
+        PARAMETERS:
+            callback: Function called with (saveSlots, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CALL core.appState.loadData(['saveSlots'], 
+                FUNCTION onComplete(appState, error)
+                    IF callback is not null THEN
+                        CALL callback(core.appState.saveSlots, error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION getSaveSlot(slotId: number): NewgroundsIO.models.objects.SaveSlot | null
+        
+        PURPOSE: Find and return a specific save slot by ID.
+        PARAMETERS:
+            slotId: The ID of the save slot to find
+        
+        RETURNS: SaveSlot object or null if not found
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF NOT (CALL core.appState.hasLoaded('saveSlots')) THEN
+                LOG_WARNING("SaveSlot data not loaded. Call loadSaveSlots() first.")
+                RETURN null
+            END IF
+            
+            IF core.appState.saveSlots is not null THEN
+                FOR EACH saveSlot IN core.appState.saveSlots
+                    IF saveSlot.id equals slotId THEN
+                        RETURN saveSlot
+                    END IF
+                END FOR
+            END IF
+            
+            RETURN null
+    END FUNCTION
+    
+    COMMENT: ==================== SERVER UTILITIES & EVENTS ====================
+    COMMENT: Methods for server time synchronization, connectivity testing, and custom event tracking.
+    COMMENT: These are utility functions for advanced features.
+    
+    FUNCTION loadGatewayDateTime(callback: function)
+        
+        PURPOSE: Get current server time in ISO 8601 format.
+        PARAMETERS:
+            callback: Function called with (dateTime, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.datetime, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION loadGatewayTimestamp(callback: function)
+        
+        PURPOSE: Get current server time as UNIX timestamp.
+        PARAMETERS:
+            callback: Function called with (timestamp, error)
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.timestamp, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION sendPing(callback: function|null = null)
+        
+        PURPOSE: Send a simple ping to test server connectivity.
+        PARAMETERS:
+            callback: (optional, default: null) Function called with (pong, error)
+        CALLBACK PARAMETERS:
+            pong: (required) A simple string 'pong' indicating successful connection
+            error: (optional, default: null) Error object if something went wrong, or null on success
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Gateway.ping()
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback('pong', error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION logEvent(eventName: string, callback: function|null = null)
+        
+        PURPOSE: Log a custom event to server for tracking.
+        PARAMETERS:
+            eventName: (required) Name of the event to log
+            callback: (optional, default: null) Function called with (error)
+        CALLBACK PARAMETERS:
+            error: (optional, default: null) Error object if something went wrong, or null on success
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Event.log()
+            SET component.host TO core.appState.host
+            SET component.event_name TO eventName
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is not null THEN
+                        CREATE error AS null
+                        IF result is not null AND result.error is not null THEN
+                            SET error TO result.error
+                        END IF
+                        CALL callback(error)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    COMMENT: ==================== URL NAVIGATION ====================
+    COMMENT: Methods for opening and loading various Newgrounds URLs.
+    COMMENT: NOTE: All open* methods must be called from user click events in web-based applications.
+    
+    FUNCTION openOfficialUrl(target: string|null = "_blank", logEvent: boolean = true)
+        
+        PURPOSE: Open URL where latest official version can be found in a new browser window.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PARAMETERS:
+            target: (optional, default: "_blank") Browser window target
+            logEvent: (optional, default: true) Log this action
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF target is null THEN
+                SET target TO "_blank"
+            END IF
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+            SET component.host TO core.appState.host
+            SET component.browserTarget TO target
+            SET component.log_stat TO logEvent
+            SET component.redirect TO true
+            
+            CALL core.executeComponent(component, null)
+    END FUNCTION
+    
+    FUNCTION loadOfficialUrl(logEvent: boolean = true, callback: function|null = null)
+        
+        PURPOSE: Load URL where latest official version can be found (asynchronously).
+        PARAMETERS:
+            logEvent: (optional, default: true) Log this action
+            callback: (optional, default: null) Function called with (url, error)
+        CALLBACK PARAMETERS:
+            url: (required) String - The URL to open
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+            SET component.host TO core.appState.host
+            SET component.log_stat TO logEvent
+            SET component.redirect TO false
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.url, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION openAuthorUrl(target: string|null = "_blank", logEvent: boolean = true)
+        
+        PURPOSE: Open author's home page URL in a new browser window.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PARAMETERS:
+            target: (optional, default: "_blank") Browser window target
+            logEvent: (optional, default: true) Log this action
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF target is null THEN
+                SET target TO "_blank"
+            END IF
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
+            SET component.host TO core.appState.host
+            SET component.browserTarget TO target
+            SET component.log_stat TO logEvent
+            SET component.redirect TO true
+            
+            CALL core.executeComponent(component, null)
+    END FUNCTION
+    
+    FUNCTION loadAuthorUrl(logEvent: boolean = true, callback: function|null = null)
+        
+        PURPOSE: Load author's home page URL (asynchronously).
+        PARAMETERS:
+            logEvent: (optional, default: true) Log this action
+            callback: (optional, default: null) Function called with (url, error)
+        CALLBACK PARAMETERS:
+            url: (required) String - The URL to open
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
+            SET component.host TO core.appState.host
+            SET component.log_stat TO logEvent
+            SET component.redirect TO false
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.url, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION openMoreGames(target: string|null = "_blank", logEvent: boolean = true)
+        
+        PURPOSE: Open author's "More Games" page URL in a new browser window.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PARAMETERS:
+            target: (optional, default: "_blank") Browser window target
+            logEvent: (optional, default: true) Log this action
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF target is null THEN
+                SET target TO "_blank"
+            END IF
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
+            SET component.host TO core.appState.host
+            SET component.browserTarget TO target
+            SET component.log_stat TO logEvent
+            SET component.redirect TO true
+            
+            CALL core.executeComponent(component, null)
+    END FUNCTION
+    
+    FUNCTION loadMoreGames(logEvent: boolean = true, callback: function|null = null)
+        
+        PURPOSE: Load author's "More Games" page URL (asynchronously).
+        PARAMETERS:
+            logEvent: (optional, default: true) Log this action
+            callback: (optional, default: null) Function called with (url, error)
+        CALLBACK PARAMETERS:
+            url: (required) String - The URL to open
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
+            SET component.host TO core.appState.host
+            SET component.log_stat TO logEvent
+            SET component.redirect TO false
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.url, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION openNewgrounds(target: string|null = "_blank", logEvent: boolean = true)
+        
+        PURPOSE: Open Newgrounds.com in a new browser window.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PARAMETERS:
+            target: (optional, default: "_blank") Browser window target
+            logEvent: (optional, default: true) Log this action
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF target is null THEN
+                SET target TO "_blank"
+            END IF
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
+            SET component.host TO core.appState.host
+            SET component.browserTarget TO target
+            SET component.log_stat TO logEvent
+            SET component.redirect TO true
+            
+            CALL core.executeComponent(component, null)
+    END FUNCTION
+    
+    FUNCTION loadNewgrounds(logEvent: boolean = true, callback: function|null = null)
+        
+        PURPOSE: Load Newgrounds.com URL (asynchronously).
+        PARAMETERS:
+            logEvent: (optional, default: true) Log this action
+            callback: (optional, default: null) Function called with (url, error)
+        CALLBACK PARAMETERS:
+            url: (required) String - The URL to open
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF logEvent is null THEN
+                SET logEvent TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
+            SET component.host TO core.appState.host
+            SET component.log_stat TO logEvent
+            SET component.redirect TO false
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.url, error)
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION openReferral(referralName: string, target: string|null = "_blank", logReferral: boolean = true)
+        
+        PURPOSE: Open a custom referral URL by name in a new browser window.
+        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PARAMETERS:
+            referralName: (required) Name of referral configured in Newgrounds project
+            target: (optional, default: "_blank") Browser window target
+            logReferral: (optional, default: true) Log this action
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF target is null THEN
+                SET target TO "_blank"
+            END IF
+            IF logReferral is null THEN
+                SET logReferral TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
+            SET component.host TO core.appState.host
+            SET component.referral_name TO referralName
+            SET component.browserTarget TO target
+            SET component.log_stat TO logReferral
+            SET component.redirect TO true
+            
+            CALL core.executeComponent(component, null)
+    END FUNCTION
+    
+    FUNCTION loadReferral(referralName: string, logReferral: boolean = true, callback: function|null = null)
+        
+        PURPOSE: Load a custom referral URL by name (asynchronously).
+        PARAMETERS:
+            referralName: (required) Name of referral configured in Newgrounds project
+            logReferral: (optional, default: true) Log this action
+            callback: (optional, default: null) Function called with (url, error)
+        CALLBACK PARAMETERS:
+            url: (required) String - The URL to open
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            IF logReferral is null THEN
+                SET logReferral TO true
+            END IF
+            
+            CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
+            SET component.host TO core.appState.host
+            SET component.referral_name TO referralName
+            SET component.log_stat TO logReferral
+            SET component.redirect TO false
+            
+            CALL core.executeComponent(component, 
+                FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
+                    IF result is null THEN
+                        CALL callback(null, null)
+                        RETURN
+                    END IF
+                    
+                    CREATE error AS null
+                    IF result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+                    
+                    CALL callback(result.url, error)
+                END FUNCTION
+            )
+    END FUNCTION
+
+    ====================
+    PRIVATE STATIC METHODS
+    ====================
+
+    FUNCTION startKeepAliveTimer()
+        
+        PURPOSE: Sets up an automatic timer that pings the server periodically.
+        NOTE: This is optional - if your platform doesn't support timers, the
+        manual throttling in keepAlive() will handle it instead. Should be called by init().
+        
+        IMPLEMENTATION:
+            COMMENT: Implement this if your platform supports timers/intervals (like JavaScript setInterval)
+            COMMENT: Set up a repeating timer that calls keepAlive() every KEEP_ALIVE_TIME seconds
+            COMMENT: This keeps active user sessions from expiring
+            COMMENT:
+            COMMENT: Example (JavaScript):
+            COMMENT:   setInterval(() => keepAlive(), KEEP_ALIVE_TIME * 1000)
+    END FUNCTION
+
+END CLASS

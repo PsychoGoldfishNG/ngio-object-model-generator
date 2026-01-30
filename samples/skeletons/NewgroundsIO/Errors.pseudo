@@ -1,0 +1,185 @@
+CLASS Errors
+    DESCRIPTION: Provides error codes and helper methods for generating Error models
+    NAMESPACE: NewgroundsIO
+    NOTE: This is a static class - all properties and methods are accessed at class level
+    
+    PURPOSE: This class centralizes error handling. Instead of scattered error codes throughout
+    the library, all error codes and messages are defined here. This makes it easy to:
+    - Look up what an error code means
+    - Create Error objects with consistent messages
+    - Catch specific errors by code
+    
+    ====================
+    ERROR CODE CONSTANTS
+    ====================
+    
+    UNKNOWN = 0
+        PURPOSE: Used when the source of an error is unclear
+    
+    MISSING_REQUEST = 100
+    INVALID_REQUEST = 101
+    MISSING_PARAMETER = 102
+    INVALID_PARAMETER = 103
+        PURPOSE: Request-related errors from validation
+        WHY: Help catch mistakes in component parameters before sending to server
+    
+    EXPIRED_SESSION = 104
+        PURPOSE: User's session ID has expired on the server
+        WHY: Sessions don't last forever - they expire after inactivity
+    
+    MAX_COMPONENTS_EXCEEDED = 107
+    MEMORY_EXCEEDED = 108
+    TIMED_OUT = 109
+        PURPOSE: Server-side limit errors
+        WHY: The server enforces limits to prevent abuse or overload
+    
+    LOGIN_REQUIRED = 110
+        PURPOSE: Component requires an authenticated user to execute
+        WHY: Some operations (like posting scores) need user verification
+    
+    CANCELLED_SESSION = 111
+        PURPOSE: User explicitly cancelled their login session
+        WHY: User clicked a "cancel" button instead of logging in
+    
+    INVALID_APP_ID = 200
+    INVALID_ENCRYPTION = 201
+    INVALID_MEDAL_ID = 202
+    INVALID_SCOREBOARD_ID = 203
+    INVALID_SAVESLOT_ID = 204
+        PURPOSE: App configuration errors
+        WHY: Wrong App ID, wrong encryption key, or requesting nonexistent items
+    
+    BAD_REQUEST = 400
+    USER_FORBIDDEN = 403
+    NOT_FOUND = 404
+    TOO_MANY_REQUESTS = 429
+        PURPOSE: HTTP status code errors
+        WHY: Problems with the HTTP request itself
+    
+    SERVER_ERROR = 500
+    SERVER_UNAVAILABLE = 503
+    GATEWAY_TIMEOUT = 504
+        PURPOSE: Server-side problems
+        WHY: Newgrounds servers are down, experiencing issues, or unreachable
+    
+    ====================
+    STATIC READONLY PROPERTIES
+    ====================
+    
+    errorMessages: object = {
+        0: "An unknown error has occurred.",
+        100: "Missing/empty request.",
+        101: "Invalid request.",
+        102: "Missing required parameter.",
+        103: "Invalid parameter.",
+        104: "Your session has expired.",
+        107: "Maximum number of components, for a single request, has been exceeded. (Maximum is 10)",
+        108: "Your request has exceeded the maximum allowed memory use on the server.",
+        109: "Your request took too long to complete and timed out.",
+        110: "You must be logged in to do that.",
+        111: "Your session was cancelled on the server.",
+        200: "Invalid App ID.",
+        201: "An encrypted object failed to decrypt on the server. Make sure you are using the correct key, cypher, and encoding format.",
+        202: "Requested Medal does not exist, or is not associated with this App ID.",
+        203: "Requested ScoreBoard does not exist, or is not associated with this App ID.",
+        204: "Requested SaveSlot does not exist, or is not associated with this App ID.",
+        400: "There was a problem sending your request.",
+        403: "Forbidden.",
+        404: "Page not found.",
+        429: "You are making too many requests.",
+        500: "An unexpected error has occurred on the server. If error persists, contact support.",
+        503: "The server is currently down, try again later.",
+        504: "Unable to reach the server, try again later."
+    }
+        PURPOSE: Maps error codes to human-readable error messages
+        WHY: Instead of numeric codes, users see helpful messages like
+        "Your session has expired" or "You must be logged in to do that"
+        
+        KEY DESIGN: The key in the dictionary is the error CODE number,
+        and the value is the MESSAGE string. This provides a complete
+        reference for all possible error states in the API.
+    
+    ====================
+    PUBLIC STATIC METHODS
+    ====================
+    
+    FUNCTION getDefaultMessage(errorCode: number = 0): string
+        
+        PURPOSE: Look up the default error message for a specific error code
+        WHY: Developers need readable error messages to show users
+        
+        PARAMETERS:
+            errorCode: (optional, default: 0/UNKNOWN) The error code to look up
+        
+        RETURNS: A human-readable error message string
+        
+        NOTES:
+            - Always returns a string, never null
+            - If code doesn't exist, falls back to UNKNOWN message
+        
+        BEHAVIOR:
+            COMMENT: Look up the error code in the messages dictionary
+            IF errorCode exists in errorMessages THEN
+                COMMENT: Found it - return the message
+                RETURN errorMessages[errorCode]
+            ELSE
+                COMMENT: Unknown code - return generic unknown message
+                RETURN errorMessages[0]
+            END IF
+    END FUNCTION
+    
+    FUNCTION getError(errorCode: number = 0, 
+                     errorMessage: string|null = null, 
+                     appendMessage: boolean = false): NewgroundsIO.models.objects.Error
+        
+        PURPOSE: Create an Error model with a specified code and custom message
+        WHY: When something goes wrong, we need to create Error objects with
+        proper error codes and messages to return to the developer
+        
+        PARAMETERS:
+            errorCode: (optional, default: 0) The error code (like INVALID_REQUEST, EXPIRED_SESSION, etc)
+            errorMessage: (optional, default: null) A custom message providing extra details
+            appendMessage: (optional, default: false) If true, add the custom message to the default message
+        
+        RETURNS: A new Error model instance with code and message set
+        
+        EXPLANATION:
+            This method creates an Error object with three possible message formats:
+            1. Just the default message for the error code
+            2. Just the custom message (if provided and appendMessage=false)
+            3. Default message + custom message (if appendMessage=true)
+            
+            Example: If EXPIRED_SESSION message is "Your session has expired." and
+            developer provides custom message "Attempt was made at 3:45 PM", result could be:
+            - appendMessage=false: "Attempt was made at 3:45 PM"
+            - appendMessage=true: "Your session has expired. Attempt was made at 3:45 PM"
+        
+        BEHAVIOR:
+            COMMENT: Create a new Error model
+            CREATE errorModel AS new NewgroundsIO.models.objects.Error()
+            
+            COMMENT: Set the error code
+            SET errorModel.code TO errorCode
+            
+            COMMENT: Handle the message
+            IF errorMessage is null OR errorMessage is empty THEN
+                COMMENT: No custom message provided - use the default
+                SET errorMessage TO getDefaultMessage(errorCode)
+                SET appendMessage TO false
+            END IF
+            
+            COMMENT: Optionally append custom message to default message
+            IF appendMessage is true THEN
+                COMMENT: Get the default message for this code
+                CREATE defaultMessage AS getDefaultMessage(errorCode)
+                COMMENT: Combine them: default first, then custom
+                SET errorMessage TO defaultMessage + " " + errorMessage
+            END IF
+            
+            COMMENT: Set the final message on the error model
+            SET errorModel.message TO errorMessage
+            
+            RETURN errorModel
+    END FUNCTION
+
+END CLASS

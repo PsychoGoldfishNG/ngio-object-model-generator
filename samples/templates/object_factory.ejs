@@ -1,0 +1,159 @@
+<%
+/**
+ * ====================================================================================
+ * TEMPLATE: Object Factory / Index
+ * ====================================================================================
+ * 
+ * PURPOSE: Generates a factory class that creates object instances by name.
+ * 
+ * WHAT IS THIS?: A factory pattern implementation that allows you to create objects,
+ * components, and results dynamically based on string names rather than hardcoding
+ * class instantiation everywhere.
+ * 
+ * WHY IS THIS USEFUL?: When parsing JSON from the API, you often receive an object
+ * type as a string (e.g., "Medal", "User"). This factory lets you convert those
+ * strings into actual class instances without a massive if/else chain.
+ * 
+ * EXAMPLE USAGE:
+ *   var medal = ObjectIndex.CreateObject("Medal", jsonData);
+ *   var unlockComponent = ObjectIndex.CreateComponent("Medal", "unlock", params);
+ *   var unlockResult = ObjectIndex.CreateResult("Medal", "unlock", responseData);
+ * 
+ * AVAILABLE VARIABLES:
+ * - models: Object containing all generated models
+ * - models.objects: All core object models (Medal, User, Score, etc.)
+ * - models.components: All component models (organized by component.method)
+ * - models.results: All result models (organized by component.method)
+ * - helpers: Your custom helper methods (from helpers.js)
+ * - partial: Methods to include partial templates
+ * - config: Your full config object with all settings
+ * 
+ * EJS DOCUMENTATION: https://ejs.co/
+ * 
+ * ====================================================================================
+ */
+-%>
+
+COMMENT: ====================================================================================
+COMMENT: CLASS DEFINITION
+COMMENT: ====================================================================================
+/**
+ * Factory class for creating Newgrounds.io object instances by name.
+ * This allows dynamic instantiation based on string identifiers from the API.
+ */
+CLASS ObjectIndex
+    NAMESPACE: [Your namespace here, e.g., newgroundsIO.models.objects]
+    
+    PURPOSE: Provides static factory methods to create object, component, and result
+             instances based on their string names.
+    
+    WHY: When the API returns data, it includes type names as strings. This factory
+         converts those strings into actual class instances without hardcoding everywhere.
+    
+    COMMENT: ====================================================================================
+    COMMENT: FACTORY METHOD: CreateObject
+    COMMENT: ====================================================================================
+    
+    STATIC METHOD CreateObject(name: string, props: object): BaseObject
+        
+        PURPOSE: Creates an instance of a core object model (Medal, User, Score, etc.)
+        
+        PARAMETERS:
+            name: The object type name (case-insensitive, e.g., "medal", "Medal", "MEDAL")
+            props: Properties to initialize the object with
+        
+        RETURNS: An instance of the requested object, or null if not found
+        
+        BEHAVIOR:
+            COMMENT: Convert name to lowercase for case-insensitive matching
+            SWITCH name.toLowerCase()
+            
+<%          for(const model in models.objects) { -%>
+                CASE "<%- model.toLowerCase() %>":
+                    COMMENT: Create and return a <%- models.objects[model].name %> instance
+                    RETURN NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>props<% } %>)
+                
+<%          } -%>
+            END SWITCH
+            
+            COMMENT: Unknown object type
+            RETURN null
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: FACTORY METHOD: CreateComponent
+    COMMENT: ====================================================================================
+    
+    STATIC METHOD CreateComponent(component: string, method: string, props: object): BaseComponent
+        
+        PURPOSE: Creates an instance of a component model (Medal.unlock, App.checkSession, etc.)
+        
+        PARAMETERS:
+            component: The component namespace (e.g., "Medal", "App", "ScoreBoard")
+            method: The method name (e.g., "unlock", "checkSession", "postScore")
+            props: Properties/parameters to initialize the component with
+        
+        RETURNS: An instance of the requested component, or null if not found
+        
+        WHY: Components are API methods you call. This creates the appropriate component
+             object that can then be sent to the server.
+        
+        BEHAVIOR:
+            COMMENT: Build the full component name and convert to lowercase
+            SET fullName TO component + "." + method
+            SWITCH fullName.toLowerCase()
+            
+<%       for(const component in models.components) { -%>
+<%        for(const method in models.components[component]) { -%>
+<%          const name = `${component}.${method}`; -%>
+                CASE "<%- name.toLowerCase() %>":
+                    COMMENT: Create and return a <%- name %> component instance
+                    RETURN NEW <%- name %>(<% if (models.components[component][method].properties) { %>props<% } %>)
+                
+<%        } -%>
+<%       } -%>
+            END SWITCH
+            
+            COMMENT: Unknown component
+            RETURN null
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: FACTORY METHOD: CreateResult
+    COMMENT: ====================================================================================
+    
+    STATIC METHOD CreateResult(component: string, method: string, props: object): BaseResult
+        
+        PURPOSE: Creates an instance of a result model with data returned from the API
+        
+        PARAMETERS:
+            component: The component namespace that was called (e.g., "Medal", "App")
+            method: The method name that was called (e.g., "unlock", "checkSession")
+            props: The result data returned from the server
+        
+        RETURNS: An instance of the requested result object, or null if not found
+        
+        WHY: When the server responds to a component call, it returns result data.
+             This creates the appropriate result object to hold that data.
+        
+        BEHAVIOR:
+            COMMENT: Build the full component name and convert to lowercase
+            SET fullName TO component + "." + method
+            SWITCH fullName.toLowerCase()
+            
+<%       for(const result in models.results) { -%>
+<%        for(const method in models.results[result]) { -%>
+<%          const name = `${result}.${method}`; -%>
+                CASE "<%- name.toLowerCase() %>":
+                    COMMENT: Create and return a <%- name %> result instance
+                    RETURN NEW <%- name %>Result(<% if (models.results[result][method].properties) { %>props<% } %>)
+                
+<%        } -%>
+<%       } -%>
+            END SWITCH
+            
+            COMMENT: Unknown result type
+            RETURN null
+    END METHOD
+
+END CLASS

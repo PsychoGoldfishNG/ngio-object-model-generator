@@ -1,0 +1,598 @@
+CLASS AppState
+    DESCRIPTION: Stores and manages application state loaded from the server
+    NAMESPACE: NewgroundsIO
+    
+    PURPOSE: This class acts as a cache and store for all data loaded from the server.
+    Instead of contacting the server every time you need medal info or scoreboard data,
+    AppState keeps a local copy that stays synchronized with the server.
+    
+    WHY NEEDED: Making network requests is SLOW. By caching data locally, we can access it
+    instantly. When the server responds with updates, we update the cache in place (using
+    observer patterns) so object references stay valid.
+    
+    ====================
+    STATIC READONLY PROPERTIES
+    ====================
+    
+    dataProperties: array = [
+        'gatewayVersion',
+        'currentVersion',
+        'hostApproved',
+        'saveSlots',
+        'scoreBoards',
+        'medals',
+        'medalScore'
+    ]
+        PURPOSE: List of all app state properties that can be loaded from the server
+        WHY: Used to validate property names - prevents typos like loadData(['meddles'])
+    
+    ====================
+    PRIVATE PROPERTIES
+    ====================
+    
+    dataLoaded: array = []
+        PURPOSE: Tracks which properties have been loaded from the server
+        WHY: hasLoaded('medals') checks if this array contains 'medals'
+        This lets developers know which data is available to use
+    
+    core: NewgroundsIO.Core
+        PURPOSE: Reference to the Core instance
+        WHY: Need Core to queue components and execute requests
+    
+    ====================
+    PUBLIC PROPERTIES
+    ====================
+    
+    passportIsOpen: boolean = false
+        PURPOSE: Flag indicating whether Passport login window is currently open
+        WHY: NGIO.checkSession() uses this flag to decide if it should wait
+        before checking the server (user is probably still logging in)
+    
+    ====================
+    READONLY PROPERTIES
+    ====================
+    
+    host: string = "N/A"
+        PURPOSE: The domain hosting this app (e.g., "uploads.ungrounded.net")
+        WHY: Some Newgrounds features are domain-aware. We extract the domain
+        from the URL so the server knows where the app is running
+    
+    sessionStorageKey: string | null = null
+        PURPOSE: Unique key for storing the session ID in browser localStorage
+        WHY: When user closes and reopens the app, we can restore their session
+        from localStorage using this key. Key includes App ID to avoid collisions
+        between multiple apps sharing the same domain.
+    
+    session: NewgroundsIO.models.objects.Session
+        PURPOSE: The current user session object
+        WHY: Contains session ID, user info, expiration time, etc.
+        Stores all session-related state
+    
+    gatewayVersion: string | null = null
+        PURPOSE: Version number of the Newgrounds gateway (e.g., "3.2.0")
+        WHY: Used to notify developers if the gateway has been updated
+    
+    currentVersion: string | null = null
+        PURPOSE: Latest version of this app as set in Newgrounds project settings
+        WHY: Used to check if the user is running an outdated version
+        If currentVersion > NGIO.buildVersion, app should notify user to update
+    
+    clientDeprecated: boolean = false
+        PURPOSE: Flag set to true if app version is outdated
+        WHY: Developers can check this flag to prompt users to update
+    
+    hostApproved: boolean = true
+        PURPOSE: Whether the domain hosting this app is approved in settings
+        WHY: Developers can restrict which domains are allowed to run their app
+        If hostApproved=false, app is running on unauthorized domain (possibly hacked copy)
+    
+    saveSlots: array | null = null
+        PURPOSE: Array of SaveSlot objects for cloud saves
+        WHY: Stores metadata about cloud save slots (timestamps, filesizes, url of actual data, etc.).
+    
+    scoreBoards: array | null = null
+        PURPOSE: Array of ScoreBoard objects for leaderboards
+        WHY: Stores leaderboard data loaded from server
+    
+    medals: array | null = null
+        PURPOSE: Array of Medal objects for achievements
+        WHY: Stores medal data loaded from server
+    
+    medalScore: number = 0
+        PURPOSE: Total points earned from all unlocked medals, across all games
+        WHY: Displays user's achievement score
+    
+    ====================
+    CONSTRUCTOR
+    ====================
+    
+    CONSTRUCTOR(core: NewgroundsIO.Core)
+        
+        PURPOSE: Initialize AppState and attempt to restore previous session if available
+        
+        PARAMETERS:
+            core: The Core instance this AppState is tied to
+        
+        BEHAVIOR:
+            COMMENT: Store reference to Core
+            SET this.core TO core
+            
+            COMMENT: Create a new empty Session object
+            SET this.session TO new NewgroundsIO.models.objects.Session()
+            
+            COMMENT: Create unique storage key including app ID
+            COMMENT: This prevents different apps from overwriting each other's session data
+            SET this.sessionStorageKey TO "ngio-saved-session-id-for-" + core.appId
+            
+            COMMENT: Try to restore session from browser localStorage
+            COMMENT: If user has been here before, their session might still be valid
+            CREATE savedSessionId AS GET_FROM_LOCAL_STORAGE(this.sessionStorageKey)
+            IF savedSessionId exists THEN
+                COMMENT: Restore the saved session ID
+                SET this.session.id TO savedSessionId
+            ELSE
+                COMMENT: No saved session - try URL query string
+                COMMENT: Newgrounds includes session ID in URLs for hosted games
+                COMMENT: Example URL: ?ngio_session_id=123456789.aBcdEfG
+                CREATE sessionIdFromURL AS EXTRACT_QUERY_PARAMETER("ngio_session_id")
+                IF sessionIdFromURL exists THEN
+                    SET this.session.id TO sessionIdFromURL
+                END IF
+            END IF
+            
+            COMMENT: Determine the domain hosting this app
+            IF RUNNING_IN_WEB_BROWSER THEN
+                CREATE currentURL AS GET_CURRENT_URL()
+                IF currentURL starts with "http" THEN
+                    COMMENT: Web-hosted app - extract domain
+                    SET this.host TO EXTRACT_HOST_DOMAIN(currentURL)
+                ELSE IF currentURL starts with "file" THEN
+                    COMMENT: Running locally (file:// URL)
+                    SET this.host TO "localHost"
+                END IF
+            END IF
+    END CONSTRUCTOR
+    
+    ====================
+    PUBLIC METHODS
+    ====================
+    
+    FUNCTION loadData(propertyNames: array, callback: function|null = null)
+        
+        PURPOSE: Bulk-load app data from the server (medals, scoreboards, versions, etc.)
+        WHY: Instead of loading each piece separately, batch them in one request for efficiency
+        
+        PARAMETERS:
+            propertyNames: (required) Array of property names to load (must exist in dataProperties)
+            callback: (optional, default: null) Function called when done - receives (appState, error)
+        CALLBACK PARAMETERS:
+            appState: (required) AppState - The updated AppState instance
+            error: (optional, default: null) Error - Error object if something went wrong
+        
+        EXPLANATION:
+            This method coordinates with Core to:
+            1. Validate that requested properties exist
+            2. Create appropriate component for each property
+            3. Queue all components
+            4. Execute them in a single request
+            5. Update appState properties with results
+            6. Mark properties as loaded
+            7. Call the callback
+        
+        BEHAVIOR:
+            COMMENT: Validate input
+            IF propertyNames is empty THEN
+                THROW error "propertyNames array is empty"
+            END IF
+            
+            COMMENT: Check that all requested properties are valid
+            FOR EACH propertyName IN propertyNames
+                IF propertyName NOT in dataProperties THEN
+                    THROW error "Unknown property name: " + propertyName
+                END IF
+            END FOR
+            
+            COMMENT: Create a component for each property and queue it
+            FOR EACH propertyName IN propertyNames
+                CREATE component AS null
+                
+                COMMENT: Determine which component to create based on property name
+                SWITCH propertyName
+                    CASE 'gatewayVersion':
+                        COMMENT: Component to get gateway version info
+                        SET component TO new NewgroundsIO.models.components.Gateway.getVersion()
+                    
+                    CASE 'currentVersion':
+                        COMMENT: Component to check for app updates
+                        SET component TO new NewgroundsIO.models.components.App.getCurrentVersion()
+                        SET component.version TO core.buildVersion
+                    
+                    CASE 'hostApproved':
+                        COMMENT: Component to check if current domain is approved
+                        SET component TO new NewgroundsIO.models.components.App.getHostLicense()
+                        SET component.host TO this.host
+                    
+                    CASE 'saveSlots':
+                        COMMENT: Component to load cloud save slots
+                        SET component TO new NewgroundsIO.models.components.CloudSave.loadSlots()
+                    
+                    CASE 'medals':
+                        COMMENT: Component to load medal list
+                        SET component TO new NewgroundsIO.models.components.Medal.getList()
+                    
+                    CASE 'medalScore':
+                        COMMENT: Component to get user's total medal score
+                        SET component TO new NewgroundsIO.models.components.Medal.getMedalScore()
+                    
+                    CASE 'scoreBoards':
+                        COMMENT: Component to load scoreboard data
+                        SET component TO new NewgroundsIO.models.components.ScoreBoard.getBoards()
+                END SWITCH
+                
+                COMMENT: Queue the component for execution
+                IF component is not null THEN
+                    CALL core.queueComponent(component)
+                END IF
+            END FOR
+            
+            COMMENT: Store error reference for callback
+            CREATE localError AS null
+            
+            COMMENT: Execute all queued components in one request
+            CALL core.executeQueue(
+                FUNCTION onComplete(responses)
+                    COMMENT: Process results from all executed components
+                    FOR EACH response IN responses
+                        COMMENT: Check if this response was successful
+                        IF response.success is true AND response.result is not null THEN
+                            COMMENT: Pass successful result to setValueFromResult for processing
+                            CALL setValueFromResult(response.result)
+                        ELSE
+                            COMMENT: Capture first error encountered
+                            IF localError is null AND response.error is not null THEN
+                                SET localError TO response.error
+                            END IF
+                        END IF
+                    END FOR
+                    
+                    COMMENT: Call the developer's callback with results
+                    IF callback is not null THEN
+                        CALL callback(this, localError)
+                    END IF
+                END FUNCTION
+            )
+    END FUNCTION
+    
+    FUNCTION hasLoaded(propertyName: string): boolean
+        
+        PURPOSE: Check whether a specific property has been loaded from the server
+        WHY: Developers need to know if data is available before trying to use it
+        
+        PARAMETERS:
+            propertyName: Property to check (must be in dataProperties)
+        
+        RETURNS: true if property has been loaded, false otherwise
+        
+        BEHAVIOR:
+            COMMENT: Validate the property name
+            IF propertyName NOT in dataProperties THEN
+                THROW error "Unknown property name: " + propertyName
+            END IF
+            
+            COMMENT: Check if this property is in the loaded list
+            IF propertyName in dataLoaded THEN
+                RETURN true
+            ELSE
+                RETURN false
+            END IF
+    END FUNCTION
+    
+    FUNCTION getSessionStatus(): NewgroundsIO.SessionStatus
+        
+        PURPOSE: Analyze the current session state and return a SessionStatus object
+        WHY: Provides a simple way for developers to understand the session state
+        at a glance without digging through properties
+        
+        RETURNS: SessionStatus object with status code, user (if logged in), and error (if any)
+        
+        BEHAVIOR:
+            COMMENT: Create a new SessionStatus to report
+            CREATE sessionStatus AS new NewgroundsIO.SessionStatus()
+            
+            COMMENT: === Check basic session existence ===
+            IF session.id is empty OR session is null THEN
+                COMMENT: No session yet - return uninitialized status
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Check if session is expired ===
+            IF session.expired is true THEN
+                COMMENT: Session was valid but has now expired
+                CALL onSessionCleared()
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.EXPIRED
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Check for session errors ===
+            IF session.error is not null THEN
+                COMMENT: Session encountered an error
+                IF session.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                    COMMENT: User specifically cancelled the session
+                    CALL onSessionCleared()
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
+                ELSE
+                    COMMENT: Some other error occurred
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                    SET sessionStatus.error TO session.error
+                END IF
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Check if user is logged in ===
+            IF session.user is not null THEN
+                COMMENT: User is authenticated - they've logged in
+                SET sessionStatus.user TO session.user
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Check if we've verified this session ===
+            IF session.passport_url is empty THEN
+                COMMENT: We haven't contacted server about this session yet
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNVERIFIED
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Check if user is in the middle of logging in ===
+            IF passportIsOpen is true THEN
+                COMMENT: Passport login window is open - user is probably entering credentials
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_PASSPORT
+                RETURN sessionStatus
+            END IF
+            
+            COMMENT: === Default: session exists but no user ===
+            SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+            RETURN sessionStatus
+    END FUNCTION
+    
+    FUNCTION setValueFromResult(resultObject: NewgroundsIO.models.BaseResult)
+        
+        PURPOSE: Updates app state properties from server result values
+        EXPLANATION: Called when a result object is parsed from server.
+        Uses observer pattern to update existing objects instead of replacing them.
+        
+        PARAMETERS:
+            COMMENT: This value may need additional type casting to access child properties
+            resultObject: A result model that extends BaseResult.
+        
+        BEHAVIOR:
+            COMMENT: Get the type name of this result
+            CREATE objectName AS resultObject.getObjectName()
+            
+            COMMENT: === Gateway.getVersion results ===
+            IF objectName equals "Gateway.getVersion" THEN
+                SET this.gatewayVersion TO resultObject.version
+                CALL setLoaded('gatewayVersion')
+            END IF
+            
+            COMMENT: === App.checkSession and App.startSession results ===
+            IF objectName equals "App.checkSession" OR objectName equals "App.startSession" THEN
+                COMMENT: Create session for first time OR update existing session
+                IF this.session is null THEN
+                    SET this.session TO resultObject.session
+                    CALL setLoaded('session')
+                ELSE
+                    COMMENT: Update existing session object with new data (observer pattern)
+                    CALL this.session.importFromObject(resultObject.session)
+                END IF
+                
+                COMMENT: Mark session as verified if it's valid (not expired, no error)
+                IF this.session.expired is false AND this.session.error is null THEN
+                    SET this.session.verified TO true
+                END IF
+            END IF
+            
+            COMMENT: === App.getCurrentVersion results ===
+            IF objectName equals "App.getCurrentVersion" THEN
+                SET this.currentVersion TO resultObject.current_version
+                SET this.clientDeprecated TO resultObject.client_deprecated
+                CALL setLoaded('currentVersion')
+                CALL setLoaded('clientDeprecated')
+            END IF
+            
+            COMMENT: === App.getHostLicense results ===
+            IF objectName equals "App.getHostLicense" THEN
+                SET this.hostApproved TO resultObject.host_approved
+                CALL setLoaded('hostApproved')
+            END IF
+            
+            COMMENT: === CloudSave.loadSlots results ===
+            IF objectName equals "CloudSave.loadSlots" THEN
+                IF this.saveSlots is null THEN
+                    COMMENT: First time loading save slots
+                    SET this.saveSlots TO resultObject.slots
+                    CALL setLoaded('saveSlots')
+                ELSE
+                    COMMENT: Update existing save slots with new data
+                    FOR EACH newSlot IN resultObject.slots
+                        FOR EACH existingSlot IN this.saveSlots
+                            COMMENT: Find matching slot by ID and update it
+                            IF existingSlot.id equals newSlot.id THEN
+                                CALL existingSlot.importFromObject(newSlot)
+                            END IF
+                        END FOR
+                    END FOR
+                END IF
+            END IF
+            
+            COMMENT: === CloudSave.setData results ===
+            IF objectName equals "CloudSave.setData" THEN
+                COMMENT: Only update if saveSlots have been loaded
+                IF this.saveSlots is not null THEN
+                    FOR EACH saveSlot IN this.saveSlots
+                        COMMENT: Find matching slot by ID and update it
+                        IF saveSlot.id equals resultObject.slot.id THEN
+                            CALL saveSlot.importFromObject(resultObject.slot)
+                        END IF
+                    END FOR
+                END IF
+            END IF
+            
+            COMMENT: === Medal.getList results ===
+            IF objectName equals "Medal.getList" THEN
+                IF this.medals is null THEN
+                    COMMENT: First time loading medals
+                    SET this.medals TO resultObject.medals
+                    CALL setLoaded('medals')
+                ELSE
+                    COMMENT: Update existing medals with new data
+                    FOR EACH newMedal IN resultObject.medals
+                        FOR EACH existingMedal IN this.medals
+                            COMMENT: Find matching medal by ID and update it
+                            IF existingMedal.id equals newMedal.id THEN
+                                CALL existingMedal.importFromObject(newMedal)
+                            END IF
+                        END FOR
+                    END FOR
+                END IF
+            END IF
+            
+            COMMENT: === Medal.getMedalScore results ===
+            IF objectName equals "Medal.getMedalScore" THEN
+                SET this.medalScore TO resultObject.medal_score
+                CALL setLoaded('medalScore')
+            END IF
+            
+            COMMENT: === Medal.unlock results ===
+            IF objectName equals "Medal.unlock" THEN
+                SET this.medalScore TO resultObject.medal_score
+                CALL setLoaded('medalScore')
+                COMMENT: Update the unlocked medal in our medals list if available
+                IF this.medals is not null THEN
+                    FOR EACH medal IN this.medals
+                        COMMENT: Find matching medal by ID and update it
+                        IF medal.id equals resultObject.medal.id THEN
+                            CALL medal.importFromObject(resultObject.medal)
+                        END IF
+                    END FOR
+                END IF
+            END IF
+            
+            COMMENT: === ScoreBoard.getBoards results ===
+            IF objectName equals "ScoreBoard.getBoards" THEN
+                IF this.scoreBoards is null THEN
+                    COMMENT: First time loading scoreboards
+                    SET this.scoreBoards TO resultObject.scoreboards
+                    CALL setLoaded('scoreBoards')
+                ELSE
+                    COMMENT: Update existing scoreboards with new data
+                    FOR EACH newBoard IN resultObject.scoreboards
+                        FOR EACH existingBoard IN this.scoreBoards
+                            COMMENT: Find matching board by ID and update it
+                            IF existingBoard.id equals newBoard.id THEN
+                                CALL existingBoard.importFromObject(newBoard)
+                            END IF
+                        END FOR
+                    END FOR
+                END IF
+            END IF
+            
+            COMMENT: === Always check session remember flag and passport status ===
+            IF this.session is not null AND this.session.remember is true THEN
+                COMMENT: Save session ID for next app start
+                CREATE expirationTime AS CURRENT_TIME + 30 DAYS
+                CALL SAVE_TO_LOCAL_STORAGE(this.sessionStorageKey, this.session.id, expirationTime)
+            END IF
+            
+            COMMENT: Check if passport login is still in progress
+            IF this.passportIsOpen is true THEN
+                COMMENT: Determine if passport is still open based on session state
+                IF this.session is null OR this.session.id is empty THEN
+                    COMMENT: Session was reset/cleared
+                    SET this.passportIsOpen TO false
+                END IF
+                
+                IF this.session.expired is true THEN
+                    COMMENT: Session expired while waiting
+                    SET this.passportIsOpen TO false
+                END IF
+                
+                IF this.session.user is not null THEN
+                    COMMENT: User has successfully logged in
+                    SET this.passportIsOpen TO false
+                END IF
+            END IF
+    END FUNCTION
+    
+    ====================
+    PRIVATE METHODS
+    ====================
+    
+    FUNCTION setLoaded(propertyName: string)
+        
+        PURPOSE: Records that a property has been loaded from the server
+        WHY: Used internally to track which data properties have been loaded
+        
+        PARAMETERS:
+            propertyName: Name of the property that has been loaded
+        
+        BEHAVIOR:
+            COMMENT: Validate that this is a valid property name
+            IF propertyName NOT in dataProperties THEN
+                THROW error "Unknown property name: " + propertyName
+            END IF
+            
+            COMMENT: Check if already marked as loaded
+            IF propertyName in dataLoaded THEN
+                COMMENT: Already marked as loaded, nothing to do
+                RETURN
+            END IF
+            
+            COMMENT: Mark this property as loaded
+            APPEND propertyName TO dataLoaded
+    END FUNCTION
+    
+    FUNCTION onSessionCleared()
+        
+        PURPOSE: Clears session-specific data from all affected objects
+        WHY: When a session expires or is cancelled, we need to reset objects to their
+        unauthenticated state while preserving the cached data structure
+        
+        BEHAVIOR:
+            COMMENT: Clear the session itself
+            CALL session.clearSessionData()
+            
+            COMMENT: If save slots have been loaded, clear session data from each
+            IF saveSlots is not null THEN
+                FOR EACH saveSlot IN saveSlots
+                    CALL saveSlot.clearSessionData()
+                END FOR
+            END IF
+            
+            COMMENT: If medals have been loaded, clear session data from each
+            IF medals is not null THEN
+                FOR EACH medal IN medals
+                    CALL medal.clearSessionData()
+                END FOR
+            END IF
+            
+            COMMENT: Reset medal score and passport flag
+            SET medalScore TO 0
+            SET passportIsOpen TO false
+    END FUNCTION
+    
+    FUNCTION clearSession()
+        
+        PURPOSE: Completely clear the current session (used when logging out)
+        WHY: When user logs out, we need to remove all session data
+        
+        BEHAVIOR:
+            COMMENT: Clear session-specific data from the session object
+            CALL session.clearSessionData()
+            
+            COMMENT: Also remove the saved session from browser storage
+            COMMENT: So next time they open the app, they won't be auto-logged-in
+            CALL CLEAR_FROM_LOCAL_STORAGE(sessionStorageKey)
+    END FUNCTION
+
+END CLASS

@@ -1,0 +1,565 @@
+================================================================================
+NEWGROUNDS.IO PSEUDO-CODE IMPLEMENTATION GUIDE
+================================================================================
+
+This document provides essential guidance for translating the pseudo-code files
+into working code for your target platform. It's designed to to fill knowledge 
+gaps and eliminate assumptions.
+
+TARGET AUDIENCE:
+- Developers implementing their first Newgrounds.io library
+- AI/LLM-based code generators translating pseudo-code
+- Contributors working in unfamiliar languages
+- Developers seeking clarification on design decisions
+
+================================================================================
+CORE CONCEPTS
+================================================================================
+
+WHAT IS NEWGROUNDS.IO?
+----------------------
+Newgrounds.io is a server-side API that provides game services like:
+- User authentication (Passport system)
+- Achievements/Medals
+- Leaderboards/Scoreboards  
+- Cloud saves
+- Analytics and event tracking
+
+All communication happens via HTTPS POST requests to a single gateway endpoint.
+Your library acts as a wrapper that formats requests, handles responses, and
+manages local state caching.
+
+
+ASYNCHRONOUS OPERATIONS
+------------------------
+All network communication is asynchronous - functions return immediately while
+the actual work happens in the background.
+
+CALLBACKS vs PROMISES:
+- Pseudo-code uses callback pattern: function(result, error)
+- If your language/platform prefers Promises, use them instead
+- If your language prefers async/await, use that instead
+- Choose whichever pattern is STANDARD for your platform
+
+EXAMPLES:
+JavaScript (modern):    async/await with Promises
+JavaScript (classic):   Callbacks
+Python:                 async/await with asyncio
+C#:                     async/await with Tasks
+Java:                   CompletableFuture or callbacks
+Swift:                  async/await or completion handlers
+
+THE RULE: Use what developers in your language expect to see.
+
+
+CALLBACK SCOPE BINDING
+----------------------
+If using callbacks and your language doesn't have arrow functions or .bind():
+- Add optional "thisArg" or "bindTo" parameter to methods
+- Example: unlock(callback, thisArg) instead of unlock(callback)
+- This lets developers maintain proper 'this' context
+
+
+NULL vs UNDEFINED vs NONE
+--------------------------
+Pseudo-code uses "null" for empty/missing values.
+Translate to your language's equivalent:
+- JavaScript: null or undefined (prefer null for consistency)
+- Python: None
+- Java: null
+- C#: null
+- Ruby: nil
+- Go: nil
+
+
+================================================================================
+LANGUAGE-SPECIFIC ADAPTATIONS
+================================================================================
+
+NAMING CONVENTIONS
+------------------
+Pseudo-code uses conventions that may not match your language:
+
+Classes:        PascalCase - Adapt to your language's convention
+Methods:        camelCase - Adapt to your language's convention  
+Properties:     camelCase - Adapt to your language's convention
+Constants:      SCREAMING_SNAKE_CASE - Usually keep this
+
+EXAMPLES:
+Python:         class_names, method_names, property_names
+Ruby:           ClassNames, method_names, @instance_vars
+Go:             StructNames, MethodNames, fieldNames
+Rust:           StructNames, method_names, field_names
+
+THE RULE: Follow the dominant style guide for your language/platform.
+
+
+NAMESPACE STRUCTURE
+-------------------
+Pseudo-code uses dot notation: NewgroundsIO.models.objects.Medal
+
+Translate to your language's namespace/module system:
+- JavaScript (ES6):     NewgroundsIO.models.objects.Medal (class structure)
+- Python:               newgrounds_io.models.objects.Medal (modules)
+- Java:                 com.newgrounds.io.models.objects.Medal (packages)
+- C#:                   NewgroundsIO.Models.Objects.Medal (namespaces)
+- Ruby:                 NewgroundsIO::Models::Objects::Medal (modules)
+- Go:                   newgroundsio/models/objects/medal.go (packages)
+
+THE RULE: Use your language's standard module/package conventions.
+
+
+STATIC vs INSTANCE
+------------------
+Pseudo-code indicates when classes should be static/singleton:
+- "This is a static class" = All methods/properties are class-level
+- "This is a singleton" = Only one instance should exist
+
+Languages handle this differently:
+- JavaScript: Use class with static methods, or singleton pattern
+- Python: Use module-level functions, or class with @classmethod
+- Java: Use private constructor + getInstance(), or all static
+- C#: Use sealed class with private constructor + static Instance property
+
+THE RULE: Use your language's idiomatic approach to static/singleton.
+
+
+TYPE SYSTEMS
+------------
+Pseudo-code includes type hints for clarity: "appId: string"
+
+Strongly-typed languages:
+- Use explicit types matching pseudo-code hints
+- string - String/string/str
+- number/int - int/Integer/int32/i32
+- number/float - float/double/f64
+- boolean - bool/boolean/Boolean
+- array - List<T>/Array<T>/Vec<T>/[]T
+- object/dictionary - Map<K,V>/Dictionary<K,V>/HashMap<K,V>
+
+Dynamically-typed languages:
+- Type hints are documentation only
+- Use type hints in comments or docstrings
+- Consider optional type hints (Python type annotations, JSDoc, etc.)
+
+THE RULE: Leverage your type system appropriately.
+
+
+================================================================================
+NETWORK COMMUNICATION
+================================================================================
+
+SSL/HTTPS REQUIREMENT
+---------------------
+ALL communication with the Newgrounds.io gateway MUST use HTTPS (SSL/TLS).
+
+IMPORTANT POINTS:
+- Gateway URL: https://www.newgrounds.io/gateway_v3.php (note HTTPS)
+- The server prefers HTTPS and may reject HTTP requests
+- Your HTTP library must support HTTPS (virtually all modern ones do)
+- You don't need to implement SSL yourself - just use HTTPS URLs
+- Certificates are handled automatically by HTTP libraries
+
+Most platforms provide HTTPS support out of the box:
+- Browsers: Fetch API and XMLHttpRequest support HTTPS natively
+- Node.js: https module or fetch/axios libraries
+- Python: requests library handles HTTPS automatically
+- Java: HttpClient supports HTTPS by default
+- C#: HttpClient supports HTTPS by default
+- Game engines: Built-in HTTP APIs typically support HTTPS
+
+If your platform lacks HTTPS support, it cannot communicate with Newgrounds.io.
+
+THE RULE: Always use the full HTTPS URL. Don't try to use HTTP.
+
+
+HTTP POST METHODS
+-----------------
+The gateway accepts requests in TWO formats - use whichever your platform supports:
+
+METHOD 1: Raw Body POST (Preferred for modern platforms)
+- POST the JSON string directly as the request body
+- Content-Type: application/json (or text/plain)
+- Example: fetch(url, {method: 'POST', body: jsonString})
+
+METHOD 2: Form Data POST (Required for many game engines)
+- POST using form-urlencoded format
+- Send JSON string as a parameter named "request"
+- Content-Type: application/x-www-form-urlencoded
+- Example: POST "request=" + urlEncode(jsonString)
+
+PLATFORMS:
+- JavaScript (browser/Node): Use Fetch API (Method 1)
+- Unity (C#): Use UnityWebRequest with form (Method 2)
+- GameMaker: Use http_post_string with form (Method 2)
+- Python: Use requests library (Method 1 or 2)
+- Java: Use HttpClient (Method 1 or 2)
+
+THE RULE: Both methods work equally well. Use what your platform provides.
+
+
+HANDLING RESPONSES
+------------------
+All successful responses are JSON objects containing:
+- success: boolean (true if request was valid)
+- result: object or array (the actual data)
+- error: object (only present if success is false)
+
+Your code must:
+1. Check HTTP status code (200-299 = success, else = error)
+2. Parse response text as JSON
+3. Check response.success property
+4. Handle response.error if present
+5. Process response.result data
+
+ERROR HANDLING:
+- Network errors: No response received (timeout, no connection)
+- HTTP errors: Bad status code (400, 500, etc.)
+- API errors: success=false with error object
+- Parse errors: Invalid JSON in response
+
+Handle all four types gracefully.
+
+
+================================================================================
+ENCRYPTION
+================================================================================
+
+ENCRYPTION REQUIREMENTS
+-----------------------
+Components that modify user data (medal unlocks, score posts) support encryption
+to prevent cheating. The pseudo-code indicates this with "isSecure" property.
+
+SUPPORTED CIPHERS:
+1. AES-128-CBC (STRONGLY PREFERRED)
+   - Block cipher, 128-bit key
+   - Requires initialization vector (IV)
+   - Most secure option
+
+2. RC4 (FALLBACK ONLY)
+   - Stream cipher, 128-bit key
+   - Simpler but less secure
+   - Use only if AES is unavailable
+
+ENCODING:
+- Encryption produces binary data
+- Must be encoded to string for transmission
+- Base64 (preferred) or Hexadecimal
+- Pseudo-code uses "ENCODE_BASE64_OR_HEX()"
+
+IMPLEMENTATION:
+If your platform lacks native encryption:
+- Use a well-established crypto library
+- Do NOT implement encryption yourself
+- If no library exists, document this limitation
+- Projects can be configured to work without encryption
+
+KEYS:
+- Encryption key provided by Newgrounds (from app settings)
+- Key format depends on cipher and encoding choices
+- May need to decode key from Base64/Hex before use
+
+Newgrounds projects assume AES-128 with Base64 encoding by default.
+Be very clear if another cypher and/or encoder are used, 
+or if encryption is not implemented.
+
+================================================================================
+STATE MANAGEMENT
+================================================================================
+
+THE APPSTATE PATTERN
+--------------------
+AppState caches server data locally (medals, scoreboards, sessions, etc.) to
+minimize network requests. This is CRITICAL for performance.
+
+KEY CONCEPTS:
+
+1. OBSERVER PATTERN
+   - Don't replace object references when updating
+   - Use importFromObject() to update properties in-place
+   - This lets external code keep references to objects
+
+2. LOADED DATA TRACKING
+   - Track which data types have been loaded
+   - hasLoaded('medals') returns true after loadMedals() completes
+   - Prevents redundant loads and provides clear state
+
+3. AUTOMATIC UPDATES
+   - Response.importFromObject() calls appState.setValueFromResult()
+   - This automatically updates cached data from server responses
+   - Developers don't manually sync state
+
+WHY THIS MATTERS:
+- Game code can call NGIO.getMedal(5) instantly after loading medals once
+- No network delay for cached data
+- References stay valid even after updates
+- Clear distinction between cached and uncached data
+
+
+SESSION MANAGEMENT
+------------------
+Sessions link users to your app. Critical points:
+
+1. SESSION LIFECYCLE
+   - Created by App.startSession or loaded from URL/storage
+   - Validated with App.checkSession before trusting user data
+   - Expires after 1 hour (or 30 days if "remember" is true)
+   - Renewed on every API request containing the session ID
+
+2. PASSPORT FLOW
+   - session.passport_url opens browser window for login
+   - User logs in on Newgrounds website
+   - Must poll with App.checkSession to detect completion
+   - Session.user property populated when login succeeds
+
+3. SESSION STORAGE
+   - If session.remember is true, save session.id locally
+   - Restore on app launch and validate with App.checkSession
+   - Clear storage if session expired or user logs out
+
+4. VERIFIED PROPERTY (CUSTOM)
+   - Add custom "verified" boolean property to Session model
+   - Set false when creating a session model
+   - Set true after App.checkSession or App.startSession succeeds
+   - Prevents using unvalidated sessions
+
+
+================================================================================
+MODEL GENERATION
+================================================================================
+
+OBJECT, COMPONENT, AND RESULT MODELS
+-------------------------------------
+The API has many models - manually coding each is tedious and error-prone.
+
+OPTIONS:
+
+1. AUTOMATED GENERATION (Recommended)
+    - This guide is bundled with the official model generator library
+    - See: https://github.com/PsychoGoldfishNG/ngio-object-model-generator
+    - The generator uses official JSON schema from Newgrounds.io
+    - Can be customized to fit most languages.
+    - Follow the generator's documentation for details
+    - Generates templates that can render all models with properties, types, and validation
+
+2. MANUAL IMPLEMENTATION
+   - Follow the Newgrounds.io Developer Guide: https://github.com/PsychoGoldfishNG/ngio-developer-guide
+   - Use web documentation: https://www.newgrounds.io/help/
+   - Objects list: https://www.newgrounds.io/help/objects
+   - Components list: https://www.newgrounds.io/help/components/
+   - More time-consuming but gives you full control
+
+BASE CLASSES:
+All models extend one of three base classes:
+- BaseObject: For data objects (User, Medal, Session, etc.)
+- BaseComponent: For component definitions (Medal.unlock, etc.)
+- BaseResult: For component results
+
+Each base class provides:
+- Type validation and casting
+- JSON serialization/deserialization
+- Property tracking
+- Consistent interface
+
+Refer to model generator documentation for details on specific models.
+
+
+MIXED TYPE PROPERTIES
+----------------------
+Some properties accept either a single value OR an array of values.
+Example: Request.execute can be one Execute object or an array of Executes.
+
+IMPLEMENTATION PATTERN:
+1. Create TWO internal properties: "execute" and "executeList"
+2. Create setters: setExecute(value) and setExecuteList(array)
+3. Only ONE should be set at a time (setters clear the other)
+4. Create helpers: executeIsArray(), getExecute(), getExecuteList()
+5. Override prepareForJson() to output the correct format
+
+This ensures type safety while supporting the API's flexibility.
+
+
+================================================================================
+DEBUGGING AND TESTING
+================================================================================
+
+DEBUG MODE
+----------
+Core.useDebugMode = true makes components execute without saving to server.
+- Medal unlocks show success but don't actually unlock
+- Scores post successfully but don't save to leaderboard
+- Useful for testing without polluting real data
+- Always document this feature for users
+
+COMMON ISSUES:
+
+1. Debug mode left enabled in production
+    - Core.useDebugMode = true prevents actual data saves
+    - Medals don't unlock, scores don't post to leaderboard
+    - Always disable before shipping (set to false or remove)
+
+2. Session not validated before use
+    - Newgrounds passes authenticated session_id in URL on hosted games
+    - CRITICAL: Must call App.checkSession() and wait for callback before using session.user
+    - Common mistake: Trying to unlock medals on title screen before session validates
+    - Always ensure hasLoaded('session') is true and session.user is not null
+
+3. "Session expired" errors
+    - Session IDs expire after 1 hour (or 30 days if remembered)
+    - Always validate sessions before trusting them
+
+4. "Login required" errors
+    - Component requires authenticated user
+    - Check session.user is not null before calling
+
+5. Encryption failures
+    - Wrong cipher or encoding format
+    - Verify encryption settings match app configuration
+
+6. "Invalid app ID" errors
+    - Wrong app ID or encryption key
+    - Double-check credentials from Newgrounds
+
+7. CORS errors (web browsers)
+    - Newgrounds.io has wide-open CORS headers
+    - Errors typically occur when running locally (file://) or using HTTP
+    - Always use HTTPS and a proper domain/localhost server
+    - Use a local dev server (not file://) for testing
+
+TESTING CHECKLIST:
+[] Can initialize Core with app credentials
+[] Can load medals, scoreboards, save slots
+[] Can unlock medal (creates encrypted request)
+[] Can post scoreboard value (creates encrypted request)
+[] Can handle expired session gracefully
+[] Can open Passport URL and detect login completion
+[] Can save and restore session from storage
+[] Can handle network errors gracefully
+[] Can parse all response formats correctly
+
+
+================================================================================
+PLATFORM-SPECIFIC CONSIDERATIONS
+================================================================================
+
+WEB BROWSERS
+------------
+- Use Fetch API or XMLHttpRequest for network
+- Respect CORS (Newgrounds.io has proper headers)
+- Extract session ID from URL query string on page load (if present)
+- Use localStorage for session persistence
+- Open Passport in a new browser tab.
+
+GAME ENGINES (Unity, Unreal, GameMaker, etc.)
+----------------------------------------------
+- Use engine's HTTP API (often form-based POST only)
+- Will need separate window/tab for Passport
+- Check for session ID in launch parameters
+- Use engine's persistent storage for sessions
+- May lack native JSON and/or encryption (use plugins)
+
+================================================================================
+COMMON PITFALLS
+================================================================================
+
+1. REPLACING OBJECT REFERENCES
+   ✗ Wrong: appState.session = newSessionObject
+   ✓ Right: appState.session.importFromObject(data)
+   Why: External code loses references if you replace objects
+
+2. NOT CHECKING hasLoaded()
+   ✗ Wrong: Immediately call NGIO.getMedal(5) after init
+   ✓ Right: Call loadMedals(), wait for callback, then get medal
+   Why: Data isn't loaded until server responds
+
+3. TRUSTING UNVERIFIED SESSIONS
+   ✗ Wrong: Use session.user immediately after loading from storage
+   ✓ Right: Call checkSession(), wait for validation, then use user
+   Why: Session might have expired since last use
+
+4. FORGETTING ENCRYPTION
+   ✗ Wrong: Send secure components as plain JSON
+   ✓ Right: Check isSecure and encrypt if true
+   Why: Server rejects unencrypted secure components
+
+5. BLOCKING ON ASYNC OPERATIONS
+   ✗ Wrong: Wait/block until network request completes
+   ✓ Right: Use callbacks/promises/async-await properly
+   Why: Blocking freezes apps and is often impossible anyway
+
+6. HARD-CODING ERROR MESSAGES
+   ✗ Wrong: if (error.code === 104) display "Session expired"
+   ✓ Right: Use Errors.getDefaultMessage(error.code)
+   Why: Centralized messages can be updated/localized
+
+
+================================================================================
+BEST PRACTICES
+================================================================================
+
+CODE STYLE
+----------
+1. Follow your language's official style guide
+2. Use descriptive variable names (not abbreviated)
+3. Comment complex logic (encryption, state updates)
+4. Include doc comments on all public methods
+5. Use type hints where available
+
+ERROR HANDLING
+--------------
+1. Never let network errors crash the app
+2. Always provide error info to callback/promise
+3. Log errors for debugging (use proper logging, not console)
+4. Provide sensible defaults when data unavailable
+
+PERFORMANCE
+-----------
+1. Batch multiple components in one request when possible
+2. Cache data aggressively (that's what AppState is for)
+3. Don't poll excessively (checkSession every 2-3 seconds max)
+4. Consider background queuing for non-urgent operations
+
+SECURITY
+--------
+1. Never log or display encryption keys
+2. Use HTTPS only (gateway enforces this)
+3. Store session IDs securely on mobile platforms
+4. Don't trust client-side data for secure operations
+
+DOCUMENTATION
+-------------
+1. Include setup guide with app ID and encryption key instructions
+2. Document callback signatures clearly
+3. Provide code examples for common operations
+4. Explain session lifecycle and Passport flow
+5. Note which methods require user authentication
+
+
+================================================================================
+GETTING HELP
+================================================================================
+
+OFFICIAL DOCUMENTATION:
+- Developer Guide: https://github.com/PsychoGoldfishNG/ngio-developer-guide
+- API Reference: https://www.newgrounds.io/help/
+- Components: https://www.newgrounds.io/help/components/
+- Objects: https://www.newgrounds.io/help/objects/
+- Encryption: https://www.newgrounds.io/help/encryption/
+- Passport: https://www.newgrounds.io/help/passport/
+
+COMMUNITY SUPPORT:
+- Discord Server: https://discord.gg/wcsCk2ErhH
+  Get real-time support and hang out with other game developers
+  
+- Support Forum: https://www.newgrounds.com/bbs/topic/1412560
+  Post questions and get help from the community
+  Be patient - someone will respond as soon as possible
+
+
+REMEMBER:
+The pseudo-code files are guides, not strict rules. Adapt them to your
+language's idioms and conventions while maintaining the core architecture
+and design patterns. When in doubt, prioritize code that feels natural to
+developers in your target language.
+
+================================================================================

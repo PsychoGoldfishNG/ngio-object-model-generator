@@ -1,0 +1,462 @@
+CLASS BaseObject
+    DESCRIPTION: Foundation class for all model objects with serialization/deserialization
+    NAMESPACE: NewgroundsIO.models
+    NOTE: This is an abstract class - you should NOT create instances directly
+    
+    PURPOSE: Every model in Newgrounds (User, Medal, Score, SaveSlot, etc.) extends BaseObject.
+    BaseObject provides essential functionality that all models need:
+    - Importing data from JSON
+    - Type casting (converting raw values to proper types)
+    - Validating required properties
+    - Converting back to JSON strings
+    - Name tracking for nested objects
+    
+    WHY THIS APPROACH: Without BaseObject, each model class would duplicate all this
+    serialization code. By centralizing it here, we have one consistent way to:
+    1. Load data from the server
+    2. Validate it
+    3. Use it
+    4. Save it back
+    
+    RELATIONSHIP TO SUBCLASSES:
+    - All app models extend BaseObject (directly or indirectly)
+    - User, Medal, ScoreBoard, SaveSlot, etc. all inherit from BaseObject
+    - BaseComponent and BaseResult also extend BaseObject
+    
+    ====================
+    ABSTRACT PROPERTIES
+    ====================
+    
+    COMMENT: These must be defined in each subclass:
+    
+    objectName: string (ABSTRACT - must be overridden in subclass)
+        PURPOSE: The name of this object type for the JSON (e.g., "User", "Medal", "Score")
+        WHY: Used when serializing to JSON to indicate what type of object this is
+        EXAMPLE: A User object might have objectName = "User"
+    
+    objectType: string (ABSTRACT - must be overridden in subclass)
+        PURPOSE: A category/namespace for this object (e.g., "object", "component", "result")
+        WHY: Used to create the full qualified name like "object.User" or "component.Medal.unlock"
+        EXAMPLE: User extends BaseObject and sets objectType = "object"
+    
+    propertyNames: array (ABSTRACT - must be overridden in subclass)
+        PURPOSE: List of all property names this object supports
+        WHY: Prevents typos - only properties in this list can be imported
+        EXAMPLE: User.propertyNames = ['id', 'name', 'supporter', 'url']
+    
+    requiredProperties: array (ABSTRACT - must be overridden in subclass)
+        PURPOSE: List of properties that MUST be present
+        WHY: Some properties are critical - if missing, the object is incomplete/invalid
+        EXAMPLE: Medal.requiredProperties = ['id'] (a medal must have an ID)
+    
+    castTypes: object (ABSTRACT - must be overridden in subclass)
+        PURPOSE: Specifies how to cast (convert) each property value to the correct type
+        WHY: Server returns everything as JSON strings. We need to convert to numbers, booleans, 
+             nested objects, arrays, etc.
+        EXAMPLE: { id: 'number', name: 'string', unlocked: 'boolean', metadata: User }
+        CAST TYPE VALUES:
+            - 'string': Keep as text
+            - 'number': Convert to integer or float
+            - 'boolean': Convert to true/false
+            - ClassName: Create an instance of ClassName and recursively import
+            - 'array-of-ClassName': Create array of instances
+    
+    ====================
+    PUBLIC METHODS
+    ====================
+    
+    FUNCTION importFromObject(importObject: object, preserveObjects: boolean = false)
+        
+        PURPOSE: Import data from a plain object (usually JSON parsed from server)
+        WHY: When the server sends back data, it's in plain JSON format. This method
+        converts it to properly-typed model objects with all properties set correctly.
+        
+        PARAMETERS:
+            importObject: (required) Plain object with raw data (e.g., from JSON.parse)
+            preserveObjects: (optional, default: false) If true, don't overwrite existing object properties
+        
+        EXPLANATION:
+            STEP 1: Loop through each property in importObject
+            STEP 2: Validate that each property name is in propertyNames
+            STEP 3: Cast the value to the correct type (string, number, object, array, etc.)
+            STEP 4: Set the property on this object
+            STEP 5: Call observers/listeners if present (for reactive/event systems)
+            
+            OBSERVER PATTERN: After setting a property, if the property has an observer
+            (listener/callback), call it. This allows reactive frameworks to update.
+            For example: if user.name changes, UI can automatically update.
+        
+        BEHAVIOR:
+            COMMENT: ==================== VALIDATE INPUT ====================
+            IF importObject is null OR importObject is undefined THEN
+                COMMENT: Nothing to import
+                RETURN
+            END IF
+            
+            COMMENT: ==================== HANDLE BASEOBJECT IMPORT ====================
+            COMMENT: If importing from another BaseObject instance
+            IF importObject has getFullObjectName method THEN
+                COMMENT: It's a BaseObject instance - verify same type
+                IF importObject.getFullObjectName() NOT equals this.getFullObjectName() THEN
+                    THROW error "Cannot import " + importObject.getFullObjectName() + 
+                                " into " + this.getFullObjectName()
+                END IF
+                COMMENT: Convert to plain object first
+                SET importObject TO importObject.toObject(false, false)
+            END IF
+            
+            COMMENT: Verify it's a simple object (not array, not primitive)
+            IF importObject is an array OR importObject is a primitive THEN
+                THROW error "importObject must be a plain object or BaseObject instance"
+            END IF
+            
+            COMMENT: ==================== IMPORT EACH PROPERTY ====================
+            FOR EACH propertyName IN propertyNames
+                COMMENT: Check if property exists in the import object
+                IF propertyName NOT in importObject THEN
+                    COMMENT: Property not provided - keep existing value
+                    CONTINUE TO NEXT PROPERTY
+                END IF
+                
+                CREATE propertyValue AS importObject[propertyName]
+                
+                COMMENT: === HANDLE PRESERVEOBJECTS CASE ===
+                COMMENT: Try to update existing objects instead of replacing them
+                IF preserveObjects THEN
+                    COMMENT: Check if current property is already a BaseObject instance
+                    IF this[propertyName] is not null AND this[propertyName] has importFromObject method THEN
+                        COMMENT: Check if the incoming value is a simple object (not array, not null)
+                        IF propertyValue is an object AND propertyValue is NOT an array AND propertyValue is NOT null THEN
+                            COMMENT: Get expected type from castTypes
+                            CREATE expectedType AS castTypes[propertyName]
+                            
+                            COMMENT: Verify type compatibility by checking objectName field
+                            CREATE incomingObjectName AS propertyValue.objectName
+                            CREATE isTypeCompatible AS false
+                            
+                            IF incomingObjectName is not null THEN
+                                COMMENT: Check if types match by full object name
+                                COMMENT: The incoming value should match expected type
+                                IF this[propertyName].getFullObjectName() has matching prefix with incomingObjectName THEN
+                                    SET isTypeCompatible TO true
+                                END IF
+                            END IF
+                            
+                            IF isTypeCompatible THEN
+                                COMMENT: Types match - recursively import to preserve reference
+                                CALL this[propertyName].importFromObject(propertyValue, preserveObjects)
+                                COMMENT: Notify observers of update
+                                IF this.observers exists AND propertyName in this.observers THEN
+                                    FOR EACH observer IN this.observers[propertyName]
+                                        CALL observer(propertyName, this[propertyName])
+                                    END FOR
+                                END IF
+                                CONTINUE TO NEXT PROPERTY
+                            ELSE
+                                COMMENT: Type mismatch - log warning and fall through to replace
+                                CALL LOG_WARNING("Type mismatch for " + propertyName + ": expected " + 
+                                                 this[propertyName].getFullObjectName() + " but got different type")
+                            END IF
+                        END IF
+                    END IF
+                END IF
+                
+                COMMENT: === STANDARD CAST AND ASSIGN ===
+                CREATE castValue AS CALL castValue(propertyName, propertyValue)
+                SET this[propertyName] TO castValue
+                
+                COMMENT: === CALL OBSERVERS ===
+                COMMENT: If anyone is listening for changes to this property, notify them
+                IF this.observers exists AND propertyName in this.observers THEN
+                    FOR EACH observer IN this.observers[propertyName]
+                        CALL observer(propertyName, castValue)
+                    END FOR
+                END IF
+            END FOR
+    END FUNCTION
+    
+    FUNCTION castValue(propertyName: string, value: any): any
+        
+        PURPOSE: Convert a property value to its correct type
+        WHY: JSON only has strings, numbers, booleans, arrays, and objects. We need to
+        convert these raw values to the correct model types (e.g., string 'true' -> boolean true,
+        nested object -> Medal instance, array -> array of Medals)
+        
+        PARAMETERS:
+            propertyName: (required) Name of the property being cast (used to look up type info)
+            value: (required) The raw value from JSON
+        
+        RETURNS: The value converted to the correct type
+        
+        EXPLANATION:
+            This method is the "glue" between JSON and typed objects. Examples:
+            - JSON has: { "unlocked": "true" }  -> cast to: boolean true
+            - JSON has: { "medals": [...] } -> cast to: array of Medal instances
+            - JSON has: { "user": {...} } -> cast to: User instance
+            - JSON has: { "score": "1000" } -> cast to: number 1000
+        
+        BEHAVIOR:
+            COMMENT: If value is null or undefined, keep it null
+            IF value is null OR value is undefined THEN
+                RETURN null
+            END IF
+            
+            COMMENT: Look up the type for this property
+            IF propertyName NOT in castTypes THEN
+                COMMENT: No type specified - keep as-is
+                RETURN value
+            END IF
+            
+            CREATE castType AS castTypes[propertyName]
+            
+            COMMENT: ==================== HANDLE PRIMITIVES ====================
+            IF castType equals 'string' THEN
+                RETURN TO_STRING(value)
+            ELSE IF castType equals 'number' THEN
+                RETURN TO_NUMBER(value)
+            ELSE IF castType equals 'boolean' THEN
+                IF value is string THEN
+                    RETURN value.toLowerCase() equals 'true'
+                ELSE
+                    RETURN TO_BOOLEAN(value)
+                END IF
+            END IF
+            
+            COMMENT: ==================== HANDLE ARRAYS ====================
+            COMMENT: Check for array-of-X pattern (e.g., "array-of-Medal")
+            IF castType starts with 'array-of-' THEN
+                COMMENT: Get the element type (remove 'array-of-' prefix)
+                CREATE elementTypeName AS castType.substring(9)
+                
+                COMMENT: Make sure the value is actually an array
+                IF value is NOT an array THEN
+                    COMMENT: Not an array - return empty array
+                    RETURN empty array
+                END IF
+                
+                COMMENT: Convert each element to the element type
+                CREATE resultArray AS new array
+                FOR EACH element IN value
+                    COMMENT: Skip null/undefined elements
+                    IF element is null OR element is undefined THEN
+                        CONTINUE TO NEXT ELEMENT
+                    END IF
+                    
+                    COMMENT: Recursively create instances of elementType
+                    CREATE instance AS new (elementTypeName)()
+                    CALL instance.importFromObject(element)
+                    APPEND instance TO resultArray
+                END FOR
+                
+                RETURN resultArray
+            END IF
+            
+            COMMENT: ==================== HANDLE SINGLE OBJECTS ====================
+            COMMENT: castType is a class name (e.g., User, Medal, etc.)
+            COMMENT: value should be a plain object that we'll convert to castType
+            
+            IF value is an object THEN
+                COMMENT: Create a new instance of the target type
+                CREATE instance AS new (castType)()
+                COMMENT: Recursively import the nested object
+                COMMENT: Always use preserveObjects=false for new instances
+                CALL instance.importFromObject(value, false)
+                RETURN instance
+            END IF
+            
+            COMMENT: Value isn't the right format - return as-is
+            RETURN value
+    END FUNCTION
+    
+    FUNCTION getFullObjectName(): string
+        
+        PURPOSE: Returns the fully-qualified name of this object for logging/debugging
+        WHY: Helps track nested objects. For example, a Medal inside a User should show
+        something like "object.User.medal" to show the hierarchy.
+        
+        RETURNS: Qualified name like "object.User" or "component.Medal.unlock"
+        
+        BEHAVIOR:
+            COMMENT: Start with objectType and objectName
+            CREATE fullName AS objectType + "." + objectName
+            
+            COMMENT: If this object is nested inside another, include parent
+            COMMENT: parent would be set if this was created as part of importFromObject
+            IF this.parent exists AND this.parentPropertyName exists THEN
+                SET fullName TO this.parent.getFullObjectName() + "." + this.parentPropertyName
+            END IF
+            
+            RETURN fullName
+    END FUNCTION
+    
+    FUNCTION hasValidProperties(): boolean
+        
+        PURPOSE: Check if this object has all required properties
+        WHY: Objects from the server might be incomplete. We validate before using them.
+        
+        RETURNS: true if all required properties are present, false if any are missing
+        
+        BEHAVIOR:
+            COMMENT: Check each required property
+            FOR EACH requiredProperty IN requiredProperties
+                IF this[requiredProperty] is null OR this[requiredProperty] is undefined THEN
+                    COMMENT: Missing a required property!
+                    RETURN false
+                END IF
+                
+                COMMENT: Check for empty strings
+                IF this[requiredProperty] is a string THEN
+                    IF this[requiredProperty].length equals 0 THEN
+                        RETURN false
+                    END IF
+                END IF
+                
+                COMMENT: Check for empty arrays
+                IF this[requiredProperty] is an array THEN
+                    IF this[requiredProperty].length equals 0 THEN
+                        RETURN false
+                    END IF
+                END IF
+                
+                COMMENT: Note: The number 0 and boolean false are considered valid values
+            END FOR
+            
+            COMMENT: All required properties are present and valid
+            RETURN true
+    END FUNCTION
+    
+    FUNCTION getValidationErrors(): array
+        
+        PURPOSE: Get a list of all validation errors
+        WHY: Provides detailed error information instead of just true/false
+        
+        RETURNS: Array of error message strings (empty array if no errors)
+        
+        BEHAVIOR:
+            CREATE errors AS new array
+            
+            COMMENT: Check each required property
+            FOR EACH requiredProperty IN requiredProperties
+                IF this[requiredProperty] is null OR this[requiredProperty] is undefined THEN
+                    COMMENT: Add error message for missing property
+                    CREATE errorMsg AS "Required property '" + requiredProperty + "' is missing or null"
+                    APPEND errorMsg TO errors
+                    CONTINUE TO NEXT PROPERTY
+                END IF
+                
+                COMMENT: Check for empty strings
+                IF this[requiredProperty] is a string THEN
+                    IF this[requiredProperty].length equals 0 THEN
+                        CREATE errorMsg AS "Required property '" + requiredProperty + "' is an empty string"
+                        APPEND errorMsg TO errors
+                        CONTINUE TO NEXT PROPERTY
+                    END IF
+                END IF
+                
+                COMMENT: Check for empty arrays
+                IF this[requiredProperty] is an array THEN
+                    IF this[requiredProperty].length equals 0 THEN
+                        CREATE errorMsg AS "Required property '" + requiredProperty + "' is an empty array"
+                        APPEND errorMsg TO errors
+                        CONTINUE TO NEXT PROPERTY
+                    END IF
+                END IF
+                
+                COMMENT: Note: The number 0 and boolean false are considered valid values
+            END FOR
+            
+            RETURN errors
+    END FUNCTION
+    
+    FUNCTION toObject(recursive: boolean = true, excludeNulls: boolean = true): object
+        
+        PURPOSE: Convert this model object to a plain object for serialization
+        WHY: When sending data to the server, we need plain objects (not model instances)
+        so they can be JSON.stringify'd
+        
+        PARAMETERS:
+            recursive: (optional, default: true) If true, convert nested objects too. If false, only this level.
+            excludeNulls: (optional, default: true) If true, don't include properties with null values.
+        
+        RETURNS: Plain JavaScript object ready for JSON serialization
+        
+        EXPLANATION:
+            Used when SAVING data. Example:
+            var user = new User()
+            user.id = 123
+            user.name = "Player"
+            var plainObject = user.toObject()  // { id: 123, name: "Player" }
+            var jsonString = JSON.stringify(plainObject)  // Send to server
+        
+        BEHAVIOR:
+            COMMENT: Create a plain object to hold the data
+            CREATE result AS new object
+            
+            COMMENT: Copy each property that's in propertyNames
+            FOR EACH propertyName IN propertyNames
+                CREATE value AS this[propertyName]
+                
+                COMMENT: Check if we should exclude this property
+                IF excludeNulls AND value is null THEN
+                    COMMENT: Skip null properties
+                    CONTINUE TO NEXT PROPERTY
+                END IF
+                
+                COMMENT: If recursive, convert nested objects to plain objects too
+                IF recursive AND value is an object AND value has toObject method THEN
+                    COMMENT: It's a model object - convert it recursively
+                    SET value TO CALL value.toObject(recursive, excludeNulls)
+                ELSE IF recursive AND value is an array THEN
+                    COMMENT: It's an array - recursively convert each element
+                    CREATE newArray AS new array
+                    FOR EACH element IN value
+                        IF element is an object AND element has toObject method THEN
+                            APPEND CALL element.toObject(recursive, excludeNulls) TO newArray
+                        ELSE
+                            APPEND element TO newArray
+                        END IF
+                    END FOR
+                    SET value TO newArray
+                END IF
+                
+                COMMENT: Add to result object
+                SET result[propertyName] TO value
+            END FOR
+            
+            RETURN result
+    END FUNCTION
+    
+    FUNCTION toJsonString(): string
+        
+        PURPOSE: Convert this object to a JSON string
+        WHY: Quick way to serialize for transmission or storage
+        
+        RETURNS: JSON string representation of this object
+        
+        BEHAVIOR:
+            COMMENT: Convert to plain object using prepareForJson
+            CREATE plainObject AS CALL prepareForJson()
+            
+            COMMENT: Encode as JSON using the platform's encoder
+            COMMENT: (Different platforms have different methods)
+            RETURN JSON_ENCODE(plainObject)
+    END FUNCTION
+    
+    ====================
+    PRIVATE METHODS
+    ====================
+    
+    FUNCTION prepareForJson(): object
+        
+        PURPOSE: Prepares this object for JSON serialization
+        WHY: Used internally before JSON encoding to ensure all nested objects
+        are converted to plain objects and nulls are excluded
+        
+        RETURNS: Plain object ready for JSON encoding
+        
+        BEHAVIOR:
+            COMMENT: Convert to plain object with recursive flattening and null exclusion
+            RETURN CALL toObject(true, true)
+    END FUNCTION
+
+END CLASS

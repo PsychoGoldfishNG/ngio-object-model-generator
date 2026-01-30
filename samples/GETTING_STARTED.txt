@@ -1,0 +1,315 @@
+================================================================================
+NEWGROUNDS.IO MODEL GENERATOR - GETTING STARTED
+================================================================================
+
+Welcome! You've just initialized a new Newgrounds.io model generator project.
+
+This guide will help you understand what was created and how to customize it
+for your target programming language.
+
+
+================================================================================
+WHAT WAS CREATED?
+================================================================================
+
+Two files were created in your project directory:
+
+  config.js
+    - Configuration file that controls how models are generated
+    - Defines where templates, skeletons, and generated files go
+    - MEANT TO BE EDITED - customize paths, file extensions, etc.
+    
+  helpers.js
+    - Utility functions used by templates and config
+    - Handles name transformations, type conversions, etc.
+    - MEANT TO BE EDITED - add/update language-specific logic here
+
+
+================================================================================
+THE WORKFLOW
+================================================================================
+
+The model generator works in four steps:
+
+  1. INIT (you just did this!)
+     → Creates config.js and helpers.js
+     → Command: npx ngio-init <project-dir>
+  
+  2. CUSTOMIZE
+     → Edit config.js to set your target language and paths
+     → Edit helpers.js to add language-specific transformations
+     → These files are yours - modify them freely!
+  
+  3. SCAFFOLD
+     → Copies template and skeleton files to your project
+     → Command: npx ngio-scaffold config.js
+     → Creates templates/ and skeleton files in your build directory
+  
+  4. TRANSLATE & BUILD
+     → Translate skeleton pseudo-code to your language
+     → Run the build to generate model files
+     → Command: npx ngio-build config.js
+     → Generates all object, component, and result classes
+
+
+================================================================================
+UNDERSTANDING CONFIG.JS
+================================================================================
+
+The config file contains both flat values and functions. Functions receive
+the config object and additional parameters based on what's being generated.
+
+Key sections:
+
+  output_file_extension
+    - Set this to your language's extension: ".js", ".cs", ".py", etc.
+  
+  helpers
+    - Reference to your helpers module (already set up)
+  
+  partials_dir
+    - Path string to template partials directory
+    - This is a flat string value, not a function
+  
+  template_files
+    - Functions that return paths to template files
+    - Used by ngio-scaffold to copy templates
+    - Function signature: (config)
+  
+  model_files
+    - Functions that return paths where generated files will be saved
+    - Used by ngio-build to create output files
+    - Object function signature: (config, name)
+    - Component/Result function signature: (config, componentScope, componentMethod)
+  
+  core_files
+    - Optional configuration for skeleton/foundation files
+    - Set enabled: true to generate core library files
+    - Define paths for NGIO, Core, BaseObject, etc.
+
+
+Example of how functions work:
+
+  // In config.js
+  model_files: {
+    objects: (config, name) => {
+      return `${config.models_dir}/objects/${name}${config.output_file_extension}`;
+    }
+  }
+  
+  // When building the "Medal" object:
+  // - config contains all your config settings (models_dir, output_file_extension, etc.)
+  // - name is "Medal"
+  // 
+  // If models_dir is "./build/models" and output_file_extension is ".js":
+  // Result: ./build/models/objects/Medal.js
+
+
+================================================================================
+UNDERSTANDING HELPERS.JS
+================================================================================
+
+The helpers module contains utility functions that:
+  - Convert API types to your language's types
+  - Transform names between different casing styles
+  - Format comments and documentation
+
+Key functions to customize:
+
+  getDataType(property)
+    - THIS IS THE MOST IMPORTANT FUNCTION TO CUSTOMIZE!
+    - Converts API property types to your language's types
+    - Currently returns generic types - update for your language
+    
+    Example for JavaScript:
+      if (property.type === "String") return "string";
+      if (property.type === "Number") return "number";
+      if (property.type === "Boolean") return "boolean";
+    
+    Example for Python:
+      if (property.type === "String") return "str";
+      if (property.type === "Number") return "int";
+      if (property.type === "Boolean") return "bool";
+  
+  Name transformation functions:
+    - convertToCamelCase()       // myVariableName
+    - convertToPascalCase()      // MyClassName
+    - convertToSnakeCase()       // my_variable_name
+    - convertToKebabCase()       // my-variable-name
+    - convertToScreamingSnakeCase() // MY_CONSTANT_NAME
+    
+    Use these in templates and config to follow your language's conventions
+
+  formatMultilineComment(text, indent)
+    - Formats descriptions as multi-line comments
+    - You may want to customize for your language's comment style
+
+
+Adding new helpers:
+
+  Simply add new functions to the module.exports object:
+  
+    module.exports = {
+      // ... existing helpers ...
+      
+      myCustomHelper: function(value) {
+        // Your logic here
+        return transformedValue;
+      }
+    };
+  
+  Then use in templates: <%- helpers.myCustomHelper(value) %>
+
+
+================================================================================
+CUSTOMIZING FOR YOUR LANGUAGE
+================================================================================
+
+Here's a checklist to adapt the generator for your language:
+
+  □ 1. SET FILE EXTENSION
+       Edit config.js: output_file_extension: ".your-ext"
+  
+  □ 2. UPDATE TYPE MAPPING
+       Edit helpers.js: getDataType() function
+       Map API types to your language's types
+  
+  □ 3. CONFIGURE PATHS
+       Edit config.js: model_files functions
+       Set where generated files should go
+  
+  □ 4. OPTIONAL: ENABLE CORE FILES
+       Edit config.js: core_files.enabled = true
+       Define paths for skeleton files
+  
+  □ 5. RUN SCAFFOLD
+       Command: npx ngio-scaffold config.js
+       This copies templates and skeletons to your project
+  
+  □ 6. TRANSLATE SKELETONS (if using core_files)
+       Convert the new files to your language
+       These are the foundation files (NGIO, Core, BaseObject, etc.)
+  
+  □ 7. CUSTOMIZE TEMPLATES
+       Edit template .ejs files in your templates directory
+       Replace pseudo-code with your language's syntax
+       See TEMPLATE_GUIDE.txt for details
+  
+  □ 8. BUILD MODELS
+       Command: npx ngio-build config.js
+       Generates all model files
+  
+  □ 9. TEST & ITERATE
+       Check generated files, fix any issues
+       Rebuild as needed
+
+
+================================================================================
+EXAMPLE: QUICK START FOR JAVASCRIPT
+================================================================================
+
+1. Edit config.js:
+   output_file_extension: ".js"
+
+2. Edit helpers.js getDataType():
+   if (property.type === "String") return "string";
+   if (property.type === "Number") return "number";
+   if (property.type === "Boolean") return "boolean";
+   if (property.array) return "Array";
+   if (property.object) return "Object";
+
+3. Run scaffold:
+   npx ngio-scaffold config.js
+
+4. Edit templates/object.ejs to use JavaScript syntax:
+   class <%- model.name %> {
+     constructor() { ... }
+   }
+
+5. Build:
+   npx ngio-build config.js
+
+
+================================================================================
+DIRECTORY STRUCTURE AFTER SCAFFOLD
+================================================================================
+
+After running ngio-scaffold, you'll have:
+
+  your-project/
+    config.js              (already exists - your config)
+    helpers.js             (already exists - your helpers)
+    GETTING_STARTED.txt    (this file)
+    templates/
+      object.ejs           (template for objects)
+      component.ejs        (template for components)
+      result.ejs           (template for results)
+      object_factory.ejs   (template for object factory)
+      TEMPLATE_GUIDE.txt   (detailed template documentation)
+      partials/
+        objects/           (custom code for specific objects)
+    build/                 (or whatever you named it in config)
+      NGIO.pseudo          (if core_files enabled)
+      Core.pseudo          (if core_files enabled)
+      ... other skeletons
+      models/              (generated files go here after build)
+
+
+================================================================================
+COMMON QUESTIONS
+================================================================================
+
+Q: Can I change the directory structure?
+A: Yes! Edit the functions in config.js to return any paths you want.
+
+Q: What if I don't want core/skeleton files?
+A: Set core_files.enabled = false in config.js
+
+Q: Can I add my own helper functions?
+A: Yes! Just add them to helpers.js module.exports
+
+Q: How do I handle custom methods for specific objects?
+A: Use partials! See TEMPLATE_GUIDE.txt (after scaffold) for details
+
+Q: Can I run the build multiple times?
+A: Yes! The build regenerates all files based on the latest API docs
+
+Q: What if the API changes?
+A: Run ngio-build again - it fetches the latest API documentation
+   and builds models for now objects, components and results
+   You may also need to add wrapper methods in NGIO and AppState
+   and/or extend models with new partials
+
+
+================================================================================
+GETTING HELP
+================================================================================
+
+Documentation files:
+  - GETTING_STARTED.txt (this file) - Overview and workflow
+  - TEMPLATE_GUIDE.txt (after scaffold) - Template system details
+  - IMPLEMENTATION_GUIDE.txt (after scaffold) - Skeleton file guide
+
+Online resources:
+  - NGIO Developer Guide: https://github.com/PsychoGoldfishNG/ngio-developer-guide
+  - Newgrounds.io API: https://www.newgrounds.io/help/
+  - EJS Templates: https://ejs.co/
+  - API Reference: https://www.newgrounds.io/help/objects_and_components.json
+
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Edit config.js - Set your file extension and paths
+2. Edit helpers.js - Customize getDataType() for your language
+3. Run: npx ngio-scaffold config.js
+4. Review the templates/ directory and guides
+5. Translate skeleton files (if using core_files)
+6. Customize templates for your language syntax
+7. Run: npx ngio-build config.js
+8. Check the generated files in your build directory
+
+Happy coding!
+
+================================================================================

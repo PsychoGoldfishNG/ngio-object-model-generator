@@ -1,0 +1,124 @@
+COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR SaveSlot OBJECT
+    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    COMMENT: ====================================================================================
+    
+    /**
+     * Checks if this save slot contains any data.
+     */
+    METHOD hasData(): Boolean
+        
+        PURPOSE: Determines if this save slot has been used to store data
+        
+        RETURNS: True if data exists, false if slot is empty
+        
+        WHY: Before loading data, you may want to check if the slot has data
+        
+        BEHAVIOR:
+            RETURN this.url is not null
+    END METHOD
+    
+    /**
+     * Clears all data from this save slot.
+     */
+    METHOD clear(callback: Function, thisArg: Object)
+        
+        PURPOSE: Deletes the data stored in this save slot
+        
+        PARAMETERS:
+            callback: Function to call when clearing is complete
+            thisArg: Context to use when calling the callback
+        
+        WHY: Users may want to delete their save data or start over
+        
+        BEHAVIOR:
+            COMMENT: TODO: Add logic to call CloudSave.clearSlot component
+            COMMENT: This should send a request to delete this slot's data from the server
+    END METHOD
+
+    /**
+     * Loads the raw string data from this save slot.
+     */
+    METHOD loadRaw(callback: Function, thisArg: Object)
+        
+        PURPOSE: Retrieves the unprocessed data string from the cloud save slot
+        
+        PARAMETERS:
+            callback: Function to call with the raw data string
+            thisArg: Context to use when calling the callback
+        
+        WHY: Sometimes you want the raw data without JSON parsing
+        
+        BEHAVIOR:
+            COMMENT: TODO: Add logic to call CloudSave.loadSlot component
+            COMMENT: This should request the slot's data from the server
+            COMMENT: When complete, call callback with the raw data string
+    END METHOD
+    
+    /**
+     * Saves raw string data to this save slot.
+     */
+    METHOD setDataRaw(data: String, callback: Function, thisArg: Object)
+        
+        PURPOSE: Stores raw string data in this cloud save slot
+        
+        PARAMETERS:
+            data: The raw string data to save
+            callback: Function to call when saving is complete
+            thisArg: Context to use when calling the callback
+        
+        WHY: Allows saving pre-formatted data without JSON encoding
+        
+        BEHAVIOR:
+            COMMENT: TODO: Add logic to call CloudSave.setData component
+            COMMENT: This should send the data to the server for storage
+    END METHOD
+
+    /**
+     * Loads data from this save slot and parses it as JSON.
+     */
+    METHOD load(callback: Function, thisArg: Object)
+        
+        PURPOSE: Retrieves and decodes the JSON data from this save slot
+        
+        PARAMETERS:
+            callback: Function to call with the decoded object
+            thisArg: Context to use when calling the callback
+        
+        WHY: Most save data is stored as JSON, this combines loading and parsing
+        
+        BEHAVIOR:
+            COMMENT: Load the raw data first
+            CALL this.loadRaw WITH callback function
+                SET decoded TO null
+                
+                COMMENT: If data exists, decode it from JSON
+                IF data exists THEN
+                    COMMENT: TODO: Replace YOUR_JSON_DECODER with your JSON parsing function
+                    SET decoded TO YOUR_JSON_DECODER(data)
+                END IF
+                
+                COMMENT: Return the decoded data to the user's callback
+                CALL callback WITH context thisArg
+                    PASSING decoded
+            END callback function, WITH context this
+    END METHOD
+
+    /**
+     * Encodes data as JSON and saves it to this save slot.
+     */
+    METHOD setData(data: Object, callback: Function, thisArg: Object)
+        
+        PURPOSE: Encodes an object as JSON and saves it to the cloud
+        
+        PARAMETERS:
+            data: The object to encode and save
+            callback: Function to call when saving is complete
+            thisArg: Context to use when calling the callback
+        
+        WHY: Simplifies saving - handles JSON encoding automatically
+        
+        BEHAVIOR:
+            COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
+            CALL this.setDataRaw WITH YOUR_JSON_ENCODER(data), callback, thisArg
+    END METHOD
