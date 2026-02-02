@@ -54,13 +54,13 @@ CLASS ObjectIndex
     COMMENT: FACTORY METHOD: CreateObject
     COMMENT: ====================================================================================
     
-    STATIC METHOD CreateObject(name: string, props: object): BaseObject
+    STATIC METHOD CreateObject(name: string, objectData: object): BaseObject
         
         PURPOSE: Creates an instance of a core object model (Medal, User, Score, etc.)
         
         PARAMETERS:
             name: The object type name (case-insensitive, e.g., "medal", "Medal", "MEDAL")
-            props: Properties to initialize the object with
+            objectData: Properties to initialize the object with
         
         RETURNS: An instance of the requested object, or null if not found
         
@@ -71,7 +71,7 @@ CLASS ObjectIndex
 <%          for(const model in models.objects) { -%>
                 CASE "<%- model.toLowerCase() %>":
                     COMMENT: Create and return a <%- models.objects[model].name %> instance
-                    RETURN NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>props<% } %>)
+                    RETURN NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>objectData<% } %>)
                 
 <%          } -%>
             END SWITCH

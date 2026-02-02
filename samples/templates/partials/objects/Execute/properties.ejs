@@ -1,10 +1,27 @@
-
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
     COMMENT: ====================================================================================
     COMMENT: CUSTOM PROPERTIES FOR Execute OBJECT
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
     COMMENT: ====================================================================================
     
-    PRIVATE componentObject: BaseComponent
-        PURPOSE: Stores the component that will be executed
+    COMMENT: Internal reference to the component being executed
+    PRIVATE componentModel: BaseComponent
+        PURPOSE: Stores the component model instance that will be executed
         WHY: Execute objects wrap components for queuing and batch execution
+    
+    COMMENT: NOTE: The following properties are set automatically by setComponent()
+    COMMENT: They don't need explicit property definitions unless required by your language
+    
+    COMMENT: component: String
+    COMMENT:     The name of the component being executed (e.g., "Medal.unlock")
+    COMMENT:     Derived from: componentModel.getObjectName()
+    
+    COMMENT: parameters: Object
+    COMMENT:     The parameters to execute the component with
+    COMMENT:     Derived from: componentModel.prepareForJson()
+    COMMENT:     Only set when componentModel.isSecure is false
+    
+    COMMENT: secure: String
+    COMMENT:     Encrypted/encoded string containing the component and parameters
+    COMMENT:     Derived from: Encrypting the formatted component object
+    COMMENT:     Only set when componentModel.isSecure is true
 

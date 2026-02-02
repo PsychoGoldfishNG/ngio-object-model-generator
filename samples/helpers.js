@@ -96,14 +96,17 @@ module.exports = {
      * Formats a multiline comment with the given indentation.
      * @param {string} comment The comment text to format. Each line should be separated by a newline character.
      * @param {string} indent The indentation string to prepend to each line of the comment.
+     * @param {boolean} indentFirstLine Whether to indent the opening /** line. Default is false.
      * @returns {string} The formatted multiline comment.
      */
-    formatMultilineComment(comment, indent = "") {
+    formatMultilineComment(comment, indent = "", indentFirstLine = false) {
         if (!comment) return "";
         
         const lines = comment.split("\n");
 
-        let comments = `${indent}/**\n${lines.map(line => `${indent} * ${line}`).join("\n")}\n${indent} */`;
+        let comments = indentFirstLine
+            ? `${indent}/**\n${lines.map(line => `${indent} * ${line}`).join("\n")}\n${indent} */`
+            : `/**\n${lines.map(line => `${indent} * ${line}`).join("\n")}\n${indent} */`;
 
         // documents prefix object names with #
         // you can use this to inject any namespacing you want.

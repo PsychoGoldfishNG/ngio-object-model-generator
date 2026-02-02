@@ -1,45 +1,173 @@
-COMMENT: ====================================================================================
-    COMMENT: CUSTOM METHODS FOR Response OBJECT
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR Response OBJECT - Mixed Type Support and Auto-Update
     COMMENT: ====================================================================================
     
-    /**
-     * Special handler for result objects that creates the appropriate result model
-     * based on the component name.
-     */
-    METHOD setResult(value: Mixed)
+    COMMENT: ====================================================================================
+    COMMENT: MIXED TYPE HANDLING FOR result PROPERTY
+    COMMENT: ====================================================================================
+    
+    COMMENT: Sets a single result and clears the list.
+    METHOD setResult(resultObject: BaseResult)
         
-        PURPOSE: Sets the result property with proper result object instantiation
+        PURPOSE: Sets a single BaseResult instance
         
         PARAMETERS:
-            value: The raw result data from the API (can be object or array)
-        
-        WHY: The API returns result data as plain objects with a component name.
-             We need to convert these to actual result model instances.
+            resultObject: A single result model instance
         
         BEHAVIOR:
-            COMMENT: Check if this is an array of results (batch execution)
-            IF value is an Array THEN
-                CREATE newArr as empty array
-                
-                COMMENT: Convert each result object to the appropriate model instance
-                FOR EACH item IN value
-                    CREATE resultInstance using ObjectIndex.CreateResult(
-                        item.component, 
-                        item.data
+            SET this.result TO resultObject
+            SET this.resultList TO null
+    END METHOD
+    
+    COMMENT: Sets an array of results and clears the single value.
+    METHOD setResultList(resultArray: Array<BaseResult>)
+        
+        PURPOSE: Sets an array of BaseResult instances
+        
+        PARAMETERS:
+            resultArray: An array of result model instances
+        
+        BEHAVIOR:
+            SET this.resultList TO resultArray
+            SET this.result TO null
+    END METHOD
+    
+    COMMENT: Checks if using list format.
+    METHOD resultIsArray(): Boolean
+        
+        PURPOSE: Determines if this response contains multiple results
+        
+        RETURNS: True if using list format, false if using single value
+        
+        BEHAVIOR:
+            RETURN this.resultList is not null and not empty
+    END METHOD
+    
+    COMMENT: Gets the single result.
+    METHOD getResult(): BaseResult
+        
+        PURPOSE: Returns the single result instance
+        
+        RETURNS: The single BaseResult instance or null
+        
+        BEHAVIOR:
+            RETURN this.result
+    END METHOD
+    
+    COMMENT: Gets the result array.
+    METHOD getResultList(): Array<BaseResult>
+        
+        PURPOSE: Returns the result array
+        
+        RETURNS: The array of BaseResult instances or null
+        
+        BEHAVIOR:
+            RETURN this.resultList
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM importFromObject() OVERRIDE
+    COMMENT: ====================================================================================
+    
+    COMMENT: Instantiates proper result models and updates app state automatically.
+    METHOD importFromObject(data: Object)
+        
+        PURPOSE: Parses response data, creates result model instances, and updates AppState
+        
+        PARAMETERS:
+            data: Plain object containing response data from server
+        
+        WHY: Automatically converts plain result objects to typed model instances
+             and keeps local cached data synchronized with server responses
+        
+        BEHAVIOR:
+            COMMENT: Extract result property before calling parent
+            CREATE resultData AS data.result
+            CREATE modifiedData AS copy of data
+            DELETE modifiedData.result
+            
+            COMMENT: Call parent to handle standard properties
+            CALL parent.importFromObject WITH modifiedData
+            
+            COMMENT: Process result property if it exists
+            IF resultData exists THEN
+                IF resultData is an Array THEN
+                    COMMENT: Handle array of results
+                    CREATE resultsArray AS empty array
+                    
+                    FOR EACH item IN resultData
+                        COMMENT: Get component name from result item
+                        CREATE componentName AS item.component
+                        
+                        COMMENT: Use Object Factory to create appropriate result model
+                        CREATE resultModel using ObjectFactory.createInstance(
+                            'result',
+                            componentName,
+                            item
+                        )
+                        
+                        COMMENT: Update AppState if available
+                        IF this.core exists AND this.core.appState exists THEN
+                            CALL this.core.appState.setValueFromResult WITH resultModel
+                        END IF
+                        
+                        ADD resultModel TO resultsArray
+                    END FOR
+                    
+                    CALL this.setResultList WITH resultsArray
+                    
+                ELSE
+                    COMMENT: Handle single result
+                    CREATE componentName AS resultData.component
+                    
+                    COMMENT: Use Object Factory to create appropriate result model
+                    CREATE resultModel using ObjectFactory.createInstance(
+                        'result',
+                        componentName,
+                        resultData
                     )
-                    ADD resultInstance TO newArr
+                    
+                    COMMENT: Update AppState if available
+                    IF this.core exists AND this.core.appState exists THEN
+                        CALL this.core.appState.setValueFromResult WITH resultModel
+                    END IF
+                    
+                    CALL this.setResult WITH resultModel
+                END IF
+            END IF
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM prepareForJson() OVERRIDE
+    COMMENT: ====================================================================================
+    
+    COMMENT: Returns properly formatted object for JSON encoding.
+    METHOD prepareForJson(): Object
+        
+        PURPOSE: Serializes Response with correct result format
+        
+        RETURNS: Plain object ready for JSON encoding
+        
+        WHY: Ensures the response can be re-encoded to JSON with correct structure
+             (useful for debugging or caching)
+        
+        BEHAVIOR:
+            COMMENT: Get base object from parent
+            CREATE jsonObject AS parent.prepareForJson()
+            
+            COMMENT: Handle result property based on which format is used
+            IF resultIsArray() THEN
+                COMMENT: Convert each result to JSON-ready format
+                CREATE resultJsonArray AS empty array
+                FOR EACH resultItem IN this.resultList
+                    ADD resultItem.prepareForJson() TO resultJsonArray
                 END FOR
+                SET jsonObject['result'] TO resultJsonArray
                 
-                SET value TO newArr
-            ELSE
-                COMMENT: Single result - convert to appropriate model instance
-                SET value TO ObjectIndex.CreateResult(
-                    value.component, 
-                    value.data
-                )
+            ELSE IF this.result is not null THEN
+                SET jsonObject['result'] TO this.result.prepareForJson()
             END IF
             
-            COMMENT: Set the result property with the converted value(s)
-            SET this.result TO value
+            RETURN jsonObject
     END METHOD

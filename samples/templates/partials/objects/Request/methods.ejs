@@ -1,0 +1,89 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: MIXED TYPE HANDLING METHODS FOR execute PROPERTY
+    COMMENT: ====================================================================================
+    
+    COMMENT: Sets a single Execute object and clears the list.
+    METHOD setExecute(executeObject: Execute)
+        
+        PURPOSE: Sets a single Execute object for this request
+        
+        PARAMETERS:
+            executeObject: A single Execute instance
+        
+        BEHAVIOR:
+            SET this.execute TO executeObject
+            SET this.executeList TO null
+    END METHOD
+    
+    COMMENT: Sets an array of Execute objects and clears the single value.
+    METHOD setExecuteList(executeArray: Array<Execute>)
+        
+        PURPOSE: Sets an array of Execute objects for batch execution
+        
+        PARAMETERS:
+            executeArray: An array of Execute instances
+        
+        BEHAVIOR:
+            SET this.executeList TO executeArray
+            SET this.execute TO null
+    END METHOD
+    
+    COMMENT: Checks if using list format.
+    METHOD executeIsArray(): Boolean
+        
+        PURPOSE: Determines if this request is using the array format
+        
+        RETURNS: True if using list format, false if using single value
+        
+        BEHAVIOR:
+            RETURN this.executeList is not null and not empty
+    END METHOD
+    
+    COMMENT: Gets the single Execute object.
+    METHOD getExecute(): Execute
+        
+        PURPOSE: Returns the single Execute object
+        
+        RETURNS: The single Execute instance or null
+        
+        BEHAVIOR:
+            RETURN this.execute
+    END METHOD
+    
+    COMMENT: Gets the Execute object array.
+    METHOD getExecuteList(): Array<Execute>
+        
+        PURPOSE: Returns the Execute object array
+        
+        RETURNS: The array of Execute instances or null
+        
+        BEHAVIOR:
+            RETURN this.executeList
+    END METHOD
+    
+    COMMENT: Override prepareForJson() to output the correct format.
+    METHOD prepareForJson(): Object
+        
+        PURPOSE: Serializes the Request with proper execute property handling
+        
+        RETURNS: Plain object ready for JSON encoding
+        
+        BEHAVIOR:
+            COMMENT: Get base object from parent
+            CREATE jsonObject AS parent.prepareForJson()
+            
+            COMMENT: Determine which execute format to include
+            IF executeIsArray() THEN
+                COMMENT: Convert each Execute to JSON-ready format
+                CREATE executeJsonArray AS empty array
+                FOR EACH executeItem IN this.executeList
+                    ADD executeItem.prepareForJson() TO executeJsonArray
+                END FOR
+                SET jsonObject['execute'] TO executeJsonArray
+            ELSE IF this.execute is not null THEN
+                SET jsonObject['execute'] TO this.execute.prepareForJson()
+            END IF
+            
+            RETURN jsonObject
+    END METHOD

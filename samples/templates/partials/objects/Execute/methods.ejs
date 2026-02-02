@@ -1,29 +1,48 @@
-COMMENT: ====================================================================================
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS FOR Execute OBJECT
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
     COMMENT: ====================================================================================
     
-    /**
-     * Sets the component to be executed.
-     */
-    METHOD setComponent(component: BaseComponent)
+    COMMENT: Sets the component to be executed.
+    METHOD setComponent(componentModel: BaseComponent)
         
-        PURPOSE: Assigns a component to this Execute object for queuing
+        PURPOSE: Attaches a component model instance and formats it for server transmission
         
         PARAMETERS:
-            component: Any component model (must extend BaseComponent)
+            componentModel: A component model instance with all required properties set
         
         WHY: Execute objects wrap components so they can be batched and sent together
         
         BEHAVIOR:
-            SET this._componentObject TO component
+            COMMENT: Store reference to the component
+            SET this.componentModel TO componentModel
+            
+            COMMENT: Extract and store the component name
+            SET this.component TO componentModel.getObjectName()
+            
+            COMMENT: Handle secure vs non-secure components
+            IF componentModel.isSecure is false THEN
+                COMMENT: Non-secure: Store parameters directly
+                SET this.parameters TO componentModel.prepareForJson()
+            ELSE
+                COMMENT: Secure: Create temporary object and encrypt it
+                CREATE tempObject WITH {
+                    component: this.component,
+                    parameters: componentModel.prepareForJson()
+                }
+                
+                COMMENT: Convert to JSON string and encrypt
+                COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
+                COMMENT: TODO: Replace YOUR_ENCRYPTION_HANDLER with core.encryptData()
+                CREATE jsonString AS YOUR_JSON_ENCODER(tempObject)
+                SET this.secure TO YOUR_ENCRYPTION_HANDLER(jsonString)
+            END IF
     END METHOD
     
-    /**
-     * Converts this Execute object to a JSON-compatible format.
-     * Handles encryption for secure components.
-     */
-    METHOD toJsonObject(): Object
+    COMMENT: Converts this Execute object to a JSON-compatible format.
+    COMMENT: Handles encryption for secure components.
+    COMMENT: Overrides BaseObject.prepareForJson()
+    METHOD prepareForJson(): Object
         
         PURPOSE: Serializes this Execute object for sending to the API
         
@@ -34,20 +53,20 @@ COMMENT: =======================================================================
         
         BEHAVIOR:
             COMMENT: Build the basic execute object structure
-            CREATE obj WITH {
-                component: this._componentObject.getObjectName(),
-                parameters: this._componentObject.toJsonObject()
+            CREATE executeData WITH {
+                component: this.componentModel.getObjectName(),
+                parameters: this.componentModel.prepareForJson()
             }
             
             COMMENT: If this component requires encryption, wrap it in a secure object
-            IF this._componentObject.isSecure THEN
+            IF this.componentModel.isSecure THEN
                 COMMENT: TODO: Replace YOUR_ENCRYPTION_HANDLER with your actual encryption logic
                 RETURN {
-                    secure: YOUR_ENCRYPTION_HANDLER(obj)
+                    secure: YOUR_ENCRYPTION_HANDLER(executeData)
                 }
             END IF
             
             COMMENT: Not secure, return as-is
-            RETURN obj
+            RETURN executeData
     END METHOD
     

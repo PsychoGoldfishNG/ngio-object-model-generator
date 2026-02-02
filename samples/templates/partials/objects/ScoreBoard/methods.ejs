@@ -1,11 +1,9 @@
-COMMENT: ====================================================================================
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS FOR ScoreBoard OBJECT
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
     COMMENT: ====================================================================================
     
-    /**
-     * Loads scores from this scoreboard with optional filtering.
-     */
+    COMMENT: Loads scores from this scoreboard with optional filtering.
     METHOD getScores(filters: Object, callback: Function, thisArg: Object)
         
         PURPOSE: Retrieves scores from this scoreboard with various filter options
@@ -31,7 +29,7 @@ COMMENT: =======================================================================
                 SET filters TO empty object
             END IF
             
-            CREATE props as empty object
+            CREATE componentParams as empty object
             
             COMMENT: Handle user ID filter
             IF filters.user_id is defined THEN
@@ -53,7 +51,7 @@ COMMENT: =======================================================================
             IF filters.period is undefined or null THEN
                 SET filters.period TO 'D'
             END IF
-            SET props.period TO filters.period
+            SET componentParams.period TO filters.period
             
             COMMENT: Validate and set limit
             IF filters.limit is undefined or null THEN
@@ -68,35 +66,35 @@ COMMENT: =======================================================================
                 THROW Error('ScoreBoard filter limit must be a number less than or equal to 100.')
             END IF
             
-            SET props.limit TO filters.limit
+            SET componentParams.limit TO filters.limit
             
             COMMENT: Set skip for pagination
             IF filters.skip is not defined THEN
                 SET filters.skip TO 0
             END IF
-            SET props.skip TO filters.skip
+            SET componentParams.skip TO filters.skip
             
             COMMENT: Handle social filter (friends only)
             IF user is logged in AND filters.social is true THEN
                 COMMENT: TODO: Replace METHOD_FOR_CHECKING_IF_USER_EXISTS with your user check
-                SET props.social TO true
+                SET componentParams.social TO true
             END IF
             
             COMMENT: Handle tag filter
             IF filters.tag is defined THEN
-                SET props.tag TO filters.tag
+                SET componentParams.tag TO filters.tag
             END IF
             
             COMMENT: Handle user filter (can be ID, username, or User object)
             IF filters.user is valid user reference THEN
-                SET props.user TO filters.user
+                SET componentParams.user TO filters.user
             END IF
             
             COMMENT: Add this scoreboard's ID
-            SET props.id TO this.id
+            SET componentParams.id TO this.id
             
             COMMENT: Create the component
-            CREATE component AS new ScoreBoard.getScores WITH props
+            CREATE component AS new ScoreBoard.getScores WITH componentParams
             
             CREATE callbackParams WITH {
                 callback: callback,
@@ -107,9 +105,7 @@ COMMENT: =======================================================================
             COMMENT: When complete, call this.onScoresLoaded with result and callbackParams
     END METHOD
     
-    /**
-     * Callback handler for when scores are loaded.
-     */
+    COMMENT: Callback handler for when scores are loaded.
     METHOD onScoresLoaded(result: ScoreBoard.getScores, callbackParams: Object)
         
         PURPOSE: Processes the loaded scores and executes the user's callback
@@ -124,9 +120,7 @@ COMMENT: =======================================================================
                 PASSING result.scores
     END METHOD
 
-    /**
-     * Posts a score to this scoreboard.
-     */
+    COMMENT: Posts a score to this scoreboard.
     METHOD postScore(value: Number, tag: String, callback: Function, thisArg: Object)
         
         PURPOSE: Submits a score to this scoreboard for the current user
@@ -141,18 +135,18 @@ COMMENT: =======================================================================
         
         BEHAVIOR:
             COMMENT: Build the component properties
-            CREATE props WITH {
+            CREATE componentParams WITH {
                 id: this.id,
                 value: value
             }
             
             COMMENT: Add tag if provided
             IF tag is a non-empty string THEN
-                SET props.tag TO tag
+                SET componentParams.tag TO tag
             END IF
             
             COMMENT: Create the component
-            CREATE component AS new ScoreBoard.postScore WITH props
+            CREATE component AS new ScoreBoard.postScore WITH componentParams
             
             CREATE callbackParams WITH {
                 callback: callback,
@@ -163,9 +157,7 @@ COMMENT: =======================================================================
             COMMENT: When complete, call this.onPostScore with result and callbackParams
     END METHOD
 
-    /**
-     * Callback handler for when a score is posted.
-     */
+    COMMENT: Callback handler for when a score is posted.
     METHOD onPostScore(result: ScoreBoard.postScore, callbackParams: Object)
         
         PURPOSE: Processes the posted score result and executes the user's callback

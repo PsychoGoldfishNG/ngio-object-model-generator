@@ -35,9 +35,9 @@ const hasProperties = propertyNames.length > 0;
 COMMENT: ====================================================================================
 COMMENT: IMPORTS / DEPENDENCIES
 COMMENT: ====================================================================================
-COMMENT: Include any imports needed for this object type.
-COMMENT: Use partials to add object-specific imports. Example partial path for Medal object:
-COMMENT: {partials_dir}/objects/Medal/imports.ejs
+<%# Include any imports needed for this object type. -%>
+<%# Use partials to add object-specific imports. Example partial path for Medal object: -%>
+<%# {partials_dir}/objects/Medal/imports.ejs -%>
 <%- partial.getIfExists(`objects/${model.name}/imports`) -%>
 
 COMMENT: ====================================================================================
@@ -53,14 +53,12 @@ CLASS <%- model.name %>
     COMMENT: ====================================================================================
     COMMENT: PRIVATE PROPERTIES
     COMMENT: ====================================================================================
-    COMMENT: Store all properties as private variables with underscore prefix.
-    COMMENT: Public getters/setters will be generated below.
     
 <% if (hasProperties) { -%>
-<%   for (let prop in model.properties) { -%>
-<%     if (model.properties[prop].required) requiredParams.push(prop); -%>
-    COMMENT: <%- model.properties[prop].description %>
-    PRIVATE <%- prop %>: <%- helpers.getDataType(model.properties[prop]) %> = <%- model.properties[prop].default === undefined ? "null" : JSON.stringify(model.properties[prop].default) %>
+<%   for (let propertyName in model.properties) { -%>
+<%     if (model.properties[propertyName].required) requiredParams.push(propertyName); -%>
+    COMMENT: <%- model.properties[propertyName].description %>
+    PRIVATE <%- propertyName %>: <%- helpers.getDataType(model.properties[propertyName]) %> = <%- model.properties[propertyName].default === undefined ? "null" : JSON.stringify(model.properties[propertyName].default) %>
     
 <%   } -%>
 <% } -%>
@@ -81,22 +79,22 @@ CLASS <%- model.name %>
     COMMENT: CONSTRUCTOR
     COMMENT: ====================================================================================
     
-    CONSTRUCTOR(props: object)
+    CONSTRUCTOR(initialData: object)
         
         PURPOSE: Initialize this object with data from the API or user input.
         
         PARAMETERS:
-            props: An object containing initial property values
+            initialData: An object containing initial property values
         
         BEHAVIOR:
             COMMENT: Call the parent BaseObject constructor
             CALL super()
             
-            COMMENT: Set all properties from the props object
-            FOR EACH property IN props
+            COMMENT: Set all properties from the initialData object
+            FOR EACH property IN initialData
                 IF property exists in this.propertyNames THEN
                     COMMENT: Use the setter to apply the value (handles type conversion, validation)
-                    SET this[property] TO props[property]
+                    SET this[property] TO initialData[property]
                 ELSE
                     COMMENT: Invalid property provided
                     THROW Error("Property '" + property + "' is not defined for object '" + this.objectName + "'")
@@ -109,26 +107,26 @@ CLASS <%- model.name %>
     COMMENT: ====================================================================================
     
 <% if (hasProperties) { -%>
-<%   for (let prop in model.properties) { -%>
-    <%- helpers.formatMultilineComment(model.properties[prop].description, "    ") %>
-    GETTER <%- prop %>(): <%- helpers.getDataType(model.properties[prop]) %>
-        PURPOSE: Returns the current value of <%- prop %>
-        RETURN this._<%- prop %>
+<%   for (let propertyName in model.properties) { -%>
+    <%- helpers.formatMultilineComment(model.properties[propertyName].description, "    ", false) %>
+    GETTER <%- propertyName %>(): <%- helpers.getDataType(model.properties[propertyName]) %>
+        PURPOSE: Returns the current value of <%- propertyName %>
+        RETURN this._<%- propertyName %>
     END GETTER
     
-    SETTER <%- prop %>(value: <%- helpers.getDataType(model.properties[prop]) %>)
-        PURPOSE: Sets the value of <%- prop %>
+    SETTER <%- propertyName %>(value: <%- helpers.getDataType(model.properties[propertyName]) %>)
+        PURPOSE: Sets the value of <%- propertyName %>
         
         COMMENT: Add type conversion/validation logic here as needed
-        COMMENT: Property type: <%- model.properties[prop].type || 'N/A' %>
-<%     if (model.properties[prop].object) { -%>
-        COMMENT: This property is an object type: <%- model.properties[prop].object %>
+        COMMENT: Property type: <%- model.properties[propertyName].type || 'N/A' %>
+<%     if (model.properties[propertyName].object) { -%>
+        COMMENT: This property is an object type: <%- model.properties[propertyName].object %>
 <%     } -%>
-<%     if (model.properties[prop].array) { -%>
+<%     if (model.properties[propertyName].array) { -%>
         COMMENT: This property can be an array
 <%     } -%>
         
-        SET this._<%- prop %> TO value
+        SET this._<%- propertyName %> TO value
     END SETTER
     
 <%   } -%>
@@ -136,8 +134,8 @@ CLASS <%- model.name %>
     COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS
     COMMENT: ====================================================================================
-    COMMENT: Add object-specific methods using partials
-    COMMENT: Example: {partials_dir}/objects/Medal/methods.ejs
+<%# Add object-specific methods using partials -%>
+<%# Example: {partials_dir}/objects/Medal/methods.ejs -%>
 <%- partial.getIfExists(`objects/${model.name}/methods`) -%>
 
 END CLASS

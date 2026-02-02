@@ -38,17 +38,15 @@ const hasProperties = propertyNames.length > 0;
 COMMENT: ====================================================================================
 COMMENT: IMPORTS / DEPENDENCIES
 COMMENT: ====================================================================================
-COMMENT: Include any imports needed for this result type.
-COMMENT: Use partials to add result-specific imports. Example partial path for Medal.unlock:
-COMMENT: {partials_dir}/results/Medal/unlock/imports.ejs
+<%# Include any imports needed for this result type. -%>
+<%# Use partials to add result-specific imports. Example partial path for Medal.unlock: -%>
+<%# {partials_dir}/results/Medal/unlock/imports.ejs -%>
 <%- partial.getIfExists(`results/${model.component}/${model.method}/imports`) -%>
 
 COMMENT: ====================================================================================
 COMMENT: CLASS DEFINITION
 COMMENT: ====================================================================================
-/**
- * Returned when the <%- model.component %>.<%- model.method %> component is called.
- */
+COMMENT: Returned when the <%- model.component %>.<%- model.method %> component is called.
 CLASS <%- model.method %>Result
     EXTENDS: BaseResult
     NAMESPACE: [Your namespace here, e.g., io.newgrounds.models.results.<%- model.component %>]
@@ -58,21 +56,16 @@ CLASS <%- model.method %>Result
     RESULT INFO:
         Component: <%- model.component %>
         Method: <%- model.method %>
-    RESULT INFO:
-        Component: <%- model.component %>
-        Method: <%- model.method %>
     
     COMMENT: ====================================================================================
     COMMENT: PRIVATE PROPERTIES
     COMMENT: ====================================================================================
-    COMMENT: Store all properties as private variables with underscore prefix.
-    COMMENT: Public getters/setters will be generated below.
     
 <% if (hasProperties) { -%>
-<%   for (let prop in model.properties) { -%>
-<%     if (model.properties[prop].required) requiredParams.push(prop); -%>
-    COMMENT: <%- model.properties[prop].description %>
-    PRIVATE <%- prop %>: <%- helpers.getDataType(model.properties[prop]) %> = <%- model.properties[prop].default === undefined ? "null" : JSON.stringify(model.properties[prop].default) %>
+<%   for (let propertyName in model.properties) { -%>
+<%     if (model.properties[propertyName].required) requiredParams.push(propertyName); -%>
+    COMMENT: <%- model.properties[propertyName].description %>
+    PRIVATE <%- propertyName %>: <%- helpers.getDataType(model.properties[propertyName]) %> = <%- model.properties[propertyName].default === undefined ? "null" : JSON.stringify(model.properties[propertyName].default) %>
     
 <%   } -%>
 <% } -%>
@@ -97,12 +90,12 @@ CLASS <%- model.method %>Result
     COMMENT: CONSTRUCTOR
     COMMENT: ====================================================================================
     
-    CONSTRUCTOR(props: object)
+    CONSTRUCTOR(resultData: object)
         
         PURPOSE: Initialize this result object with data returned from the server.
         
         PARAMETERS:
-            props: An object containing the result data from the API response
+            resultData: An object containing the result data from the API response
         
         BEHAVIOR:
             COMMENT: Call the parent BaseResult constructor
@@ -110,11 +103,11 @@ CLASS <%- model.method %>Result
             
 <%- partial.getIfExists(`results/${model.component}/${model.method}/constructor`) -%>
             
-            COMMENT: Set all properties from the props object
-            FOR EACH property IN props
+            COMMENT: Set all properties from the resultData object
+            FOR EACH property IN resultData
                 IF property exists in this.propertyNames THEN
                     COMMENT: Use the setter to apply the value (handles type conversion, validation)
-                    SET this[property] TO props[property]
+                    SET this[property] TO resultData[property]
                 ELSE
                     COMMENT: Unexpected property in server response
                     THROW Error("Property '" + property + "' is not defined for result '" + this.componentName + "'")
@@ -127,26 +120,26 @@ CLASS <%- model.method %>Result
     COMMENT: ====================================================================================
     
 <% if (hasProperties) { -%>
-<%   for (let prop in model.properties) { -%>
-    <%- helpers.formatMultilineComment(model.properties[prop].description, "    ") %>
-    GETTER <%- prop %>(): <%- helpers.getDataType(model.properties[prop]) %>
-        PURPOSE: Returns the current value of <%- prop %>
-        RETURN this._<%- prop %>
+<%   for (let propertyName in model.properties) { -%>
+    <%- helpers.formatMultilineComment(model.properties[propertyName].description, "    ", false) %>
+    GETTER <%- propertyName %>(): <%- helpers.getDataType(model.properties[propertyName]) %>
+        PURPOSE: Returns the current value of <%- propertyName %>
+        RETURN this._<%- propertyName %>
     END GETTER
     
-    SETTER <%- prop %>(value: <%- helpers.getDataType(model.properties[prop]) %>)
-        PURPOSE: Sets the value of <%- prop %>
+    SETTER <%- propertyName %>(value: <%- helpers.getDataType(model.properties[propertyName]) %>)
+        PURPOSE: Sets the value of <%- propertyName %>
         
         COMMENT: Add type conversion/validation logic here as needed
-        COMMENT: Property type: <%- model.properties[prop].type || 'N/A' %>
-<%     if (model.properties[prop].object) { -%>
-        COMMENT: This property is an object type: <%- model.properties[prop].object %>
+        COMMENT: Property type: <%- model.properties[propertyName].type || 'N/A' %>
+<%     if (model.properties[propertyName].object) { -%>
+        COMMENT: This property is an object type: <%- model.properties[propertyName].object %>
 <%     } -%>
-<%     if (model.properties[prop].array) { -%>
+<%     if (model.properties[propertyName].array) { -%>
         COMMENT: This property can be an array
 <%     } -%>
         
-        SET this._<%- prop %> TO value
+        SET this._<%- propertyName %> TO value
     END SETTER
     
 <%   } -%>
@@ -154,8 +147,8 @@ CLASS <%- model.method %>Result
     COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS
     COMMENT: ====================================================================================
-    COMMENT: Add result-specific methods using partials
-    COMMENT: Example: {partials_dir}/results/Medal/unlock/methods.ejs
+<%# Add result-specific methods using partials -%>
+<%# Example: {partials_dir}/results/Medal/unlock/methods.ejs -%>
 <%- partial.getIfExists(`results/${model.component}/${model.method}/methods`) -%>
 
 END CLASS

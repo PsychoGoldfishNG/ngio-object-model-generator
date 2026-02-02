@@ -1,0 +1,9 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM PROPERTIES FOR Session OBJECT
+    COMMENT: ====================================================================================
+    
+    PRIVATE verified: Boolean
+        PURPOSE: Tracks whether the session has been validated with the server
+        WHY: Allows code to distinguish between a session that exists locally but hasn't been verified versus one confirmed by the server
+        DEFAULT: false

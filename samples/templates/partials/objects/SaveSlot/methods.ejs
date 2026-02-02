@@ -1,11 +1,9 @@
-COMMENT: ====================================================================================
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS FOR SaveSlot OBJECT
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
     COMMENT: ====================================================================================
     
-    /**
-     * Checks if this save slot contains any data.
-     */
+    COMMENT: Checks if this save slot contains any data.
     METHOD hasData(): Boolean
         
         PURPOSE: Determines if this save slot has been used to store data
@@ -18,9 +16,7 @@ COMMENT: =======================================================================
             RETURN this.url is not null
     END METHOD
     
-    /**
-     * Clears all data from this save slot.
-     */
+    COMMENT: Clears all data from this save slot.
     METHOD clear(callback: Function, thisArg: Object)
         
         PURPOSE: Deletes the data stored in this save slot
@@ -36,9 +32,7 @@ COMMENT: =======================================================================
             COMMENT: This should send a request to delete this slot's data from the server
     END METHOD
 
-    /**
-     * Loads the raw string data from this save slot.
-     */
+    COMMENT: Loads the raw string data from this save slot.
     METHOD loadRaw(callback: Function, thisArg: Object)
         
         PURPOSE: Retrieves the unprocessed data string from the cloud save slot
@@ -55,9 +49,7 @@ COMMENT: =======================================================================
             COMMENT: When complete, call callback with the raw data string
     END METHOD
     
-    /**
-     * Saves raw string data to this save slot.
-     */
+    COMMENT: Saves raw string data to this save slot.
     METHOD setDataRaw(data: String, callback: Function, thisArg: Object)
         
         PURPOSE: Stores raw string data in this cloud save slot
@@ -74,9 +66,7 @@ COMMENT: =======================================================================
             COMMENT: This should send the data to the server for storage
     END METHOD
 
-    /**
-     * Loads data from this save slot and parses it as JSON.
-     */
+    COMMENT: Loads data from this save slot and parses it as JSON.
     METHOD load(callback: Function, thisArg: Object)
         
         PURPOSE: Retrieves and decodes the JSON data from this save slot
@@ -104,9 +94,7 @@ COMMENT: =======================================================================
             END callback function, WITH context this
     END METHOD
 
-    /**
-     * Encodes data as JSON and saves it to this save slot.
-     */
+    COMMENT: Encodes data as JSON and saves it to this save slot.
     METHOD setData(data: Object, callback: Function, thisArg: Object)
         
         PURPOSE: Encodes an object as JSON and saves it to the cloud
@@ -121,4 +109,22 @@ COMMENT: =======================================================================
         BEHAVIOR:
             COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
             CALL this.setDataRaw WITH YOUR_JSON_ENCODER(data), callback, thisArg
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: SESSION MANAGEMENT METHOD
+    COMMENT: ====================================================================================
+    
+    COMMENT: Clears session-specific data to return the save slot to its unauthenticated state.
+    METHOD clearSessionData()
+        
+        PURPOSE: Resets user-specific save slot data while keeping the slot structure intact
+        
+        WHY: Called by AppState.onSessionCleared() when the user's session expires or is cleared
+        
+        BEHAVIOR:
+            SET this.datetime TO null
+            SET this.timestamp TO 0
+            SET this.size TO 0
+            SET this.url TO null
     END METHOD

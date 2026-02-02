@@ -1,0 +1,21 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: SESSION MANAGEMENT METHOD
+    COMMENT: ====================================================================================
+    
+    COMMENT: Clears session-specific data to return the session to an unauthenticated state.
+    METHOD clearSessionData()
+        
+        PURPOSE: Clears user authentication data while keeping the session structure intact
+        
+        WHY: Called by AppState.getSessionStatus() when a session expires or is cancelled,
+             and by AppState.clearSession() when logging out
+        
+        BEHAVIOR:
+            SET this.id TO null
+            SET this.user TO null
+            SET this.passport_url TO null
+            SET this.expired TO false
+            SET this.remember TO false
+            SET this.verified TO false
+    END METHOD

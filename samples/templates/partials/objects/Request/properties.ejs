@@ -1,0 +1,15 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM PROPERTIES FOR Request OBJECT - Mixed Type Support
+    COMMENT: ====================================================================================
+    
+    COMMENT: The execute property can accept either a single Execute object OR an array of Execute objects
+    COMMENT: We maintain both versions internally
+    
+    PRIVATE execute: Execute
+        PURPOSE: Stores a single Execute object
+        WHY: Supports single-component execution
+    
+    PRIVATE executeList: Array<Execute>
+        PURPOSE: Stores an array of Execute objects
+        WHY: Supports batch execution of multiple components

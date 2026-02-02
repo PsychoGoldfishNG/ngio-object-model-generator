@@ -1,11 +1,9 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
     COMMENT: ====================================================================================
     COMMENT: CUSTOM METHOD: unlock
-    COMMENT: EJS DOCUMENTATION: https://ejs.co/
     COMMENT: ====================================================================================
     
-    /**
-     * Unlocks this medal for the current user.
-     */
+    COMMENT: Unlocks this medal for the current user.
     METHOD unlock(callback: Function, thisArg: Object)
         
         PURPOSE: Unlocks this medal and notifies the callback when complete
@@ -30,9 +28,7 @@
     COMMENT: CALLBACK METHOD: onUnlock
     COMMENT: ====================================================================================
     
-    /**
-     * Callback handler for when the medal unlock completes.
-     */
+    COMMENT: Callback handler for when the medal unlock completes.
     METHOD onUnlock(result: Object, callbackParams: Object)
         
         PURPOSE: Processes the result of the medal unlock and executes the user's callback
@@ -52,4 +48,19 @@
                 CALL callbackParams.callback WITH context callbackParams.thisArg
                     PASSING result.medal, result.medal_score
             END IF
+    END METHOD
+    
+    COMMENT: ====================================================================================
+    COMMENT: SESSION MANAGEMENT METHOD
+    COMMENT: ====================================================================================
+    
+    COMMENT: Clears session-specific data to return the medal to its unauthenticated state.
+    METHOD clearSessionData()
+        
+        PURPOSE: Resets the medal to reflect only server-defined state, not user-specific unlock status
+        
+        WHY: Called by AppState.onSessionCleared() when the user's session expires or is cleared
+        
+        BEHAVIOR:
+            SET this.unlocked TO false
     END METHOD

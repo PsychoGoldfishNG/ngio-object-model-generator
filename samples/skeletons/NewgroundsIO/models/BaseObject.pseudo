@@ -442,15 +442,11 @@ CLASS BaseObject
             RETURN JSON_ENCODE(plainObject)
     END FUNCTION
     
-    ====================
-    PRIVATE METHODS
-    ====================
-    
     FUNCTION prepareForJson(): object
         
         PURPOSE: Prepares this object for JSON serialization
-        WHY: Used internally before JSON encoding to ensure all nested objects
-        are converted to plain objects and nulls are excluded
+        WHY: Container objects need to call this when rendering their nested objects to JSON.
+        Used to ensure all nested objects are converted to plain objects and nulls are excluded.
         
         RETURNS: Plain object ready for JSON encoding
         
@@ -458,5 +454,10 @@ CLASS BaseObject
             COMMENT: Convert to plain object with recursive flattening and null exclusion
             RETURN CALL toObject(true, true)
     END FUNCTION
+    
+    ====================
+    PRIVATE METHODS
+    ====================
 
 END CLASS
+
