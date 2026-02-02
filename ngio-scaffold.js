@@ -79,9 +79,9 @@ if (!config.core_files || !config.core_files.enabled) {
         'NewgroundsIO/Errors.pseudo': 'Errors',
         'NewgroundsIO/AppState.pseudo': 'AppState',
         'NewgroundsIO/SessionStatus.pseudo': 'SessionStatus',
-        'NewgroundsIO/models/BaseObject.pseudo': 'BaseObject',
-        'NewgroundsIO/models/BaseComponent.pseudo': 'BaseComponent',
-        'NewgroundsIO/models/BaseResult.pseudo': 'BaseResult',
+        'NewgroundsIO/BaseObject.pseudo': 'BaseObject',
+        'NewgroundsIO/BaseComponent.pseudo': 'BaseComponent',
+        'NewgroundsIO/BaseResult.pseudo': 'BaseResult',
         'IMPLEMENTATION-GUIDE.txt': 'ImplementationGuide'
     };
 

@@ -356,7 +356,8 @@ When using the official model generator, understand which files are meant to be
 edited and which are regenerated:
 
 SCAFFOLD FILES (Convert once, then safe to edit):
-- NGIO.xxx, Core.xxx, AppState.xxx, etc.
+- NGIO.xxx, Core.xxx, AppState.xxx, Errors.xxx, SessionStatus.xxx
+- BaseObject.xxx, BaseComponent.xxx, BaseResult.xxx (in NewgroundsIO/)
 - Templates (object.ejs, component.ejs, etc.)
 - Partials (custom code for specific objects)
 - config.js and helpers.js
@@ -365,20 +366,24 @@ These files are copied during scaffolding and translated to your language ONCE.
 After translation, you can freely edit them - they won't be overwritten.
 
 MODEL FILES (Regenerated on each build - DO NOT EDIT MANUALLY):
-- Everything in the /models/ subdirectory
-- Objects (Medal.xxx, User.xxx, Session.xxx, etc.)
-- Components (Medal/unlock.xxx, ScoreBoard/postScore.xxx, etc.)
-- Results (Medal/unlock.xxx, etc.)
+- Everything in the NewgroundsIO/models/ subdirectory
+- Objects (NewgroundsIO/models/objects/Medal.xxx, User.xxx, Session.xxx, etc.)
+- Components (NewgroundsIO/models/components/Medal/unlock.xxx, etc.)
+- Results (NewgroundsIO/models/results/Medal/unlock.xxx, etc.)
 
-These files are regenerated every time you run ngio-build. Any manual edits
+Note: Base classes (BaseObject, BaseComponent, BaseResult) are NOT in the models/
+subdirectory - they live in the NewgroundsIO/ directory alongside Core and AppState,
+so they are safe to edit and won't be regenerated.
+
+These model files are regenerated every time you run ngio-build. Any manual edits
 will be lost. To customize these, use partials or modify the templates instead.
 
 WORKFLOW:
 1. Run ngio-scaffold once
-2. Translate scaffold files to your language
+2. Translate scaffold files to your language (including base classes)
 3. Customize templates for your needs
-4. Run ngio-build (regenerates /models/ only)
-5. Run ngio-build again when API changes (regenerates /models/ only)
+4. Run ngio-build (regenerates NewgroundsIO/models/ only)
+5. Run ngio-build again when API changes (regenerates NewgroundsIO/models/ only)
 6. Continue editing scaffold files as needed - they're yours to maintain
 
 BASE CLASSES:
@@ -392,6 +397,9 @@ Each base class provides:
 - JSON serialization/deserialization
 - Property tracking
 - Consistent interface
+
+The base classes are scaffold files (in NewgroundsIO/, not in models/) that you
+translate once and can then edit freely. They will not be regenerated.
 
 Refer to model generator documentation for details on specific models.
 

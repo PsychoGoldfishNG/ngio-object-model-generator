@@ -258,17 +258,17 @@ module.exports = {
 
             // Base class for all generated object models
             BaseObject: (config) => {
-                return `${config.build_dir}/NewgroundsIO/models/BaseObject${config.output_file_extension}`;
+                return `${config.build_dir}/NewgroundsIO/BaseObject${config.output_file_extension}`;
             },
 
             // Base class for all generated component models
             BaseComponent: (config) => {
-                return `${config.build_dir}/NewgroundsIO/models/BaseComponent${config.output_file_extension}`;
+                return `${config.build_dir}/NewgroundsIO/BaseComponent${config.output_file_extension}`;
             },
 
             // Base class for all generated result models
             BaseResult: (config) => {
-                return `${config.build_dir}/NewgroundsIO/models/BaseResult${config.output_file_extension}`;
+                return `${config.build_dir}/NewgroundsIO/BaseResult${config.output_file_extension}`;
             }
         }
     }

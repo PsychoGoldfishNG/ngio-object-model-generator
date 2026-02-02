@@ -251,10 +251,19 @@ After running ngio-scaffold, you'll have:
       partials/
         objects/           (custom code for specific objects)
     build/                 (or whatever you named it in config)
-      NGIO.pseudo          (if core_files enabled - convert once, then safe to edit)
-      Core.pseudo          (if core_files enabled - convert once, then safe to edit)
-      ... other skeletons  (convert once, then safe to edit)
-      models/              (REGENERATED on each build - do not manually edit!)
+      NGIO.pseudo          (convert once, then safe to edit)
+      NewgroundsIO/
+        Core.pseudo        (convert once, then safe to edit)
+        AppState.pseudo    (convert once, then safe to edit)
+        Errors.pseudo      (convert once, then safe to edit)
+        SessionStatus.pseudo (convert once, then safe to edit)
+        BaseObject.pseudo  (convert once, then safe to edit)
+        BaseComponent.pseudo (convert once, then safe to edit)
+        BaseResult.pseudo  (convert once, then safe to edit)
+        models/            (REGENERATED on each build - do not manually edit!)
+          objects/         (generated object models)
+          components/      (generated component models)
+          results/         (generated result models)
 
 
 ================================================================================
@@ -274,9 +283,10 @@ Q: How do I handle custom methods for specific objects?
 A: Use partials! See TEMPLATE_GUIDE.txt (after scaffold) for details
 
 Q: Can I run the build multiple times?
-A: Yes! The build regenerates all files in the /models/ subdirectory based on
-   the latest API docs. Your skeleton files (NGIO, Core, AppState, etc.) and
-   templates are NOT regenerated - they're yours to edit freely.
+A: Yes! The build regenerates all files in the NewgroundsIO/models/ subdirectory
+   based on the latest API docs. Your skeleton files (NGIO, Core, AppState,
+   BaseObject, BaseComponent, BaseResult, etc.) and templates are NOT regenerated -
+   they're yours to edit freely.
 
 Q: What if the API changes?
 A: Run ngio-build again - it fetches the latest API documentation
@@ -285,8 +295,10 @@ A: Run ngio-build again - it fetches the latest API documentation
    and/or extend models with new partials
 
 Q: Which files are safe to edit manually?
-A: Safe to edit: templates/, skeleton files (NGIO, Core, etc.), config.js, helpers.js
-   Do NOT edit: Anything in the /models/ subdirectory - these are regenerated on each build
+A: Safe to edit: templates/, skeleton files (NGIO, Core, BaseObject, BaseComponent,
+   BaseResult, etc.), config.js, helpers.js
+   Do NOT edit: Anything in the NewgroundsIO/models/ subdirectory - these are
+   regenerated on each build
 
 
 ================================================================================
