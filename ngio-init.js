@@ -41,7 +41,7 @@ if (!forceSetup) {
 fsExtra.ensureDirSync(setupPath);
 
 // copy our sample config and helper files
-fs.copyFileSync(path.join(thisFileDir, 'samples/config.js'), configPath);
+fs.copyFileSync(path.join(thisFileDir, 'samples/config.sample.js'), configPath);
 fs.copyFileSync(path.join(thisFileDir, 'samples/helpers.js'), helpersPath);
 fs.copyFileSync(path.join(thisFileDir, 'samples/GETTING_STARTED.txt'), gettingStartedPath);
 
