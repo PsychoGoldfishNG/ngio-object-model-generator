@@ -44,12 +44,14 @@ The model generator works in four steps:
      → Copies template and skeleton files to your project
      → Command: npx ngio-scaffold config.js
      → Creates templates/ and skeleton files in your build directory
+     → IMPORTANT: Scaffold files are converted ONCE and can then be manually edited
   
   4. TRANSLATE & BUILD
      → Translate skeleton pseudo-code to your language
      → Run the build to generate model files
      → Command: npx ngio-build config.js
      → Generates all object, component, and result classes
+     → IMPORTANT: Only the /models/ subdirectory contents are regenerated on rebuild
 
 
 ================================================================================
@@ -249,10 +251,10 @@ After running ngio-scaffold, you'll have:
       partials/
         objects/           (custom code for specific objects)
     build/                 (or whatever you named it in config)
-      NGIO.pseudo          (if core_files enabled)
-      Core.pseudo          (if core_files enabled)
-      ... other skeletons
-      models/              (generated files go here after build)
+      NGIO.pseudo          (if core_files enabled - convert once, then safe to edit)
+      Core.pseudo          (if core_files enabled - convert once, then safe to edit)
+      ... other skeletons  (convert once, then safe to edit)
+      models/              (REGENERATED on each build - do not manually edit!)
 
 
 ================================================================================
@@ -272,13 +274,19 @@ Q: How do I handle custom methods for specific objects?
 A: Use partials! See TEMPLATE_GUIDE.txt (after scaffold) for details
 
 Q: Can I run the build multiple times?
-A: Yes! The build regenerates all files based on the latest API docs
+A: Yes! The build regenerates all files in the /models/ subdirectory based on
+   the latest API docs. Your skeleton files (NGIO, Core, AppState, etc.) and
+   templates are NOT regenerated - they're yours to edit freely.
 
 Q: What if the API changes?
 A: Run ngio-build again - it fetches the latest API documentation
-   and builds models for now objects, components and results
+   and builds models for new objects, components and results
    You may also need to add wrapper methods in NGIO and AppState
    and/or extend models with new partials
+
+Q: Which files are safe to edit manually?
+A: Safe to edit: templates/, skeleton files (NGIO, Core, etc.), config.js, helpers.js
+   Do NOT edit: Anything in the /models/ subdirectory - these are regenerated on each build
 
 
 ================================================================================
