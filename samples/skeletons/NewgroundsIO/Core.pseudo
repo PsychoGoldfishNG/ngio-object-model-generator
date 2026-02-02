@@ -99,7 +99,7 @@ CLASS Core
     PUBLIC METHODS
     ====================
     
-    FUNCTION queueComponent(componentModel: NewgroundsIO.models.BaseComponent)
+    FUNCTION queueComponent(componentModel: NewgroundsIO.BaseComponent)
         
         PURPOSE: Add a component to the queue of components to send.
         WHY: Queuing lets us send multiple components in one network request for efficiency.
@@ -127,7 +127,7 @@ CLASS Core
         PARAMETERS:
             callback: Function called with (resultModel) when server replies
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.models.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
         
         BEHAVIOR:
             COMMENT: If queue is empty, nothing to do
@@ -174,7 +174,7 @@ CLASS Core
             CALL sendRequest(toExecute, false, callback)
     END FUNCTION
     
-    FUNCTION executeComponent(componentModel: NewgroundsIO.models.BaseComponent, callback: function|null)
+    FUNCTION executeComponent(componentModel: NewgroundsIO.BaseComponent, callback: function|null)
         
         PURPOSE: Execute a single component immediately (not queued).
         WHY: Some components (like Medal.unlock) need immediate execution, not batching.
@@ -183,7 +183,7 @@ CLASS Core
             componentModel: The component to execute
             callback: Function called with (resultModel) when server replies
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.models.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
         
         BEHAVIOR:
             COMMENT: Wrap the component for transmission
@@ -234,7 +234,7 @@ CLASS Core
             openInBrowser: If true, open in browser window instead of making AJAX request
             callback: Function called with (resultModel) when server replies
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.models.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
         
         EXPLANATION:
             This method does several things:

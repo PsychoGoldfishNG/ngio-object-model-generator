@@ -1,6 +1,6 @@
 CLASS BaseObject
     DESCRIPTION: Foundation class for all model objects with serialization/deserialization
-    NAMESPACE: NewgroundsIO.models
+    NAMESPACE: NewgroundsIO
     NOTE: This is an abstract class - you should NOT create instances directly
     
     PURPOSE: Every model in Newgrounds (User, Medal, Score, SaveSlot, etc.) extends BaseObject.

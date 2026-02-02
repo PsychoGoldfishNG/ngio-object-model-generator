@@ -355,7 +355,7 @@ CLASS AppState
             RETURN sessionStatus
     END FUNCTION
     
-    FUNCTION setValueFromResult(resultObject: NewgroundsIO.models.BaseResult)
+    FUNCTION setValueFromResult(resultObject: NewgroundsIO.BaseResult)
         
         PURPOSE: Updates app state properties from server result values
         EXPLANATION: Called when a result object is parsed from server.

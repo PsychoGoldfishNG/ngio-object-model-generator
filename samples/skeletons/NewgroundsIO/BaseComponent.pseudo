@@ -1,6 +1,6 @@
 CLASS BaseComponent
     DESCRIPTION: Base class for all component models sent to servers
-    NAMESPACE: NewgroundsIO.models
+    NAMESPACE: NewgroundsIO
     EXTENDS: BaseObject
     
     PURPOSE: Components are the building blocks of API calls. Every action you send to

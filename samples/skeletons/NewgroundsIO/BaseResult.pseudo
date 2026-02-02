@@ -1,6 +1,6 @@
 CLASS BaseResult
     DESCRIPTION: Base class for all component result models received from server
-    NAMESPACE: NewgroundsIO.models
+    NAMESPACE: NewgroundsIO
     EXTENDS: BaseObject
     
     PURPOSE: When you send a component to the server, the server sends back a result.
