@@ -81,6 +81,7 @@ CLASS NGIO
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.
             CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
+            SET logViewComponent.core TO core
             CALL core.executeComponent(logViewComponent, null)
             
             COMMENT: Start the keep-alive timer if the platform supports it.
@@ -294,6 +295,7 @@ CLASS NGIO
             COMMENT: If we don't have any session yet, we need to create one on the server
             IF hasSession() is false THEN
                 CREATE startSessionComponent AS new NewgroundsIO.models.components.App.startSession()
+                SET startSessionComponent.core TO core
                 CALL core.executeComponent(startSessionComponent, 
                     FUNCTION onComplete(result)
                         COMMENT: Check if the server request succeeded
@@ -319,6 +321,7 @@ CLASS NGIO
             
             COMMENT: We have a session but no user. Check with the server if that's changed.
             CREATE checkSessionComponent AS new NewgroundsIO.models.components.App.checkSession()
+            SET checkSessionComponent.core TO core
             CALL core.executeComponent(checkSessionComponent, 
                 FUNCTION onComplete(result)
                     IF result.success is true THEN
@@ -378,6 +381,7 @@ CLASS NGIO
             
             COMMENT: Create the end session component and send it to the server
             CREATE endSessionComponent AS new NewgroundsIO.models.components.App.endSession()
+            SET endSessionComponent.core TO core
             CALL core.executeComponent(endSessionComponent, 
                 FUNCTION onComplete(result)
                     COMMENT: Ignore result and call user callback with no parameters
@@ -819,6 +823,7 @@ CLASS NGIO
             END IF
             
             CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
+            SET component.core TO core
             
             CALL core.executeComponent(component, 
                 FUNCTION onComplete(result)
@@ -852,6 +857,7 @@ CLASS NGIO
             END IF
             
             CREATE component AS new NewgroundsIO.models.components.Gateway.ping()
+            SET component.core TO core
             
             CALL core.executeComponent(component, 
                 FUNCTION onComplete(result)
@@ -885,6 +891,7 @@ CLASS NGIO
             END IF
             
             CREATE component AS new NewgroundsIO.models.components.Event.log()
+            SET component.core TO core
             SET component.host TO core.appState.host
             SET component.event_name TO eventName
             
@@ -926,6 +933,7 @@ CLASS NGIO
             END IF
             
             CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+            SET component.core TO core
             SET component.host TO core.appState.host
             SET component.browserTarget TO target
             SET component.log_stat TO logEvent
@@ -954,6 +962,7 @@ CLASS NGIO
             END IF
             
             CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+            SET component.core TO core
             SET component.host TO core.appState.host
             SET component.log_stat TO logEvent
             SET component.redirect TO false

@@ -62,6 +62,16 @@ CLASS BaseObject
             - 'array-of-ClassName': Create array of instances
     
     ====================
+    PUBLIC PROPERTIES
+    ====================
+    
+    core: NewgroundsIO.Core | null = null
+        PURPOSE: Reference to the Core instance for accessing core functionality
+        WHY: Objects may need access to encryption, AppState, or other core methods
+        USAGE: Set by the system when objects are created or imported
+        EXAMPLE: this.core.encryptData(jsonString), this.core.appState.setValueFromResult()
+    
+    ====================
     PUBLIC METHODS
     ====================
     

@@ -201,32 +201,39 @@ CLASS AppState
                     CASE 'gatewayVersion':
                         COMMENT: Component to get gateway version info
                         SET component TO new NewgroundsIO.models.components.Gateway.getVersion()
+                        SET component.core TO this.core
                     
                     CASE 'currentVersion':
                         COMMENT: Component to check for app updates
                         SET component TO new NewgroundsIO.models.components.App.getCurrentVersion()
+                        SET component.core TO this.core
                         SET component.version TO core.buildVersion
                     
                     CASE 'hostApproved':
                         COMMENT: Component to check if current domain is approved
                         SET component TO new NewgroundsIO.models.components.App.getHostLicense()
+                        SET component.core TO this.core
                         SET component.host TO this.host
                     
                     CASE 'saveSlots':
                         COMMENT: Component to load cloud save slots
                         SET component TO new NewgroundsIO.models.components.CloudSave.loadSlots()
+                        SET component.core TO this.core
                     
                     CASE 'medals':
                         COMMENT: Component to load medal list
                         SET component TO new NewgroundsIO.models.components.Medal.getList()
+                        SET component.core TO this.core
                     
                     CASE 'medalScore':
                         COMMENT: Component to get user's total medal score
                         SET component TO new NewgroundsIO.models.components.Medal.getMedalScore()
+                        SET component.core TO this.core
                     
                     CASE 'scoreBoards':
                         COMMENT: Component to load scoreboard data
                         SET component TO new NewgroundsIO.models.components.ScoreBoard.getBoards()
+                        SET component.core TO this.core
                 END SWITCH
                 
                 COMMENT: Queue the component for execution
