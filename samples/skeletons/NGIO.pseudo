@@ -82,6 +82,7 @@ CLASS NGIO
             COMMENT: This tracks view counts, which is useful for analytics.
             CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
             SET logViewComponent.core TO core
+            SET logViewComponent.host TO (core.appState.host OR "N/A")
             CALL core.executeComponent(logViewComponent, null)
             
             COMMENT: Start the keep-alive timer if the platform supports it.
