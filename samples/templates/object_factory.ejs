@@ -15,9 +15,9 @@
  * strings into actual class instances without a massive if/else chain.
  * 
  * EXAMPLE USAGE:
- *   var medal = ObjectIndex.CreateObject("Medal", jsonData);
- *   var unlockComponent = ObjectIndex.CreateComponent("Medal", "unlock", params);
- *   var unlockResult = ObjectIndex.CreateResult("Medal", "unlock", responseData);
+ *   var medal = ObjectFactory.CreateObject("Medal", jsonData);
+ *   var unlockComponent = ObjectFactory.CreateComponent("Medal", "unlock", params);
+ *   var unlockResult = ObjectFactory.CreateResult("Medal", "unlock", responseData);
  * 
  * AVAILABLE VARIABLES:
  * - models: Object containing all generated models
@@ -41,7 +41,7 @@ COMMENT: =======================================================================
  * Factory class for creating Newgrounds.io object instances by name.
  * This allows dynamic instantiation based on string identifiers from the API.
  */
-CLASS ObjectIndex
+CLASS ObjectFactory
     NAMESPACE: [Your namespace here, e.g., newgroundsIO.models.objects]
     
     PURPOSE: Provides static factory methods to create object, component, and result

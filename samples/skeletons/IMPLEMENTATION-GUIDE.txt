@@ -12,6 +12,9 @@ TARGET AUDIENCE:
 - Contributors working in unfamiliar languages
 - Developers seeking clarification on design decisions
 
+IMPORTANT: If you are using AI/LLM assistance (Claude, ChatGPT, etc.), please
+read the "AI/LLM TRANSLATION GUIDANCE" section before beginning translation.
+
 ================================================================================
 CORE CONCEPTS
 ================================================================================
@@ -70,6 +73,131 @@ Translate to your language's equivalent:
 - C#: null
 - Ruby: nil
 - Go: nil
+
+
+================================================================================
+AI/LLM TRANSLATION GUIDANCE
+================================================================================
+
+CRITICAL: The pseudo-code files (especially NGIO.pseudo) are very large and contain
+many methods. AI models with limited context windows may skip or miss methods in
+the middle sections of files due to attention degradation.
+
+RECOMMENDED TRANSLATION PROCESS
+-------------------------------
+
+STEP 1: INVENTORY-FIRST APPROACH
+Before translating any code, create a complete inventory:
+
+1. Read the entire skeleton file carefully
+2. Create an itemized list of ALL properties, methods, and constants
+3. Note which sections they belong to (e.g., "Session Management", "Medals", etc.)
+4. Save this list as your translation checklist
+
+STEP 2: CHUNKED TRANSLATION
+Translate in manageable chunks to maintain accuracy:
+
+1. Translate methods 1-15 from your inventory list
+2. After completing each chunk, LIST what methods you just added
+3. VERIFY against your inventory what still needs translation
+4. Translate methods 16-30 from your inventory list
+5. Repeat until all methods are complete
+
+STEP 3: PROGRESSIVE VALIDATION
+After each chunk:
+
+1. List the specific methods you just translated
+2. Cross them off your inventory checklist
+3. Explicitly state what sections/methods remain
+4. Don't proceed until you confirm the previous chunk is complete
+
+STEP 4: EXPLICIT COVERAGE VERIFICATION
+Before finalizing your translation:
+
+1. Use search tools to verify ALL methods from your inventory exist in the final code
+2. Search for each method name individually to confirm it was implemented
+3. Compare the method count in your final code to your original inventory
+4. Flag any discrepancies and resolve them
+
+STEP 5: FINAL COMPLETENESS CHECK
+Perform these verification steps:
+
+1. Search your translated code for "TODO" or placeholder text
+2. Verify all imports/dependencies are included
+3. Confirm all classes extend the correct base classes
+4. Test that the code compiles/runs without errors
+5. Compare your translation against the original pseudo-code structure
+
+COMMON PITFALLS FOR AI TRANSLATION
+-----------------------------------
+
+1. ATTENTION DEGRADATION: Large files cause AI models to lose focus on middle sections
+   → Solution: Use the chunked approach above
+
+2. ASSUMING COMPLETION: AI models often think they've translated everything when they haven't
+   → Solution: Explicitly verify every method against your inventory
+
+3. PLACEHOLDER POLLUTION: AI models sometimes leave "TODO" comments or incomplete implementations
+   → Solution: Search for and resolve all placeholders before finishing
+
+4. INCONSISTENT PATTERNS: Different sections translated with different coding styles
+   → Solution: Establish coding patterns in the first chunk and maintain them throughout
+
+5. MISSING ERROR HANDLING: AI models often skip or simplify error handling logic
+   → Solution: Pay special attention to error handling patterns in the pseudo-code
+
+EXAMPLE INVENTORY FORMAT
+------------------------
+Create a checklist like this for each file:
+
+NGIO.pseudo Translation Checklist:
+□ init() method
+□ hasSession() method  
+□ hasUser() method
+□ getUser() method
+□ openPassport() method
+□ keepAlive() method
+□ checkSession() method
+□ endSession() method
+□ loadAppData() method
+□ getGatewayVersion() method
+□ loadGatewayVersion() method
+□ getCurrentVersion() method
+□ loadCurrentVersion() method
+□ getClientDeprecated() method
+□ loadClientDeprecated() method
+□ getHostApproved() method
+□ loadHostApproved() method
+□ getMedals() method
+□ loadMedals() method
+□ getMedalScore() method
+□ loadMedalScore() method
+□ getMedal() method
+□ getScoreBoards() method
+□ loadScoreBoards() method
+□ getScoreBoard() method
+□ getSaveSlots() method
+□ loadSaveSlots() method
+□ getSaveSlot() method
+□ loadGatewayDateTime() method
+□ loadGatewayTimestamp() method
+□ sendPing() method
+□ logEvent() method
+□ openOfficialUrl() method
+□ loadOfficialUrl() method
+□ openAuthorUrl() method
+□ loadAuthorUrl() method
+□ openMoreGames() method
+□ loadMoreGames() method
+□ openNewgrounds() method
+□ loadNewgrounds() method
+□ openReferral() method
+□ loadReferral() method
+□ startKeepAliveTimer() method
+□ All constants (CHECKSESSION_THROTTLE_TIME, KEEP_ALIVE_TIME)
+□ All static properties (core, lastCheckSessionTime, lastKeepAliveTime)
+
+Remember: This checklist should be created by carefully reading the ENTIRE file first.
 
 
 ================================================================================

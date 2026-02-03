@@ -53,6 +53,12 @@ The model generator works in four steps:
      → Generates all object, component, and result classes
      → IMPORTANT: Only the /models/ subdirectory contents are regenerated on rebuild
 
+IMPORTANT NOTE FOR AI/LLM USERS:
+If you're using AI assistants (Claude, ChatGPT, etc.) to translate pseudo-code,
+please read the "AI/LLM TRANSLATION GUIDANCE" section in IMPLEMENTATION-GUIDE.txt
+first. The skeleton files are large and AI models can miss methods due to
+attention degradation if not approached systematically.
+
 
 ================================================================================
 UNDERSTANDING CONFIG.JS

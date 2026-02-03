@@ -33,9 +33,8 @@
                 
                 COMMENT: Convert to JSON string and encrypt
                 COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
-                COMMENT: TODO: Replace YOUR_ENCRYPTION_HANDLER with core.encryptData()
                 CREATE jsonString AS YOUR_JSON_ENCODER(tempObject)
-                SET this.secure TO YOUR_ENCRYPTION_HANDLER(jsonString)
+                SET this.secure TO this.core.encryptData(jsonString)
             END IF
     END METHOD
     
@@ -60,9 +59,8 @@
             
             COMMENT: If this component requires encryption, wrap it in a secure object
             IF this.componentModel.isSecure THEN
-                COMMENT: TODO: Replace YOUR_ENCRYPTION_HANDLER with your actual encryption logic
                 RETURN {
-                    secure: YOUR_ENCRYPTION_HANDLER(executeData)
+                    secure: this.core.encryptData(executeData)
                 }
             END IF
             

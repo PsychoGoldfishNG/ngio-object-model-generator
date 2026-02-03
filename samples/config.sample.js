@@ -159,7 +159,7 @@ module.exports = {
          *  - config: This full config object
          */
         object_factory: (config) => {
-            return `${config.models_dir}/objects/ObjectIndex${config.output_file_extension}`;
+            return `${config.models_dir}/objects/ObjectFactory${config.output_file_extension}`;
         }
     },
 
