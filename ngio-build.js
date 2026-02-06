@@ -271,8 +271,12 @@ async function ensureLatestObjectDoc() {
             // so let's key them as properties for consistency
             componentObjects[component][method].properties = componentObjects[component][method].params;
 
-            // if this component has no return, we won't need to model a result object
-            if (!object_doc.components[component].methods[method].return) continue;
+            // if this component has no return, just use an empty object.
+            // it will still have a success, and possible error value, so
+            // it's still useful to generate a model for it.
+            if (!object_doc.components[component].methods[method].return) {
+                object_doc.components[component].methods[method].return = {};
+            }
 
             if (!resultObjects[component]) resultObjects[component] = {};
 
