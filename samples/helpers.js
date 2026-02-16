@@ -5,8 +5,41 @@
 module.exports = {
 
     // If you use namespacing, or prefixes, you can use this to inject any namespacing you want.
-    // for example, if you want to use the newgroundsIO.models.* namespace...
-    baseNamespace: "newgroundsIO.models",
+    // for example, if you want to use the io.newgrounds.models.* namespace...
+    baseNamespace: "io.newgrounds.models",
+
+    /**
+     * Maps model names to their preferred class names.
+     * Some API model names conflict with native classes (e.g., "Error")
+     * so we rename them to avoid ambiguity.
+     */
+    classNameMap: {
+        "Error": "NgioError"
+    },
+
+    /**
+     * Gets the preferred class name for a model, applying any mappings.
+     * @param {string} modelName The original model name from the API.
+     * @returns {string} The mapped class name (e.g., "Error" becomes "NgioError").
+     */
+    getClassName(modelName) {
+        if (!modelName) return "";
+        return this.classNameMap[modelName] || modelName;
+    },
+
+    /**
+     * Gets the original API name for a model (reverse mapping).
+     * @param {string} className The class name used in code.
+     * @returns {string} The original API model name.
+     */
+    getOriginalName(className) {
+        if (!className) return "";
+        // Reverse lookup in the map
+        for (const [original, mapped] of Object.entries(this.classNameMap)) {
+            if (mapped === className) return original;
+        }
+        return className;
+    },
 
     /**
      * Converts the first character of a string to uppercase.
@@ -126,7 +159,7 @@ module.exports = {
         if (obj.array) {
             // some objects can be a typed array or a flat value or object
             if (obj.type || obj.object) {
-                return "Mixed";
+                return "*"; // Any type
             } else {
                 return "Array";
             }
@@ -145,29 +178,58 @@ module.exports = {
         // update this to reflect any namespacing you use in your project.
         // for example, if you want to use the newgroundsIO.models.objects namespace...
         if (obj.object) {
-            return `${this.baseNamespace}.objects.${obj.object}`;
+            const className = this.getClassName(obj.object);
+            return `${this.baseNamespace}.objects.${className}`;
         }
 
         // if we have none of the above, and no type, this is a void type
         if (!obj.type) return "Void";
 
-        // if we have a type, send back the native actionscript type
+        // if we have a type property, this will be a native type. Send the proper type back!
         switch (obj.type) {
             case "array":
-                return "Array";
+                return "Array"; // or List, depending on your language
             case "object":
-                return "Object";
+                return "Object"; // or Map, Dictionary, Hash, etc. depending on your language
             case "string":
                 return "String";
             case "int":
-                return "Number";
+                return "Number"; // or Integer, depending on your language
             case "float":
-                return "Number";
+                return "Number"; // or Float/Double, depending on your language
             case "boolean":
                 return "Boolean";
             case "mixed":
-                return "Mixed";
+                return "*"; // Any type
         }
 
+    },
+
+    /**
+     * Gets the appropriate default value for a property
+     * @param {object} property The property definition
+     * @returns {string} The default value as a string
+     */
+    getDefaultValue(property) {
+        // If an explicit default is provided, use it
+        if (property.default !== undefined) {
+            return JSON.stringify(property.default);
+        }
+
+        // Handle primitives that can't be null
+        const dataType = this.getDataType(property);
+        
+        // Number types may need to default to NaN (not-a-number) instead of null
+        if (dataType === "Number") {
+            return "NaN";
+        }
+        
+        // Boolean types may need to default to false instead of null
+        if (dataType === "Boolean") {
+            return "false";
+        }
+        
+        // Everything else can be null (objects, strings, arrays, etc.)
+        return "null";
     }
 }
