@@ -301,6 +301,20 @@ If your platform lacks HTTPS support, it cannot communicate with Newgrounds.io.
 THE RULE: Always use the full HTTPS URL. Don't try to use HTTP.
 
 
+NETWORK PERMISSIONS AND SECURITY POLICIES
+-----------------------------------------
+Some platforms require explicit network permissions or policy files before
+making HTTPS requests. The pseudo-code uses these generic helpers:
+
+PLATFORM NOTES:
+- Flash/AIR: load crossdomain policy files and allow network domains
+- Web browsers: no policy file, but CORS rules still apply
+- Mobile apps: ensure manifest permissions for network access
+- Desktop apps: ensure firewall or sandbox policies allow HTTPS
+
+If your platform does not require these steps, make the helpers no-ops.
+
+
 HTTP POST METHODS
 -----------------
 The gateway accepts requests in TWO formats - use whichever your platform supports:
@@ -547,6 +561,99 @@ IMPLEMENTATION PATTERN:
 This ensures type safety while supporting the API's flexibility.
 
 
+OBJECT CREATION PATTERNS
+-------------------------
+The skeleton files contain conditional logic for object creation. You must choose
+ONE pattern based on whether your implementation will include an ObjectFactory.
+
+IMPORTANT FOR AI/LLM TRANSLATORS: 
+If you are using AI assistance to translate these skeletons, ALWAYS prompt the
+user to choose which pattern they prefer before beginning translation. The 
+ObjectFactory may not exist when translating skeletons, so user choice is critical.
+
+PATTERN 1: OBJECTFACTORY PATTERN (Strongly Recommended)
+
+When to use:
+- Your language has strong typing
+- You want centralized object creation
+- You plan to use the model generator to create an ObjectFactory
+- You need runtime type resolution by name
+
+Implementation:
+- Translate all "IF ObjectFactory exists" branches
+- Remove all "ELSE" branches for direct creation
+- Rely on ObjectFactory.CreateObject() and ObjectFactory.CreateComponent()
+- ObjectFactory handles type mapping and instantiation
+
+Example pseudo-code translation:
+```
+// Skeleton shows:
+IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+    SET medal TO ObjectFactory.CreateObject("Medal", medalData, this.core)
+ELSE
+    SET medal TO new Medal()
+    CALL medal.importFromObject(medalData)
+END IF
+
+// Pattern 1 translation (ObjectFactory):
+medal = ObjectFactory.CreateObject("Medal", medalData, this.core);
+```
+
+PATTERN 2: DIRECT CREATION PATTERN (Okay for some dynamically-typed languages)
+
+When to use:
+- Your language has dynamic typing or weak typing
+- You prefer simple, direct object creation
+- You want to avoid the complexity of a factory system
+- Smaller libraries or simpler implementations
+
+Implementation:
+- Translate all "ELSE" branches for direct creation
+- Remove all "IF ObjectFactory exists" branches  
+- Use direct constructor calls: new Medal(), new User(), etc.
+- Handle object initialization manually
+
+Example pseudo-code translation:
+```
+// Skeleton shows:
+IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+    SET medal TO ObjectFactory.CreateObject("Medal", medalData, this.core)
+ELSE
+    SET medal TO new Medal()
+    CALL medal.importFromObject(medalData)
+END IF
+
+// Pattern 2 translation (Direct Creation):
+medal = new Medal();
+medal.importFromObject(medalData);
+```
+
+CHOOSING YOUR PATTERN:
+
+Ask these questions:
+1. Does your language have strong typing? (ObjectFactory recommended)
+2. Do you want centralized object creation? (ObjectFactory recommended)
+3. Are you building a large, complex library? (ObjectFactory recommended)
+4. Do you prefer simplicity over features? (Direct Creation recommended)
+5. Are you using the model generator? (ObjectFactory available)
+
+CRITICAL: Be consistent throughout your entire implementation. Don't mix patterns.
+
+AI/LLM PROMPT TEMPLATE:
+"Before I translate the Newgrounds.io skeletons, I need to choose an object 
+creation pattern. The skeletons support two approaches:
+
+1. ObjectFactory Pattern - Uses centralized factory for all object creation
+2. Direct Creation Pattern - Uses direct constructor calls (new Object())
+
+Which pattern would you prefer for this implementation? Consider:
+- Language typing system (strong vs dynamic)
+- Library complexity preferences  
+- Whether you'll use the model generator
+
+Please specify your preference so I can translate the conditional logic correctly."
+
+
 ================================================================================
 DEBUGGING AND TESTING
 ================================================================================
@@ -625,6 +732,122 @@ GAME ENGINES (Unity, Unreal, GameMaker, etc.)
 - Check for session ID in launch parameters
 - Use engine's persistent storage for sessions
 - May lack native JSON and/or encryption (use plugins)
+
+TIMER PATTERNS FOR KEEP-ALIVE
+-----------------------------
+The NGIO.keepAliveTimer handles automatic session maintenance. Choose the 
+pattern that matches your platform's capabilities:
+
+PATTERN 1: Native Timers (PREFERRED)
+If your platform has timer/scheduler APIs:
+- JavaScript: setInterval(callback, milliseconds)
+- Python: threading.Timer or asyncio
+- C#: System.Threading.Timer or async Task.Delay
+- Java: ScheduledExecutorService
+- Unity: Coroutines with WaitForSeconds
+
+PATTERN 2: Manual Throttling (FALLBACK)
+If timers aren't available or reliable:
+- Set keepAliveTimer to null (disable automatic mode)
+- Use lastKeepAliveTime for manual throttling 
+- Call NGIO.keepAlive() from your game's update loop
+- Check if KEEP_ALIVE_TIME seconds have elapsed since last call
+
+PATTERN 3: No Keep-Alive (SIMPLE, NOT RECOMMENDED!)
+For simple games with short sessions:
+- Omit timer implementation entirely
+- Sessions will expire after inactivity (usually 1 hour)
+- Users will need to re-authenticate if expired
+
+URL OPENING SECURITY RESTRICTIONS
+---------------------------------
+Many platforms restrict programmatic URL opening for security:
+
+WEB BROWSERS:
+- Must be triggered by user interaction (click, touch, key press)
+- Cannot be called from timer callbacks or async responses
+- Solution: Show "Login" button that calls NGIO.openPassport()
+
+MOBILE APPS (iOS/Android):
+- May require permission declarations in manifest
+- Some app stores restrict external URL opening
+- Solution: Use in-app browser or WebView when possible
+
+DESKTOP APPLICATIONS:
+- Usually unrestricted, but may show security warnings
+- Solution: Inform user before opening external URLs
+
+GAME ENGINES:
+- Varies by platform and distribution (Steam, web, mobile)
+- Solution: Check engine documentation for URL opening APIs
+
+TIMESTAMP HANDLING VARIATIONS
+-----------------------------
+The pseudo-code uses "Timestamp" for time values. Platform translations:
+
+- JavaScript: Date object or number (milliseconds since epoch)
+- Python: datetime object or time.time() float
+- C#: DateTime or DateTimeOffset
+- Java: Instant, LocalDateTime, or long milliseconds
+- Unity: DateTime (avoid float Time.time for network operations)
+
+Choose the type that best integrates with your platform's time APIs.
+
+PERSISTENT STORAGE PATTERNS
+---------------------------
+AppState requires persistent storage to save session IDs between app sessions.
+The pseudo-code uses generic storage functions that map to platform storage:
+
+WEB BROWSERS:
+- GET_FROM_PERSISTENT_STORAGE() → localStorage.getItem()
+- SAVE_TO_PERSISTENT_STORAGE() → localStorage.setItem()
+- CLEAR_FROM_PERSISTENT_STORAGE() → localStorage.removeItem()
+
+MOBILE APPS (iOS/Android):
+- Use platform keychain/SharedPreferences for security
+- iOS: Keychain Services or UserDefaults
+- Android: SharedPreferences or EncryptedSharedPreferences
+
+DESKTOP APPLICATIONS:
+- Windows: Registry or AppData folder files
+- macOS: Plists or Application Support folder
+- Linux: XDG config directories or dot files
+
+GAME ENGINES:
+- Unity: PlayerPrefs (automatic platform mapping)
+- Unreal: Game User Settings or Save Game system
+- GameMaker: ini_open/ini_write functions
+
+Choose storage that persists between app launches and is secure for session data.
+
+DOMAIN DETECTION PATTERNS
+-------------------------
+AppState needs to detect the current domain/host for domain-restricted apps.
+The pseudo-code uses GET_CURRENT_DOMAIN() which maps to platform APIs:
+
+WEB BROWSERS:
+- JavaScript: window.location.hostname or window.location.host
+- IMPORTANT: Extract base domain only - remove ALL subdomains
+- Examples: www.example.com → example.com, api.example.com → example.com, sub.api.example.com → example.com
+- Algorithm: Split by dots, keep only the last two components (domain + TLD)
+- Exception: Handle special cases like .co.uk (two-part TLDs) if needed for your use case
+
+MOBILE APPS:
+- iOS: Bundle.main.bundleIdentifier (app bundle ID)  
+- Android: applicationContext.packageName
+- Use consistent identifier across app versions
+
+DESKTOP APPLICATIONS:
+- May not have meaningful "domain" concept
+- Use application identifier or "localhost" as default
+- Consider command-line arguments for domain override
+
+GAME ENGINES:
+- Unity: Application.identifier or custom configuration
+- Check for runtime platform (WebGL vs standalone)
+- May need platform-specific conditional logic
+
+Use "N/A" as fallback when domain detection unavailable or not applicable.
 
 ================================================================================
 COMMON PITFALLS

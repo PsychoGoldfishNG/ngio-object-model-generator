@@ -26,22 +26,26 @@
         PURPOSE: Sets an array of BaseResult instances
         
         PARAMETERS:
-            resultArray: An array of result model instances
+            resultArray: An array of result model instances (empty clears the list)
         
         BEHAVIOR:
-            SET this.resultList TO resultArray
+            IF resultArray is not null AND resultArray is not empty THEN
+                SET this.resultList TO resultArray
+            ELSE
+                SET this.resultList TO null
+            END IF
             SET this.result TO null
     END METHOD
     
     COMMENT: Checks if using list format.
-    METHOD resultIsArray(): Boolean
+    METHOD resultIsList(): Boolean
         
         PURPOSE: Determines if this response contains multiple results
         
         RETURNS: True if using list format, false if using single value
         
         BEHAVIOR:
-            RETURN this.resultList is not null and not empty
+            RETURN this.resultList is an array
     END METHOD
     
     COMMENT: Gets the single result.
@@ -67,6 +71,33 @@
     END METHOD
     
     COMMENT: ====================================================================================
+    COMMENT: CUSTOM toObject() OVERRIDE
+    COMMENT: ====================================================================================
+    
+    COMMENT: Ensures result uses the active format.
+    METHOD toObject(recursive: Boolean, excludeNulls: Boolean): Object
+        
+        PURPOSE: Serializes Response with correct result format
+        
+        RETURNS: Plain object ready for JSON encoding
+        
+        BEHAVIOR:
+            CREATE jsonObject AS parent.toObject(recursive, excludeNulls)
+            
+            IF this.resultList is an array THEN
+                SET jsonObject['result'] TO this.resultList
+            ELSE IF this.result is not null THEN
+                SET jsonObject['result'] TO this.result
+            ELSE IF excludeNulls is false THEN
+                SET jsonObject['result'] TO null
+            ELSE
+                REMOVE jsonObject['result']
+            END IF
+            
+            RETURN jsonObject
+    END METHOD
+    
+    COMMENT: ====================================================================================
     COMMENT: CUSTOM importFromObject() OVERRIDE
     COMMENT: ====================================================================================
     
@@ -82,92 +113,88 @@
              and keeps local cached data synchronized with server responses
         
         BEHAVIOR:
-            COMMENT: Extract result property before calling parent
-            CREATE resultData AS data.result
-            CREATE modifiedData AS copy of data
-            DELETE modifiedData.result
+            CREATE typedResults AS null
+            CREATE responseError AS null
             
-            COMMENT: Call parent to handle standard properties
-            CALL parent.importFromObject WITH modifiedData
+            COMMENT: Check if there's an error at the response level
+            IF data has property "error" THEN
+                SET responseError TO data.error
+            END IF
             
-            COMMENT: Process result property if it exists
-            IF resultData exists THEN
-                IF resultData is an Array THEN
-                    COMMENT: Handle array of results
-                    CREATE resultsArray AS empty array
-                    
-                    FOR EACH item IN resultData
-                        COMMENT: Get component name from result item
-                        CREATE componentName AS item.component
-                        
-                        COMMENT: Use Object Factory to create appropriate result model
-                        CREATE resultModel using ObjectFactory.createInstance(
-                            'result',
-                            componentName,
-                            item
-                        )
-                        
-                        COMMENT: Update AppState if available
-                        IF this.core exists AND this.core.appState exists THEN
-                            CALL this.core.appState.setValueFromResult WITH resultModel
+            CREATE hasResultProperty AS data has property "result"
+            IF hasResultProperty AND data.result is not null THEN
+                CREATE rawResults AS data.result
+                
+                IF rawResults is an array THEN
+                    CREATE resultList AS empty array
+                    FOR EACH rawResult IN rawResults
+                        IF rawResult has property "component" AND rawResult has property "data" THEN
+                            CREATE componentName AS rawResult.component
+                            CREATE resultData AS rawResult.data
+                            CREATE typedResult AS ObjectFactory.CreateResult(
+                                componentName split by "." part 0,
+                                componentName split by "." part 1,
+                                resultData,
+                                this.core
+                            )
+                            IF typedResult is not null THEN
+                                IF responseError is not null AND typedResult.error is null THEN
+                                    SET typedResult.error TO responseError
+                                END IF
+                                ADD typedResult TO resultList
+                            END IF
                         END IF
-                        
-                        ADD resultModel TO resultsArray
                     END FOR
-                    
-                    CALL this.setResultList WITH resultsArray
-                    
-                ELSE
-                    COMMENT: Handle single result
-                    CREATE componentName AS resultData.component
-                    
-                    COMMENT: Use Object Factory to create appropriate result model
-                    CREATE resultModel using ObjectFactory.createInstance(
-                        'result',
-                        componentName,
-                        resultData
-                    )
-                    
-                    COMMENT: Update AppState if available
-                    IF this.core exists AND this.core.appState exists THEN
-                        CALL this.core.appState.setValueFromResult WITH resultModel
+                    IF resultList is not empty THEN
+                        SET typedResults TO resultList
                     END IF
-                    
-                    CALL this.setResult WITH resultModel
+                ELSE
+                    IF rawResults has property "component" AND rawResults has property "data" THEN
+                        CREATE componentName AS rawResults.component
+                        CREATE resultData AS rawResults.data
+                        SET typedResults TO ObjectFactory.CreateResult(
+                            componentName split by "." part 0,
+                            componentName split by "." part 1,
+                            resultData,
+                            this.core
+                        )
+                        IF typedResults is not null AND responseError is not null AND typedResults.error is null THEN
+                            SET typedResults.error TO responseError
+                        END IF
+                    END IF
+                END IF
+                
+                CREATE modifiedData AS copy of data
+                REMOVE modifiedData['result']
+                SET data TO modifiedData
+            ELSE IF hasResultProperty THEN
+                CREATE modifiedData AS copy of data
+                REMOVE modifiedData['result']
+                SET data TO modifiedData
+            END IF
+            
+            COMMENT: Call parent to handle standard properties (excluding result)
+            CALL parent.importFromObject WITH data
+            
+            COMMENT: Now set the typed results
+            IF typedResults is not null THEN
+                IF typedResults is an array THEN
+                    CALL this.setResultList WITH typedResults
+                ELSE
+                    CALL this.setResult WITH typedResults
+                END IF
+            ELSE IF hasResultProperty THEN
+                CALL this.setResult WITH null
+            END IF
+            
+            COMMENT: Update AppState if available
+            IF this.core exists AND this.core.appState exists THEN
+                IF this.resultIsList() THEN
+                    FOR EACH resultModel IN this.getResultList()
+                        CALL this.core.appState.setValueFromResult WITH resultModel
+                    END FOR
+                ELSE IF this.getResult() is not null THEN
+                    CALL this.core.appState.setValueFromResult WITH this.getResult()
                 END IF
             END IF
-    END METHOD
-    
-    COMMENT: ====================================================================================
-    COMMENT: CUSTOM prepareForJson() OVERRIDE
-    COMMENT: ====================================================================================
-    
-    COMMENT: Returns properly formatted object for JSON encoding.
-    METHOD prepareForJson(): Object
-        
-        PURPOSE: Serializes Response with correct result format
-        
-        RETURNS: Plain object ready for JSON encoding
-        
-        WHY: Ensures the response can be re-encoded to JSON with correct structure
-             (useful for debugging or caching)
-        
-        BEHAVIOR:
-            COMMENT: Get base object from parent
-            CREATE jsonObject AS parent.prepareForJson()
-            
-            COMMENT: Handle result property based on which format is used
-            IF resultIsArray() THEN
-                COMMENT: Convert each result to JSON-ready format
-                CREATE resultJsonArray AS empty array
-                FOR EACH resultItem IN this.resultList
-                    ADD resultItem.prepareForJson() TO resultJsonArray
-                END FOR
-                SET jsonObject['result'] TO resultJsonArray
-                
-            ELSE IF this.result is not null THEN
-                SET jsonObject['result'] TO this.result.prepareForJson()
-            END IF
-            
-            RETURN jsonObject
     END METHOD

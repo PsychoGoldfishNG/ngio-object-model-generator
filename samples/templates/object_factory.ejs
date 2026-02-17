@@ -54,37 +54,54 @@ CLASS ObjectFactory
     COMMENT: FACTORY METHOD: CreateObject
     COMMENT: ====================================================================================
     
-    STATIC METHOD CreateObject(name: string, objectData: object): BaseObject
+    STATIC METHOD CreateObject(name: string, objectData: object, coreReference: Core): BaseObject
         
         PURPOSE: Creates an instance of a core object model (Medal, User, Score, etc.)
         
         PARAMETERS:
             name: The object type name (case-insensitive, e.g., "medal", "Medal", "MEDAL")
             objectData: Properties to initialize the object with
+            coreReference: (optional) Core instance to assign to the object
         
         RETURNS: An instance of the requested object, or null if not found
         
         BEHAVIOR:
             COMMENT: Convert name to lowercase for case-insensitive matching
+            CREATE obj AS null
             SWITCH name.toLowerCase()
             
 <%          for(const model in models.objects) { -%>
                 CASE "<%- model.toLowerCase() %>":
-                    COMMENT: Create and return a <%- models.objects[model].name %> instance
-                    RETURN NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>objectData<% } %>)
+                    COMMENT: Create a <%- models.objects[model].name %> instance
+                    SET obj TO NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>objectData<% } %>)
+                    BREAK
                 
 <%          } -%>
             END SWITCH
             
             COMMENT: Unknown object type
-            RETURN null
+            IF obj is null THEN
+                RETURN null
+            END IF
+            
+            COMMENT: Assign core reference if provided
+            IF coreReference is not null THEN
+                SET obj.core TO coreReference
+            END IF
+            
+            COMMENT: If object data provided, import it
+            IF obj is not null AND objectData is not null THEN
+                CALL obj.importFromObject(objectData)
+            END IF
+            
+            RETURN obj
     END METHOD
     
     COMMENT: ====================================================================================
     COMMENT: FACTORY METHOD: CreateComponent
     COMMENT: ====================================================================================
     
-    STATIC METHOD CreateComponent(component: string, method: string, props: object): BaseComponent
+    STATIC METHOD CreateComponent(component: string, method: string, props: object, coreReference: Core): BaseComponent
         
         PURPOSE: Creates an instance of a component model (Medal.unlock, App.checkSession, etc.)
         
@@ -92,6 +109,7 @@ CLASS ObjectFactory
             component: The component namespace (e.g., "Medal", "App", "ScoreBoard")
             method: The method name (e.g., "unlock", "checkSession", "postScore")
             props: Properties/parameters to initialize the component with
+            coreReference: (optional) Core instance to assign to the component
         
         RETURNS: An instance of the requested component, or null if not found
         
@@ -101,28 +119,44 @@ CLASS ObjectFactory
         BEHAVIOR:
             COMMENT: Build the full component name and convert to lowercase
             SET fullName TO component + "." + method
+            CREATE comp AS null
             SWITCH fullName.toLowerCase()
             
 <%       for(const component in models.components) { -%>
 <%        for(const method in models.components[component]) { -%>
 <%          const name = `${component}.${method}`; -%>
                 CASE "<%- name.toLowerCase() %>":
-                    COMMENT: Create and return a <%- name %> component instance
-                    RETURN NEW <%- name %>(<% if (models.components[component][method].properties) { %>props<% } %>)
+                    COMMENT: Create a <%- name %> component instance
+                    SET comp TO NEW <%- name %>(<% if (models.components[component][method].properties) { %>props<% } %>)
+                    BREAK
                 
 <%        } -%>
 <%       } -%>
             END SWITCH
             
             COMMENT: Unknown component
-            RETURN null
+            IF comp is null THEN
+                RETURN null
+            END IF
+            
+            COMMENT: Assign core reference if provided
+            IF coreReference is not null THEN
+                SET comp.core TO coreReference
+            END IF
+            
+            COMMENT: If props provided, import them
+            IF comp is not null AND props is not null THEN
+                CALL comp.importFromObject(props)
+            END IF
+            
+            RETURN comp
     END METHOD
     
     COMMENT: ====================================================================================
     COMMENT: FACTORY METHOD: CreateResult
     COMMENT: ====================================================================================
     
-    STATIC METHOD CreateResult(component: string, method: string, props: object): BaseResult
+    STATIC METHOD CreateResult(component: string, method: string, props: object, coreReference: Core): BaseResult
         
         PURPOSE: Creates an instance of a result model with data returned from the API
         
@@ -130,6 +164,7 @@ CLASS ObjectFactory
             component: The component namespace that was called (e.g., "Medal", "App")
             method: The method name that was called (e.g., "unlock", "checkSession")
             props: The result data returned from the server
+            coreReference: (optional) Core instance to assign to the result
         
         RETURNS: An instance of the requested result object, or null if not found
         
@@ -139,21 +174,37 @@ CLASS ObjectFactory
         BEHAVIOR:
             COMMENT: Build the full component name and convert to lowercase
             SET fullName TO component + "." + method
+            CREATE result AS null
             SWITCH fullName.toLowerCase()
             
 <%       for(const result in models.results) { -%>
 <%        for(const method in models.results[result]) { -%>
 <%          const name = `${result}.${method}`; -%>
                 CASE "<%- name.toLowerCase() %>":
-                    COMMENT: Create and return a <%- name %> result instance
-                    RETURN NEW <%- name %>Result(<% if (models.results[result][method].properties) { %>props<% } %>)
+                    COMMENT: Create a <%- name %> result instance
+                    SET result TO NEW <%- name %>Result(<% if (models.results[result][method].properties) { %>props<% } %>)
+                    BREAK
                 
 <%        } -%>
 <%       } -%>
             END SWITCH
             
             COMMENT: Unknown result type
-            RETURN null
+            IF result is null THEN
+                RETURN null
+            END IF
+            
+            COMMENT: Assign core reference if provided
+            IF coreReference is not null THEN
+                SET result.core TO coreReference
+            END IF
+            
+            COMMENT: If props provided, import them
+            IF result is not null AND props is not null THEN
+                CALL result.importFromObject(props)
+            END IF
+            
+            RETURN result
     END METHOD
 
 END CLASS

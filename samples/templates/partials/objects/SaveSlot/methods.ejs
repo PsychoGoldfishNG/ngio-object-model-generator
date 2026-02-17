@@ -28,8 +28,10 @@
         WHY: Users may want to delete their save data or start over
         
         BEHAVIOR:
-            COMMENT: TODO: Add logic to call CloudSave.clearSlot component
-            COMMENT: This should send a request to delete this slot's data from the server
+            COMMENT: Call CloudSave.clearSlot via the core wrapper
+            IF this.core is not null THEN
+                CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, callback, thisArg)
+            END IF
     END METHOD
 
     COMMENT: Loads the raw string data from this save slot.
@@ -44,9 +46,10 @@
         WHY: Sometimes you want the raw data without JSON parsing
         
         BEHAVIOR:
-            COMMENT: TODO: Add logic to call CloudSave.loadSlot component
-            COMMENT: This should request the slot's data from the server
-            COMMENT: When complete, call callback with the raw data string
+            COMMENT: Call CloudSave.loadSlot via the core wrapper
+            IF this.core is not null THEN
+                CALL this.core.callComponent("CloudSave.loadSlot", { id: this.id }, callback, thisArg)
+            END IF
     END METHOD
     
     COMMENT: Saves raw string data to this save slot.
@@ -62,8 +65,10 @@
         WHY: Allows saving pre-formatted data without JSON encoding
         
         BEHAVIOR:
-            COMMENT: TODO: Add logic to call CloudSave.setData component
-            COMMENT: This should send the data to the server for storage
+            COMMENT: Call CloudSave.setData via the core wrapper
+            IF this.core is not null THEN
+                CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, callback, thisArg)
+            END IF
     END METHOD
 
     COMMENT: Loads data from this save slot and parses it as JSON.
@@ -84,13 +89,14 @@
                 
                 COMMENT: If data exists, decode it from JSON
                 IF data exists THEN
-                    COMMENT: TODO: Replace YOUR_JSON_DECODER with your JSON parsing function
-                    SET decoded TO YOUR_JSON_DECODER(data)
+                    SET decoded TO JSON_DECODE(data)
                 END IF
                 
                 COMMENT: Return the decoded data to the user's callback
-                CALL callback WITH context thisArg
-                    PASSING decoded
+                IF callback is not null THEN
+                    CALL callback WITH context thisArg
+                        PASSING decoded
+                END IF
             END callback function, WITH context this
     END METHOD
 
@@ -107,8 +113,8 @@
         WHY: Simplifies saving - handles JSON encoding automatically
         
         BEHAVIOR:
-            COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
-            CALL this.setDataRaw WITH YOUR_JSON_ENCODER(data), callback, thisArg
+            CREATE jsonString AS JSON_ENCODE(data)
+            CALL this.setDataRaw WITH jsonString, callback, thisArg
     END METHOD
     
     COMMENT: ====================================================================================

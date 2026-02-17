@@ -58,9 +58,9 @@ CLASS AppState
         from the URL so the server knows where the app is running
     
     sessionStorageKey: string | null = null
-        PURPOSE: Unique key for storing the session ID in browser localStorage
+        PURPOSE: Unique key for storing the session ID in persistent storage
         WHY: When user closes and reopens the app, we can restore their session
-        from localStorage using this key. Key includes App ID to avoid collisions
+        from persistent storage using this key. Key includes App ID to avoid collisions
         between multiple apps sharing the same domain.
     
     session: NewgroundsIO.models.objects.Session
@@ -119,15 +119,16 @@ CLASS AppState
             
             COMMENT: Create a new empty Session object
             SET this.session TO new NewgroundsIO.models.objects.Session()
+            SET this.session.id TO null
             
             COMMENT: Create unique storage key including app ID
             COMMENT: This prevents different apps from overwriting each other's session data
             SET this.sessionStorageKey TO "ngio-saved-session-id-for-" + core.appId
             
-            COMMENT: Try to restore session from browser localStorage
+            COMMENT: Try to restore session from persistent storage
             COMMENT: If user has been here before, their session might still be valid
-            CREATE savedSessionId AS GET_FROM_LOCAL_STORAGE(this.sessionStorageKey)
-            IF savedSessionId exists THEN
+            CREATE savedSessionId AS GET_FROM_PERSISTENT_STORAGE(this.sessionStorageKey)
+            IF savedSessionId exists AND savedSessionId is not empty THEN
                 COMMENT: Restore the saved session ID
                 SET this.session.id TO savedSessionId
             ELSE
@@ -135,21 +136,17 @@ CLASS AppState
                 COMMENT: Newgrounds includes session ID in URLs for hosted games
                 COMMENT: Example URL: ?ngio_session_id=123456789.aBcdEfG
                 CREATE sessionIdFromURL AS EXTRACT_QUERY_PARAMETER("ngio_session_id")
-                IF sessionIdFromURL exists THEN
+                IF sessionIdFromURL exists AND sessionIdFromURL is not empty THEN
+                    SET this.session.preauthenticatedId TO sessionIdFromURL
                     SET this.session.id TO sessionIdFromURL
                 END IF
             END IF
             
             COMMENT: Determine the domain hosting this app
-            IF RUNNING_IN_WEB_BROWSER THEN
-                CREATE currentURL AS GET_CURRENT_URL()
-                IF currentURL starts with "http" THEN
-                    COMMENT: Web-hosted app - extract domain
-                    SET this.host TO EXTRACT_HOST_DOMAIN(currentURL)
-                ELSE IF currentURL starts with "file" THEN
-                    COMMENT: Running locally (file:// URL)
-                    SET this.host TO "localHost"
-                END IF
+            IF PLATFORM_SUPPORTS_DOMAIN_DETECTION THEN
+                COMMENT: Extract domain from environment (implementation varies by platform)
+                COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific domain detection patterns
+                SET this.host TO GET_CURRENT_DOMAIN()
             END IF
     END CONSTRUCTOR
     
@@ -200,40 +197,79 @@ CLASS AppState
                 SWITCH propertyName
                     CASE 'gatewayVersion':
                         COMMENT: Component to get gateway version info
-                        SET component TO new NewgroundsIO.models.components.Gateway.getVersion()
-                        SET component.core TO this.core
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("Gateway", "getVersion", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.Gateway.getVersion()
+                            SET component.core TO this.core
+                        END IF
                     
                     CASE 'currentVersion':
                         COMMENT: Component to check for app updates
-                        SET component TO new NewgroundsIO.models.components.App.getCurrentVersion()
-                        SET component.core TO this.core
-                        SET component.version TO core.buildVersion
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("App", "getCurrentVersion", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.App.getCurrentVersion()
+                            SET component.core TO this.core
+                        END IF
+                        IF component is not null THEN
+                            SET component.version TO core.buildVersion
+                        END IF
                     
                     CASE 'hostApproved':
                         COMMENT: Component to check if current domain is approved
-                        SET component TO new NewgroundsIO.models.components.App.getHostLicense()
-                        SET component.core TO this.core
-                        SET component.host TO this.host
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("App", "getHostLicense", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.App.getHostLicense()
+                            SET component.core TO this.core
+                        END IF
+                        IF component is not null THEN
+                            SET component.host TO this.host
+                        END IF
                     
                     CASE 'saveSlots':
                         COMMENT: Component to load cloud save slots
-                        SET component TO new NewgroundsIO.models.components.CloudSave.loadSlots()
-                        SET component.core TO this.core
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("CloudSave", "loadSlots", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.CloudSave.loadSlots()
+                            SET component.core TO this.core
+                        END IF
                     
                     CASE 'medals':
                         COMMENT: Component to load medal list
-                        SET component TO new NewgroundsIO.models.components.Medal.getList()
-                        SET component.core TO this.core
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("Medal", "getList", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.Medal.getList()
+                            SET component.core TO this.core
+                        END IF
                     
                     CASE 'medalScore':
                         COMMENT: Component to get user's total medal score
-                        SET component TO new NewgroundsIO.models.components.Medal.getMedalScore()
-                        SET component.core TO this.core
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("Medal", "getMedalScore", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.Medal.getMedalScore()
+                            SET component.core TO this.core
+                        END IF
                     
                     CASE 'scoreBoards':
                         COMMENT: Component to load scoreboard data
-                        SET component TO new NewgroundsIO.models.components.ScoreBoard.getBoards()
-                        SET component.core TO this.core
+                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                        IF ObjectFactory exists THEN
+                            SET component TO CALL ObjectFactory.CreateComponent("ScoreBoard", "getBoards", null, this.core)
+                        ELSE
+                            CREATE component AS new NewgroundsIO.models.components.ScoreBoard.getBoards()
+                            SET component.core TO this.core
+                        END IF
                 END SWITCH
                 
                 COMMENT: Queue the component for execution
@@ -343,6 +379,13 @@ CLASS AppState
                 RETURN sessionStatus
             END IF
             
+            COMMENT: === Check if session is pre-authenticated ===
+            IF session.isPreauthenticated() THEN
+                COMMENT: Session ID was provided but user not verified yet
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.SESSION_ID_PROVIDED
+                RETURN sessionStatus
+            END IF
+            
             COMMENT: === Check if we've verified this session ===
             IF session.passport_url is empty THEN
                 COMMENT: We haven't contacted server about this session yet
@@ -393,6 +436,9 @@ CLASS AppState
                     CALL this.session.importFromObject(resultObject.session)
                 END IF
                 
+                COMMENT: if we got any errors, copy them to the session for handling
+                SET this.session.error TO resultObject.error
+                
                 COMMENT: Mark session as verified if it's valid (not expired, no error)
                 IF this.session.expired is false AND this.session.error is null THEN
                     SET this.session.verified TO true
@@ -404,7 +450,6 @@ CLASS AppState
                 SET this.currentVersion TO resultObject.current_version
                 SET this.clientDeprecated TO resultObject.client_deprecated
                 CALL setLoaded('currentVersion')
-                CALL setLoaded('clientDeprecated')
             END IF
             
             COMMENT: === App.getHostLicense results ===
@@ -508,7 +553,7 @@ CLASS AppState
             IF this.session is not null AND this.session.remember is true THEN
                 COMMENT: Save session ID for next app start
                 CREATE expirationTime AS CURRENT_TIME + 30 DAYS
-                CALL SAVE_TO_LOCAL_STORAGE(this.sessionStorageKey, this.session.id, expirationTime)
+                CALL SAVE_TO_PERSISTENT_STORAGE(this.sessionStorageKey, this.session.id, expirationTime)
             END IF
             
             COMMENT: Check if passport login is still in progress
@@ -597,9 +642,9 @@ CLASS AppState
             COMMENT: Clear session-specific data from the session object
             CALL session.clearSessionData()
             
-            COMMENT: Also remove the saved session from browser storage
+            COMMENT: Also remove the saved session from persistent storage
             COMMENT: So next time they open the app, they won't be auto-logged-in
-            CALL CLEAR_FROM_LOCAL_STORAGE(sessionStorageKey)
+            CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
     END FUNCTION
 
 END CLASS

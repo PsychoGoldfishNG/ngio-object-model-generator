@@ -45,6 +45,7 @@ CLASS BaseResult
             - code=110 (LOGIN_REQUIRED): User must be logged in
             - code=202 (INVALID_MEDAL_ID): Medal doesn't exist
             - code=500 (SERVER_ERROR): Server encountered a problem
+        NOTE: This property is inherited from BaseObject and handled automatically
     
     ====================
     COMPONENT-SPECIFIC PROPERTIES
@@ -88,8 +89,29 @@ CLASS BaseResult
             COMMENT: Most results start with success=false and no error set
             COMMENT: (These will be overwritten when imported from server response)
             SET this.success TO false
-            SET this.error TO null
     END CONSTRUCTOR
+    
+    ====================
+    OVERRIDDEN METHODS
+    ====================
+    
+    FUNCTION importFromObject(importObject: object) OVERRIDE
+        
+        PURPOSE: Override importFromObject to handle success property import
+        WHY: The success property needs special handling during import from server response
+        
+        PARAMETERS:
+            importObject: (required) Plain object with raw data from server response
+        
+        BEHAVIOR:
+            COMMENT: Call parent method to handle all standard BaseObject import logic
+            CALL super.importFromObject(importObject)
+            
+            COMMENT: Import success property if it exists
+            IF importObject has property "success" THEN
+                SET this.success TO TO_BOOLEAN(importObject.success)
+            END IF
+    END FUNCTION
     
     ====================
     USAGE PATTERN

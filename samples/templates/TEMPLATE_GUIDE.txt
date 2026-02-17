@@ -160,6 +160,25 @@ Directory structure:
       results/
         (future: custom result code)
 
+Optional imports partials:
+
+    partials/
+      objects/
+        Medal/
+          imports.ejs       - Optional imports/dependencies for this object
+      components/
+        App/
+          checkSession/
+            imports.ejs     - Optional imports/dependencies for this component
+      results/
+        Medal/
+          unlock/
+            imports.ejs     - Optional imports/dependencies for this result
+
+Use imports partials when your target language requires explicit imports for
+types referenced in methods or properties. If your language does not require
+imports, these files can be empty or omitted.
+
 
 Using partials in templates:
 
@@ -190,6 +209,22 @@ Partial methods:
 
 Partials receive the same variables as the parent template (model, helpers,
 partial, config).
+
+HANDLER METHODS VS INLINE CALLBACKS
+-----------------------------------
+Some methods partials can be written with separate handler methods (e.g.,
+onScoresLoaded) or inline callbacks (anonymous functions/promises). For
+language-neutral templates, prefer inline handling with clear steps, and
+let the implementer choose whether to extract handlers.
+
+If you add handler methods, document their purpose clearly and keep them
+optional. If your target language favors promises or async/await, consider
+inlining response handling in the main method.
+
+LLM GUIDANCE:
+If a methods/properties partial references external models (e.g., User, Response,
+ScoreBoard.getScoresResult), add an imports.ejs partial with those dependencies
+so the generated code has clear import hints for import-requiring languages.
 
 
 ================================================================================

@@ -12,6 +12,7 @@
             filters: Object containing optional filters:
                 - user_id: Filter by specific user ID
                 - user_name: Filter by username
+                - user: User object (uses id property)
                 - period: Time period ('D'=day, 'W'=week, 'M'=month, 'Y'=year, 'A'=all-time)
                 - limit: Max number of scores to return (1-100, default: 10)
                 - skip: Number of scores to skip (for pagination, default: 0)
@@ -25,27 +26,11 @@
         
         BEHAVIOR:
             COMMENT: Ensure filters is an object
-            IF filters is not an object THEN
+            IF filters is null THEN
                 SET filters TO empty object
             END IF
             
-            CREATE componentParams as empty object
-            
-            COMMENT: Handle user ID filter
-            IF filters.user_id is defined THEN
-                CREATE filters.user AS new User object WITH {id: filters.user_id}
-            END IF
-            
-            COMMENT: Handle username filter
-            IF filters.user_name is defined THEN
-                IF filters.user is already defined THEN
-                    COMMENT: User object exists, just add the name
-                    SET filters.user.name TO filters.user_name
-                ELSE
-                    COMMENT: Create new user object with the name
-                    CREATE filters.user AS new User object WITH {name: filters.user_name}
-                END IF
-            END IF
+            CREATE componentParams AS empty object
             
             COMMENT: Set default period to daily
             IF filters.period is undefined or null THEN
@@ -59,11 +44,11 @@
             END IF
             
             IF filters.limit < 1 THEN
-                THROW Error('ScoreBoard filter limit must be a number greater than 0.')
+                THROW error "ScoreBoard filter limit must be greater than 0"
             END IF
             
             IF filters.limit > 100 THEN
-                THROW Error('ScoreBoard filter limit must be a number less than or equal to 100.')
+                THROW error "ScoreBoard filter limit must be less than or equal to 100"
             END IF
             
             SET componentParams.limit TO filters.limit
@@ -75,8 +60,7 @@
             SET componentParams.skip TO filters.skip
             
             COMMENT: Handle social filter (friends only)
-            IF user is logged in AND filters.social is true THEN
-                COMMENT: TODO: Replace METHOD_FOR_CHECKING_IF_USER_EXISTS with your user check
+            IF this.core is not null AND this.core.hasSession() AND filters.social is true THEN
                 SET componentParams.social TO true
             END IF
             
@@ -85,39 +69,47 @@
                 SET componentParams.tag TO filters.tag
             END IF
             
-            COMMENT: Handle user filter (can be ID, username, or User object)
-            IF filters.user is valid user reference THEN
-                SET componentParams.user TO filters.user
+            COMMENT: Handle user filtering with strict typing
+            IF filters.user_id is defined THEN
+                IF filters.user_id is number THEN
+                    SET componentParams.user TO filters.user_id
+                ELSE
+                    THROW error "ScoreBoard filter user_id must be a number"
+                END IF
+            ELSE IF filters.user_name is defined THEN
+                IF filters.user_name is string THEN
+                    SET componentParams.user TO filters.user_name
+                ELSE
+                    THROW error "ScoreBoard filter user_name must be a string"
+                END IF
+            ELSE IF filters.user is defined THEN
+                IF filters.user is User THEN
+                    SET componentParams.user TO filters.user.id
+                ELSE IF filters.user has property id THEN
+                    SET componentParams.user TO filters.user.id
+                ELSE
+                    THROW error "ScoreBoard filter user must be a User object with an id property"
+                END IF
             END IF
             
             COMMENT: Add this scoreboard's ID
             SET componentParams.id TO this.id
-            
-            COMMENT: Create the component
-            CREATE component AS new ScoreBoard.getScores WITH componentParams
             
             CREATE callbackParams WITH {
                 callback: callback,
                 thisArg: thisArg
             }
             
-            COMMENT: TODO: Execute the component via your API wrapper
-            COMMENT: When complete, call this.onScoresLoaded with result and callbackParams
-    END METHOD
-    
-    COMMENT: Callback handler for when scores are loaded.
-    METHOD onScoresLoaded(result: ScoreBoard.getScores, callbackParams: Object)
-        
-        PURPOSE: Processes the loaded scores and executes the user's callback
-        
-        PARAMETERS:
-            result: The result object from ScoreBoard.getScores
-            callbackParams: The callback parameters stored during getScores()
-        
-        BEHAVIOR:
-            COMMENT: Call the user's callback with the scores array
-            CALL callbackParams.callback WITH context callbackParams.thisArg
-                PASSING result.scores
+            COMMENT: Execute the component via core
+            IF this.core is not null THEN
+                CALL this.core.callComponent("ScoreBoard.getScores", componentParams, FUNCTION onComplete(response)
+                    IF callback is not null THEN
+                        CREATE result AS response.getResult()
+                        CALL callback WITH context thisArg
+                            PASSING result.scores
+                    END IF
+                END FUNCTION, thisArg)
+            END IF
     END METHOD
 
     COMMENT: Posts a score to this scoreboard.
@@ -145,29 +137,18 @@
                 SET componentParams.tag TO tag
             END IF
             
-            COMMENT: Create the component
-            CREATE component AS new ScoreBoard.postScore WITH componentParams
-            
             CREATE callbackParams WITH {
                 callback: callback,
                 thisArg: thisArg
             }
             
-            COMMENT: TODO: Execute the component via your API wrapper
-            COMMENT: When complete, call this.onPostScore with result and callbackParams
-    END METHOD
-
-    COMMENT: Callback handler for when a score is posted.
-    METHOD onPostScore(result: ScoreBoard.postScore, callbackParams: Object)
-        
-        PURPOSE: Processes the posted score result and executes the user's callback
-        
-        PARAMETERS:
-            result: The result object from ScoreBoard.postScore
-            callbackParams: The callback parameters stored during postScore()
-        
-        BEHAVIOR:
-            COMMENT: Call the user's callback with the posted score object
-            CALL callbackParams.callback WITH context callbackParams.thisArg
-                PASSING result.score
+            COMMENT: Execute the component via core
+            IF this.core is not null THEN
+                CALL this.core.callComponent("ScoreBoard.postScore", componentParams, FUNCTION onComplete(result)
+                    IF callback is not null THEN
+                        CALL callback WITH context thisArg
+                            PASSING result.score
+                    END IF
+                END FUNCTION, thisArg)
+            END IF
     END METHOD

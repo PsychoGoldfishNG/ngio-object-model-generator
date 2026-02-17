@@ -157,6 +157,23 @@ CLASS BaseComponent
             RETURN true
     END FUNCTION
     
+    FUNCTION getObjectName(): string
+        
+        PURPOSE: Gets the name of this component (without namespace prefix)
+        WHY: Used internally by the framework to identify component types
+        
+        EXAMPLES:
+            - "Medal.unlock" returns "unlock"
+            - "App.checkSession" returns "checkSession" 
+            - "CloudSave.setData" returns "setData"
+        
+        RETURNS: The component method name
+        
+        BEHAVIOR:
+            COMMENT: Subclasses should override this method to return their specific name
+            THROW error "BaseComponent.getObjectName() must be overridden in subclass"
+    END FUNCTION
+    
     ====================
     COMPONENT EXECUTION FLOW (FOR DEVELOPERS)
     ====================

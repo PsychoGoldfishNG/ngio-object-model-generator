@@ -18,4 +18,16 @@
             SET this.expired TO false
             SET this.remember TO false
             SET this.verified TO false
+            SET this.preauthenticatedId TO ""
+    END METHOD
+    
+    COMMENT: Compares session id against a pre-authenticated id.
+    METHOD isPreauthenticated(): Boolean
+        
+        PURPOSE: Determines if the session was pre-authenticated by the host
+        
+        RETURNS: true if the session id matches the preauthenticated id
+        
+        BEHAVIOR:
+            RETURN this.preauthenticatedId is not empty AND this.id equals this.preauthenticatedId
     END METHOD

@@ -31,7 +31,8 @@
  */
 
 // COMMENT: Prepare data structures we'll need while generating this class
-const propertyNames = model.properties ? Object.keys(model.properties) : [];
+// NOTE: Filter out 'error' because it's inherited from BaseObject
+const propertyNames = model.properties ? Object.keys(model.properties).filter(prop => prop !== 'error') : [];
 const requiredParams = [];
 const hasProperties = propertyNames.length > 0;
 -%>

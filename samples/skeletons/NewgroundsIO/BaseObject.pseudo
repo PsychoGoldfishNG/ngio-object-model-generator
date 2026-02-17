@@ -71,11 +71,29 @@ CLASS BaseObject
         USAGE: Set by the system when objects are created or imported
         EXAMPLE: this.core.encryptData(jsonString), this.core.appState.setValueFromResult()
     
+    parent: BaseObject | null = null
+        PURPOSE: Parent object if this is nested (used for hierarchical naming)
+        WHY: Allows objects to track their position in object hierarchies
+        USAGE: Set automatically when objects are nested during import
+        EXAMPLE: If a User contains a Medal, Medal.parent points to User
+    
+    parentPropertyName: string | null = null
+        PURPOSE: Property name in parent object (used for hierarchical naming)
+        WHY: Tracks which property this object represents in its parent
+        USAGE: Set automatically during import when nested
+        EXAMPLE: If User.currentMedal = medal, then medal.parentPropertyName = "currentMedal"
+    
+    error: Error | null = null
+        PURPOSE: Error details if something went wrong (can be set on any object)
+        WHY: Allows objects to carry error state from server responses
+        USAGE: Set automatically if server response contains error data
+        EXAMPLE: If server returns { error: { message: "Invalid ID" } }, error is populated
+    
     ====================
     PUBLIC METHODS
     ====================
     
-    FUNCTION importFromObject(importObject: object, preserveObjects: boolean = false)
+    FUNCTION importFromObject(importObject: object)
         
         PURPOSE: Import data from a plain object (usually JSON parsed from server)
         WHY: When the server sends back data, it's in plain JSON format. This method
@@ -83,18 +101,13 @@ CLASS BaseObject
         
         PARAMETERS:
             importObject: (required) Plain object with raw data (e.g., from JSON.parse)
-            preserveObjects: (optional, default: false) If true, don't overwrite existing object properties
         
         EXPLANATION:
-            STEP 1: Loop through each property in importObject
-            STEP 2: Validate that each property name is in propertyNames
+            STEP 1: Validate input and handle BaseObject imports
+            STEP 2: Loop through each property in propertyNames
             STEP 3: Cast the value to the correct type (string, number, object, array, etc.)
             STEP 4: Set the property on this object
-            STEP 5: Call observers/listeners if present (for reactive/event systems)
-            
-            OBSERVER PATTERN: After setting a property, if the property has an observer
-            (listener/callback), call it. This allows reactive frameworks to update.
-            For example: if user.name changes, UI can automatically update.
+            STEP 5: Handle error property if present
         
         BEHAVIOR:
             COMMENT: ==================== VALIDATE INPUT ====================
@@ -102,11 +115,11 @@ CLASS BaseObject
                 COMMENT: Nothing to import
                 RETURN
             END IF
-            
+
             COMMENT: ==================== HANDLE BASEOBJECT IMPORT ====================
             COMMENT: If importing from another BaseObject instance
             IF importObject has getFullObjectName method THEN
-                COMMENT: It's a BaseObject instance - verify same type
+                COMMENT: Verify same type
                 IF importObject.getFullObjectName() NOT equals this.getFullObjectName() THEN
                     THROW error "Cannot import " + importObject.getFullObjectName() + 
                                 " into " + this.getFullObjectName()
@@ -130,62 +143,27 @@ CLASS BaseObject
                 
                 CREATE propertyValue AS importObject[propertyName]
                 
-                COMMENT: === HANDLE PRESERVEOBJECTS CASE ===
-                COMMENT: Try to update existing objects instead of replacing them
-                IF preserveObjects THEN
-                    COMMENT: Check if current property is already a BaseObject instance
-                    IF this[propertyName] is not null AND this[propertyName] has importFromObject method THEN
-                        COMMENT: Check if the incoming value is a simple object (not array, not null)
-                        IF propertyValue is an object AND propertyValue is NOT an array AND propertyValue is NOT null THEN
-                            COMMENT: Get expected type from castTypes
-                            CREATE expectedType AS castTypes[propertyName]
-                            
-                            COMMENT: Verify type compatibility by checking objectName field
-                            CREATE incomingObjectName AS propertyValue.objectName
-                            CREATE isTypeCompatible AS false
-                            
-                            IF incomingObjectName is not null THEN
-                                COMMENT: Check if types match by full object name
-                                COMMENT: The incoming value should match expected type
-                                IF this[propertyName].getFullObjectName() has matching prefix with incomingObjectName THEN
-                                    SET isTypeCompatible TO true
-                                END IF
-                            END IF
-                            
-                            IF isTypeCompatible THEN
-                                COMMENT: Types match - recursively import to preserve reference
-                                CALL this[propertyName].importFromObject(propertyValue, preserveObjects)
-                                COMMENT: Notify observers of update
-                                IF this.observers exists AND propertyName in this.observers THEN
-                                    FOR EACH observer IN this.observers[propertyName]
-                                        CALL observer(propertyName, this[propertyName])
-                                    END FOR
-                                END IF
-                                CONTINUE TO NEXT PROPERTY
-                            ELSE
-                                COMMENT: Type mismatch - log warning and fall through to replace
-                                CALL LOG_WARNING("Type mismatch for " + propertyName + ": expected " + 
-                                                 this[propertyName].getFullObjectName() + " but got different type")
-                            END IF
-                        END IF
-                    END IF
-                END IF
-                
                 COMMENT: === STANDARD CAST AND ASSIGN ===
-                CREATE castValue AS CALL castValue(propertyName, propertyValue)
-                SET this[propertyName] TO castValue
-                
-                COMMENT: === CALL OBSERVERS ===
-                COMMENT: If anyone is listening for changes to this property, notify them
-                IF this.observers exists AND propertyName in this.observers THEN
-                    FOR EACH observer IN this.observers[propertyName]
-                        CALL observer(propertyName, castValue)
-                    END FOR
-                END IF
+                CREATE castValue AS CALL castToExpectedType(propertyName, propertyValue)
+                SET this[propertyName] TO castValue		
             END FOR
+
+            COMMENT: ==================== CHECK FOR ERROR PROPERTY ====================
+            COMMENT: If the import object contains an error property, create an Error model
+            IF "error" in importObject AND importObject.error is not null THEN
+                COMMENT: Use ObjectFactory if available, otherwise create directly
+                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                    SET this.error TO ObjectFactory.CreateObject("Error", importObject.error, this.core)
+                ELSE
+                    COMMENT: Create Error object directly
+                    CREATE this.error AS new Error()
+                    CALL this.error.importFromObject(importObject.error)
+                END IF
+            END IF
+            
     END FUNCTION
     
-    FUNCTION castValue(propertyName: string, value: any): any
+    FUNCTION castToExpectedType(propertyName: string, value: any): any
         
         PURPOSE: Convert a property value to its correct type
         WHY: JSON only has strings, numbers, booleans, arrays, and objects. We need to
@@ -218,7 +196,7 @@ CLASS BaseObject
             END IF
             
             CREATE castType AS castTypes[propertyName]
-            
+
             COMMENT: ==================== HANDLE PRIMITIVES ====================
             IF castType equals 'string' THEN
                 RETURN TO_STRING(value)
@@ -235,43 +213,62 @@ CLASS BaseObject
             COMMENT: ==================== HANDLE ARRAYS ====================
             COMMENT: Check for array-of-X pattern (e.g., "array-of-Medal")
             IF castType starts with 'array-of-' THEN
-                COMMENT: Get the element type (remove 'array-of-' prefix)
-                CREATE elementTypeName AS castType.substring(9)
+                COMMENT: Extract the item type from "array-of-ClassName"
+                CREATE itemType AS castType.substring(9) // Remove "array-of-" prefix
                 
-                COMMENT: Make sure the value is actually an array
-                IF value is NOT an array THEN
-                    COMMENT: Not an array - return empty array
-                    RETURN empty array
-                END IF
-                
-                COMMENT: Convert each element to the element type
+                COMMENT: Handle both single item and array cases
                 CREATE resultArray AS new array
-                FOR EACH element IN value
-                    COMMENT: Skip null/undefined elements
-                    IF element is null OR element is undefined THEN
-                        CONTINUE TO NEXT ELEMENT
+                
+                IF value is an array THEN
+                    COMMENT: Value is already an array - convert each element
+                    FOR EACH element IN value
+                        IF element is an object AND element is NOT an array THEN
+                            COMMENT: Convert plain object to typed object using factory
+                            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                                CREATE convertedElement AS ObjectFactory.CreateObject(itemType, element, this.core)
+                                APPEND convertedElement TO resultArray
+                            ELSE
+                                COMMENT: Create object directly without factory
+                                CREATE convertedElement AS new (itemType)()
+                                CALL convertedElement.importFromObject(element)
+                                APPEND convertedElement TO resultArray
+                            END IF
+                        ELSE
+                            APPEND element TO resultArray
+                        END IF
+                    END FOR
+                ELSE IF value is an object THEN
+                    COMMENT: Value is a single object - convert and wrap in array
+                    IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                        CREATE singleElement AS ObjectFactory.CreateObject(itemType, value, this.core)
+                        RETURN [singleElement]
+                    ELSE
+                        COMMENT: Create object directly without factory
+                        CREATE singleElement AS new (itemType)()
+                        CALL singleElement.importFromObject(value)
+                        RETURN [singleElement]
                     END IF
-                    
-                    COMMENT: Recursively create instances of elementType
-                    CREATE instance AS new (elementTypeName)()
-                    CALL instance.importFromObject(element)
-                    APPEND instance TO resultArray
-                END FOR
+                ELSE
+                    COMMENT: Value is neither array nor object - return empty array
+                    RETURN []
+                END IF
                 
                 RETURN resultArray
             END IF
             
             COMMENT: ==================== HANDLE SINGLE OBJECTS ====================
-            COMMENT: castType is a class name (e.g., User, Medal, etc.)
+            COMMENT: castType is an object model class name (e.g., User, Medal, etc.)
             COMMENT: value should be a plain object that we'll convert to castType
             
-            IF value is an object THEN
-                COMMENT: Create a new instance of the target type
-                CREATE instance AS new (castType)()
-                COMMENT: Recursively import the nested object
-                COMMENT: Always use preserveObjects=false for new instances
-                CALL instance.importFromObject(value, false)
-                RETURN instance
+            IF value is an object AND value is NOT an array AND castType is NOT equals to "Array" THEN
+                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                    RETURN ObjectFactory.CreateObject(castType, value, this.core)
+                ELSE
+                    COMMENT: Create object directly without factory
+                    CREATE instance AS new (castType)()
+                    CALL instance.importFromObject(value)
+                    RETURN instance
+                END IF
             END IF
             
             COMMENT: Value isn't the right format - return as-is
@@ -465,9 +462,37 @@ CLASS BaseObject
             RETURN CALL toObject(true, true)
     END FUNCTION
     
+    FUNCTION toJSON(): object
+        
+        PURPOSE: Convert this object to a JSON-serializable Object
+        WHY: Standard method name that JSON serializers often look for automatically
+        
+        RETURNS: Object representation of this object ready for JSON encoding
+        
+        BEHAVIOR:
+            RETURN CALL prepareForJson()
+    END FUNCTION
+    
     ====================
-    PRIVATE METHODS
+    PROTECTED METHODS
     ====================
+    
+    FUNCTION getClassByName(className: string): Class | null
+        
+        PURPOSE: Helper method to get a class by its name
+        WHY: Override this in subclasses if you need custom class resolution
+        Languages with dynamic class loading can implement proper class mapping here.
+        
+        PARAMETERS:
+            className: (required) The name of the class to resolve
+        
+        RETURNS: The Class object, or null if not found
+        
+        BEHAVIOR:
+            COMMENT: This is a placeholder - subclasses or a factory should implement proper class resolution
+            COMMENT: For now, return null and expect subclasses to override castToExpectedType for complex types
+            RETURN null
+    END FUNCTION
 
 END CLASS
 

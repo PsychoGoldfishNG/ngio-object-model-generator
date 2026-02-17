@@ -18,24 +18,18 @@
             SET this.componentModel TO componentModel
             
             COMMENT: Extract and store the component name
-            SET this.component TO componentModel.getObjectName()
+            SET this.component TO componentModel.objectName
             
-            COMMENT: Handle secure vs non-secure components
-            IF componentModel.isSecure is false THEN
-                COMMENT: Non-secure: Store parameters directly
+            COMMENT: Store parameters using the best available serialization method
+            IF componentModel has method prepareForJson THEN
                 SET this.parameters TO componentModel.prepareForJson()
+            ELSE IF componentModel has method toObject THEN
+                SET this.parameters TO componentModel.toObject()
             ELSE
-                COMMENT: Secure: Create temporary object and encrypt it
-                CREATE tempObject WITH {
-                    component: this.component,
-                    parameters: componentModel.prepareForJson()
-                }
-                
-                COMMENT: Convert to JSON string and encrypt
-                COMMENT: TODO: Replace YOUR_JSON_ENCODER with your JSON stringify function
-                CREATE jsonString AS YOUR_JSON_ENCODER(tempObject)
-                SET this.secure TO this.core.encryptData(jsonString)
+                SET this.parameters TO null
             END IF
+            
+            COMMENT: Note: Encryption for secure components is handled in prepareForJson()
     END METHOD
     
     COMMENT: Converts this Execute object to a JSON-compatible format.
@@ -52,19 +46,23 @@
         
         BEHAVIOR:
             COMMENT: Build the basic execute object structure
-            CREATE executeData WITH {
-                component: this.componentModel.getObjectName(),
-                parameters: this.componentModel.prepareForJson()
+            CREATE requestObject WITH {
+                component: this.component,
+                parameters: this.parameters
             }
             
             COMMENT: If this component requires encryption, wrap it in a secure object
-            IF this.componentModel.isSecure THEN
+            IF this.componentModel is not null AND this.componentModel.isSecure is true THEN
+                IF this.core is null THEN
+                    THROW error "Core is required for encrypting secure components"
+                END IF
+                CREATE encryptedObject AS this.core.encryptObject(requestObject)
                 RETURN {
-                    secure: this.core.encryptData(executeData)
+                    secure: encryptedObject
                 }
             END IF
             
             COMMENT: Not secure, return as-is
-            RETURN executeData
+            RETURN requestObject
     END METHOD
     

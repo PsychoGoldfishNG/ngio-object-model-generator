@@ -39,16 +39,22 @@ CLASS NGIO
     PRIVATE STATIC PROPERTIES
     ====================
     
-    lastCheckSessionTime: Date|Timestamp | null = null
+    lastCheckSessionTime: Timestamp | null = null
         PURPOSE: Tracks the last time we called checkSession on the server.
         WHY: We use this to implement the throttle - we compare the current time to this
         value to avoid checking too frequently. See CHECKSESSION_THROTTLE_TIME.
     
-    lastKeepAliveTime: Date|Timestamp | null = null
-        PURPOSE: Tracks the last time we pinged the server to keep the session alive.
-        WHY: Similar to lastCheckSessionTime, we use this to avoid flooding the server
-        with too many keep-alive pings.
-        NOTE: This is optional - if your platform supports timers, you might not need this.
+    lastKeepAliveTime: Timestamp | null = null
+        PURPOSE: Tracks the last time we sent a keep-alive ping to the server.
+        WHY: Used for manual throttling when automatic timers aren't available.
+        See KEEP_ALIVE_TIME.
+    
+    keepAliveTimer: TimerHandle | null = null
+        PURPOSE: Handle for the automatic keep-alive timer mechanism.
+        WHY: Sessions expire after inactivity. This automatically sends keep-alive pings
+        every KEEP_ALIVE_TIME seconds to prevent session timeouts. Only needed for authenticated
+        sessions (guest sessions don't expire).
+        NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
     
     ====================
     PUBLIC STATIC METHODS
@@ -71,7 +77,8 @@ CLASS NGIO
         BEHAVIOR:
             COMMENT: First, check if we've already initialized. We should only do this once.
             IF core is already set THEN
-                THROW error "Core already initialized"
+                LOG_WARNING("Warning: NGIO has already been initialized")
+                RETURN
             END IF
             
             COMMENT: Create the Core instance with the provided settings.
@@ -80,14 +87,20 @@ CLASS NGIO
             
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.
-            CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
-            SET logViewComponent.core TO core
-            SET logViewComponent.host TO (core.appState.host OR "N/A")
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET logViewComponent TO CALL ObjectFactory.CreateComponent("App", "logView", null, core)
+                IF logViewComponent is null THEN
+                    THROW error "Could not create App.logView component"
+                END IF
+            ELSE
+                CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
+                SET logViewComponent.core TO core
+            END IF
+            SET logViewComponent.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             CALL core.executeComponent(logViewComponent, null)
             
-            COMMENT: Start the keep-alive timer if the platform supports it.
-            COMMENT: This will automatically ping the server every KEEP_ALIVE_TIME seconds
-            COMMENT: to prevent active sessions from expiring.
+            COMMENT: Start the keep-alive timer if supported by platform
             CALL startKeepAliveTimer()
     END FUNCTION
     
@@ -166,7 +179,7 @@ CLASS NGIO
         PARAMETERS:
             target: (optional) Browser window target ("_blank" = new tab)
         RETURNS: true if passport was opened, false if it couldn't be opened for some reason.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
         
         BEHAVIOR:
             IF core is null THEN
@@ -177,24 +190,33 @@ CLASS NGIO
             COMMENT: 1. We have a valid session (to attach the user to)
             COMMENT: 2. We don't already have a logged-in user
             IF hasSession() is false OR hasUser() is true THEN
+                LOG_WARNING("Cannot open passport - " + (hasSession() is false ? "no session" : "user already logged in"))
                 RETURN false
             END IF
             
             COMMENT: Don't try to open if we've already opened it (user might be filling it out)
             IF core.appState.passportIsOpen is true THEN
+                LOG_WARNING("Cannot open passport - passport window already open")
                 RETURN false
             END IF
             
             COMMENT: We need to have the passport URL from a previous session check
             IF core.appState.session.passport_url is empty THEN
+                LOG_WARNING("Cannot open passport - no passport URL available (call checkSession first)")
                 RETURN false
             END IF
             
-            COMMENT: Actually open the browser window with the passport URL
-            OPEN_BROWSER_WINDOW(core.appState.session.passport_url, target)
-            
-            COMMENT: Mark that we've opened the passport so checkSession() knows to expect login activity
-            SET core.appState.passportIsOpen TO true
+            COMMENT: Actually open the URL with the passport URL
+            TRY
+                OPEN_URL(core.appState.session.passport_url, target)
+                
+                COMMENT: Mark that we've opened the passport so checkSession() knows to expect login activity
+                SET core.appState.passportIsOpen TO true
+                
+            CATCH error
+                LOG_ERROR("Failed to open passport URL - " + error.message)
+                RETURN false
+            END TRY
             
             RETURN true
     END FUNCTION
@@ -216,16 +238,15 @@ CLASS NGIO
                 RETURN
             END IF
             
-            COMMENT: If we don't have an automatic timer, manually throttle the requests
-            COMMENT: to avoid flooding the server
-            IF startKeepAliveTimer is not implemented THEN
+            COMMENT: If automatic timer unavailable, manually throttle requests to avoid server overload
+            IF automatic_timer_unavailable THEN
                 COMMENT: Check if enough time has passed since the last keep-alive
-                IF lastKeepAliveTime is set AND 
-                   (CURRENT_TIME - lastKeepAliveTime) < KEEP_ALIVE_TIME THEN
+                IF lastKeepAliveTime is not null AND 
+                   (GET_CURRENT_TIME() - lastKeepAliveTime) < KEEP_ALIVE_TIME THEN
                     RETURN
                 END IF
                 COMMENT: Update the timestamp since we're about to make the request
-                SET lastKeepAliveTime TO CURRENT_TIME
+                SET lastKeepAliveTime TO GET_CURRENT_TIME()
             END IF
             
             COMMENT: Send a ping to the server to keep the session alive
@@ -268,21 +289,17 @@ CLASS NGIO
                 RETURN
             END IF
             
-            COMMENT: Check if user has passport window open (they're logging in)
-            COMMENT: If so, don't check the server - they're still typing their credentials
-            IF core.appState.passportIsOpen is true THEN
-                SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_USER
-                CALL callback(sessionStatus)
-                RETURN
-            END IF
-            
             COMMENT: Throttle check - don't contact server too frequently
             COMMENT: This prevents flooding the server with repeated requests
             IF lastCheckSessionTime is set AND 
                (CURRENT_TIME - lastCheckSessionTime) < CHECKSESSION_THROTTLE_TIME THEN
-                COMMENT: Check if session has been verified with server
-                IF core.appState.session.verified is false THEN
+                COMMENT: if the user was logging in during the last check, assume they are still doing so
+                IF core.appState.passportIsOpen is true THEN
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_PASSPORT
+                COMMENT: if we haven't verified the session id yet, set the status to unverified
+                ELSE IF core.appState.session.verified is not true THEN
                     SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNVERIFIED
+                COMMENT: otherwise, we should have a valid session, but the user isn't logged in yet
                 ELSE
                     SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
                 END IF
@@ -291,19 +308,27 @@ CLASS NGIO
             END IF
             
             COMMENT: Update timestamp now to prevent multiple requests from racing
-            SET lastCheckSessionTime TO CURRENT_TIME
+            SET lastCheckSessionTime TO GET_CURRENT_TIME()
             
             COMMENT: If we don't have any session yet, we need to create one on the server
             IF hasSession() is false THEN
-                CREATE startSessionComponent AS new NewgroundsIO.models.components.App.startSession()
-                SET startSessionComponent.core TO core
+                COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+                IF ObjectFactory exists THEN
+                    SET startSessionComponent TO CALL ObjectFactory.CreateComponent("App", "startSession", null, core)
+                    IF startSessionComponent is null THEN
+                        THROW error "Could not create App.startSession component"
+                    END IF
+                ELSE
+                    CREATE startSessionComponent AS new NewgroundsIO.models.components.App.startSession()
+                    SET startSessionComponent.core TO core
+                END IF
                 CALL core.executeComponent(startSessionComponent, 
                     FUNCTION onComplete(result)
                         COMMENT: Check if the server request succeeded
-                        IF result.success is true THEN
+                        IF result is not null AND result.success is true THEN
                             COMMENT: Session created successfully (user will not be logged in yet)
                             SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
-                        ELSE IF result.error exists THEN
+                        ELSE IF result is not null AND result.error is not null THEN
                             COMMENT: Something went wrong creating the session
                             SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
                             SET sessionStatus.error TO result.error
@@ -321,34 +346,68 @@ CLASS NGIO
             END IF
             
             COMMENT: We have a session but no user. Check with the server if that's changed.
-            CREATE checkSessionComponent AS new NewgroundsIO.models.components.App.checkSession()
-            SET checkSessionComponent.core TO core
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET checkSessionComponent TO CALL ObjectFactory.CreateComponent("App", "checkSession", null, core)
+                IF checkSessionComponent is null THEN
+                    THROW error "Could not create App.checkSession component"
+                END IF
+            ELSE
+                CREATE checkSessionComponent AS new NewgroundsIO.models.components.App.checkSession()
+                SET checkSessionComponent.core TO core
+            END IF
             CALL core.executeComponent(checkSessionComponent, 
-                FUNCTION onComplete(result)
-                    IF result.success is true THEN
-                        COMMENT: Server confirmed the session is valid
-                        COMMENT: Check if user logged in while we weren't looking
-                        IF core.appState.session.user exists THEN
-                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
-                            SET sessionStatus.user TO core.appState.session.user
-                        ELSE
-                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
-                        END IF
-                    ELSE
-                        COMMENT: Server returned an error - something went wrong
-                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                FUNCTION onComplete(response)
+                    COMMENT: verify the overall response is good
+                    IF response is not null AND response.success is true THEN
+                        SET result TO CALL response.getResult()
                         
-                        IF result.error exists THEN
-                            COMMENT: Check for specific error types
-                            IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
-                                COMMENT: User cancelled the session - it's gone
-                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
+                        COMMENT: verify the component response is also good
+                        IF result is not null AND result.success is true THEN
+                            
+                            IF core.appState.session.user is not null THEN
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
+                                SET sessionStatus.user TO core.appState.session.user
+                            
+                            COMMENT: Check if user has passport window open (they're logging in)
+                            ELSE IF core.appState.passportIsOpen is true THEN
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_PASSPORT
+                            
+                            COMMENT: looks like they aren't logged in
                             ELSE
-                                COMMENT: Some other error - pass it along
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                            END IF
+                            
+                        COMMENT: the component failed, lets see why
+                        ELSE IF result is not null AND result.error is not null THEN
+                            
+                            COMMENT: looks like the user cancelled the login
+                            IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
+                            
+                            COMMENT: Some other error occurred
+                            ELSE
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
                                 SET sessionStatus.error TO result.error
                             END IF
+                        COMMENT: We don't know what happened, use a generic error
                         ELSE
-                            COMMENT: Error occurred but no details from server
+                            SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        END IF
+                        
+                    COMMENT: Looks like the entire request had an issue...
+                    ELSE
+                        
+                        COMMENT: This is an error
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        
+                        COMMENT: hopefully the response has a proper error object with details
+                        IF response is not null AND response.error is not null THEN
+                            SET sessionStatus.error TO response.error
+                        
+                        COMMENT: if not, use a generic error
+                        ELSE
                             SET sessionStatus.error TO NewgroundsIO.Errors.getError()
                         END IF
                     END IF
@@ -356,6 +415,37 @@ CLASS NGIO
                     CALL callback(sessionStatus)
                 END FUNCTION
             )
+    END FUNCTION
+    
+    FUNCTION keepAlive()
+        
+        PURPOSE: Pings the server to keep the current authenticated session alive.
+        NOTE: Sessions expire after a period of inactivity. This ping resets the expiration timer.
+        Usually called automatically by a timer. Only keeps alive authenticated sessions.
+        
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+            
+            COMMENT: Only keep alive authenticated sessions (sessions with a logged-in user)
+            COMMENT: Guest sessions don't need to be kept alive
+            IF hasUser() is false THEN
+                RETURN
+            END IF
+            
+            COMMENT: Send a ping to the server to keep the session alive
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET pingComponent TO CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
+                IF pingComponent is null THEN
+                    THROW error "Could not create Gateway.ping component"
+                END IF
+            ELSE
+                CREATE pingComponent AS new NewgroundsIO.models.components.Gateway.ping()
+                SET pingComponent.core TO core
+            END IF
+            CALL core.executeComponent(pingComponent, null)
     END FUNCTION
     
     FUNCTION endSession(callback: function|null = null)
@@ -406,9 +496,8 @@ CLASS NGIO
         PURPOSE: Load metadata about the app from the server (versions, medals, scoreboards, etc.)
         PARAMETERS:
             propertyNames: (required) Array of property names to load (e.g., ['medals', 'scoreboards'])
-            callback: (optional, default: null) Function called when done - receives (appState, error)
+            callback: (optional, default: null) Function called when done - receives (error)
         CALLBACK PARAMETERS:
-            appState: (required) Updated AppState object with loaded data
             error: (optional, default: null) Error object if something went wrong, or null on success
         
         BEHAVIOR:
@@ -416,9 +505,17 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
+            COMMENT: Wrap the callback to adapt from AppState's (appState, error) signature to simple (error) signature
+            SET wrappedCallback TO null
+            IF callback is not null THEN
+                SET wrappedCallback TO FUNCTION(appState, error)
+                    COMMENT: Call user's callback with just the error (or null if success)
+                    CALL callback(error)
+                END FUNCTION
+            END IF
+            
             COMMENT: This is a convenience wrapper around AppState.loadData()
-            COMMENT: It lets developers load app data through the simplified wrapper
-            CALL core.appState.loadData(propertyNames, callback)
+            CALL core.appState.loadData(propertyNames, wrappedCallback, null)
     END FUNCTION
     
     FUNCTION getGatewayVersion(): string | null
@@ -823,8 +920,16 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
-            SET component.core TO core
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Gateway", "getDateTime", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Gateway.getDateTime component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
+                SET component.core TO core
+            END IF
             
             CALL core.executeComponent(component, 
                 FUNCTION onComplete(result)
@@ -857,11 +962,21 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Gateway.ping()
-            SET component.core TO core
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Gateway.ping component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Gateway.ping()
+                SET component.core TO core
+            END IF
             
             CALL core.executeComponent(component, 
                 FUNCTION onComplete(result)
+                    IF callback is null THEN RETURN END IF
+                    
                     IF result is null THEN
                         CALL callback(null, null)
                         RETURN
@@ -891,9 +1006,17 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Event.log()
-            SET component.core TO core
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Event", "logEvent", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Event.logEvent component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Event.logEvent()
+                SET component.core TO core
+            END IF
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.event_name TO eventName
             
             CALL core.executeComponent(component, 
@@ -910,15 +1033,15 @@ CLASS NGIO
     END FUNCTION
     
     COMMENT: ==================== URL NAVIGATION ====================
-    COMMENT: Methods for opening and loading various Newgrounds URLs.
-    COMMENT: NOTE: All open* methods must be called from user click events in web-based applications.
+    COMMENT: Methods for opening and loading various URLs.
+    COMMENT: NOTE: Some platforms have security restrictions on programmatic URL opening.
     
-    FUNCTION openOfficialUrl(target: string|null = "_blank", logEvent: boolean = true)
+    FUNCTION openOfficialUrl(target: string|null = null, logEvent: boolean = true)
         
-        PURPOSE: Open URL where latest official version can be found in a new browser window.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PURPOSE: Open URL where latest official version can be found in a new window/tab.
+        NOTE: Some platforms have security restrictions on programmatic URL opening.
         PARAMETERS:
-            target: (optional, default: "_blank") Browser window target
+            target: (optional, default: platform default) Window/tab target for opening URL
             logEvent: (optional, default: true) Log this action
         
         BEHAVIOR:
@@ -933,9 +1056,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
-            SET component.core TO core
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadOfficialUrl component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.browserTarget TO target
             SET component.log_stat TO logEvent
             SET component.redirect TO true
@@ -962,9 +1094,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
-            SET component.core TO core
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadOfficialUrl component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.log_stat TO logEvent
             SET component.redirect TO false
             
@@ -990,7 +1131,7 @@ CLASS NGIO
     FUNCTION openAuthorUrl(target: string|null = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open author's home page URL in a new browser window.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
         PARAMETERS:
             target: (optional, default: "_blank") Browser window target
             logEvent: (optional, default: true) Log this action
@@ -1007,8 +1148,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadAuthorUrl component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.browserTarget TO target
             SET component.log_stat TO logEvent
             SET component.redirect TO true
@@ -1035,8 +1186,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadAuthorUrl component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.log_stat TO logEvent
             SET component.redirect TO false
             
@@ -1062,7 +1223,7 @@ CLASS NGIO
     FUNCTION openMoreGames(target: string|null = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open author's "More Games" page URL in a new browser window.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
         PARAMETERS:
             target: (optional, default: "_blank") Browser window target
             logEvent: (optional, default: true) Log this action
@@ -1079,8 +1240,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadMoreGames component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.browserTarget TO target
             SET component.log_stat TO logEvent
             SET component.redirect TO true
@@ -1107,8 +1278,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadMoreGames component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.log_stat TO logEvent
             SET component.redirect TO false
             
@@ -1131,12 +1312,12 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION openNewgrounds(target: string|null = "_blank", logEvent: boolean = true)
+    FUNCTION openNewgrounds(target: string|null = null, logEvent: boolean = true)
         
-        PURPOSE: Open Newgrounds.com in a new browser window.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        PURPOSE: Open Newgrounds.com in a new window/tab.
+        NOTE: Some platforms have security restrictions on programmatic URL opening.
         PARAMETERS:
-            target: (optional, default: "_blank") Browser window target
+            target: (optional, default: platform default) Window/tab target
             logEvent: (optional, default: true) Log this action
         
         BEHAVIOR:
@@ -1145,14 +1326,24 @@ CLASS NGIO
             END IF
             
             IF target is null THEN
-                SET target TO "_blank"
+                SET target TO platform_default_target
             END IF
             IF logEvent is null THEN
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadNewgrounds component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.browserTarget TO target
             SET component.log_stat TO logEvent
             SET component.redirect TO true
@@ -1179,8 +1370,18 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadNewgrounds component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.log_stat TO logEvent
             SET component.redirect TO false
             
@@ -1206,7 +1407,7 @@ CLASS NGIO
     FUNCTION openReferral(referralName: string, target: string|null = "_blank", logReferral: boolean = true)
         
         PURPOSE: Open a custom referral URL by name in a new browser window.
-        NOTE: This must be called from a user click event in web-based applications (security requirement in browsers).
+        NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
         PARAMETERS:
             referralName: (required) Name of referral configured in Newgrounds project
             target: (optional, default: "_blank") Browser window target
@@ -1224,8 +1425,18 @@ CLASS NGIO
                 SET logReferral TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadReferral component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.referral_name TO referralName
             SET component.browserTarget TO target
             SET component.log_stat TO logReferral
@@ -1254,8 +1465,18 @@ CLASS NGIO
                 SET logReferral TO true
             END IF
             
-            CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
-            SET component.host TO core.appState.host
+            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
+            IF ObjectFactory exists THEN
+                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
+                IF component is null THEN
+                    THROW error "Could not create Loader.loadReferral component"
+                END IF
+            ELSE
+                CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
+                SET component.core TO core
+            END IF
+            
+            SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.referral_name TO referralName
             SET component.log_stat TO logReferral
             SET component.redirect TO false
@@ -1286,16 +1507,14 @@ CLASS NGIO
     FUNCTION startKeepAliveTimer()
         
         PURPOSE: Sets up an automatic timer that pings the server periodically.
-        NOTE: This is optional - if your platform doesn't support timers, the
-        manual throttling in keepAlive() will handle it instead. Should be called by init().
+        NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
         
-        IMPLEMENTATION:
-            COMMENT: Implement this if your platform supports timers/intervals (like JavaScript setInterval)
-            COMMENT: Set up a repeating timer that calls keepAlive() every KEEP_ALIVE_TIME seconds
-            COMMENT: This keeps active user sessions from expiring
-            COMMENT:
-            COMMENT: Example (JavaScript):
-            COMMENT:   setInterval(() => keepAlive(), KEEP_ALIVE_TIME * 1000)
+        BEHAVIOR:
+            COMMENT: Set up repeating timer that calls keepAlive() every KEEP_ALIVE_TIME seconds
+            COMMENT: This prevents active user sessions from expiring due to inactivity
+            IF platform_supports_timers THEN
+                SET keepAliveTimer TO START_REPEATING_TIMER(keepAlive, KEEP_ALIVE_TIME)
+            END IF
     END FUNCTION
 
 END CLASS

@@ -12,7 +12,7 @@ CLASS SessionStatus
     
     RELATIONSHIP: SessionStatus is a SNAPSHOT of the session at one moment in time.
     It doesn't track changes - it's just what the status WAS when you called checkSession().
-    The actual session data is in NGIO.appState.session (a Session object).
+    The actual session data is in NGIO.core.appState.session (a Session object).
     
     ====================
     STATUS CONSTANTS
@@ -28,6 +28,12 @@ CLASS SessionStatus
         WHY: We have a session ID but haven't received verification from the server yet
         (This can occur before sending a request OR while waiting for the server response)
         WHAT TO DO: Call NGIO.checkSession() to verify with the server, or wait for any pending request to complete
+    
+    SESSION_ID_PROVIDED = "session-id-provided"
+        PURPOSE: Session ID was provided in URL but hasn't been validated yet
+        WHY: A session ID was passed via URL parameters (like from Newgrounds.com embed)
+        but we haven't verified it with the server yet
+        WHAT TO DO: Call NGIO.checkSession() to validate the session ID
     
     NOT_LOGGED_IN = "not-logged-in"
         PURPOSE: Session is valid but no user is logged in (guest session)
@@ -102,28 +108,13 @@ CLASS SessionStatus
     TYPICAL USAGE EXAMPLE
     ====================
     
-    COMMENT: Developer code might look like:
-    COMMENT:
-    COMMENT:   NGIO.checkSession(function(sessionStatus) {
-    COMMENT:       SWITCH sessionStatus.status
-    COMMENT:           CASE LOGGED_IN:
-    COMMENT:               COMMENT: User is authenticated!
-    COMMENT:               var userName = sessionStatus.user.name
-    COMMENT:               startGame()
-    COMMENT:           CASE NOT_LOGGED_IN:
-    COMMENT:               COMMENT: Show login button
-    COMMENT:               showLoginButton()
-    COMMENT:           CASE WAITING_FOR_PASSPORT:
-    COMMENT:               COMMENT: Tell user to complete login, offer a button to cancel login
-    COMMENT:               showWaitingForUserMessage()
-    COMMENT:           CASE ERROR:
-    COMMENT:               COMMENT: Show error message to user
-    COMMENT:               alert("Error: " + sessionStatus.error.message)
-    COMMENT:           DEFAULT:
-    COMMENT:               COMMENT: Waiting for session info to download
-    COMMENT:               showWaitingForServerMessage()
-    COMMENT:       END SWITCH
-    COMMENT:   })
+    COMMENT: Typical usage summary:
+    COMMENT: - Call NGIO.checkSession(callback)
+    COMMENT: - LOGGED_IN -> proceed with gameplay
+    COMMENT: - NOT_LOGGED_IN -> show login option
+    COMMENT: - WAITING_FOR_PASSPORT -> prompt user to finish login
+    COMMENT: - ERROR -> show error message and inspect sessionStatus.error
+    COMMENT: - Other statuses -> show a waiting or retry state
     
     ====================
     STATUS LIFECYCLE
@@ -131,11 +122,13 @@ CLASS SessionStatus
     
     COMMENT: Typical successful login flow:
     COMMENT: 1. App loads -> UNINITIALIZED
-    COMMENT: 2. Call checkSession() -> creates session -> NOT_LOGGED_IN or UNVERIFIED
-    COMMENT: 3. User clicks login -> passportIsOpen = true
-    COMMENT: 4. Call checkSession() -> sees passport window -> WAITING_FOR_PASSPORT
-    COMMENT: 5. User logs in -> server updates session
-    COMMENT: 6. Call checkSession() -> server confirms -> LOGGED_IN
+    COMMENT: 2. If a saved session ID exists, status may be UNVERIFIED or SESSION_ID_PROVIDED
+    COMMENT: 3. If a session ID was provided by the host (URL/launch params), status may be SESSION_ID_PROVIDED
+    COMMENT: 4. Call checkSession() -> creates or verifies session -> NOT_LOGGED_IN, UNVERIFIED, or LOGGED_IN (if the provided session is already valid)
+    COMMENT: 5. User clicks login -> passportIsOpen = true
+    COMMENT: 6. Call checkSession() -> sees passport window -> WAITING_FOR_PASSPORT
+    COMMENT: 7. User logs in -> server updates session
+    COMMENT: 8. Call checkSession() -> server confirms -> LOGGED_IN
     COMMENT:
     COMMENT: Alternative outcomes:
     COMMENT: - User cancels login -> LOGIN_CANCELLED
@@ -149,7 +142,7 @@ CLASS SessionStatus
     COMMENT: This object is READ-ONLY. Don't modify its properties after creation.
     COMMENT: It's a snapshot - creating a new SessionStatus won't affect the real session.
     COMMENT:
-    COMMENT: The real session data is in: NGIO.appState.session (Session object)
+    COMMENT: The real session data is in: NGIO.core.appState.session (Session object)
     COMMENT: This is just: A simplified status report for easy understanding
 
 END CLASS

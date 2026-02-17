@@ -62,6 +62,40 @@
             RETURN this.executeList
     END METHOD
     
+    COMMENT: Override toObject() to handle execute serialization.
+    METHOD toObject(recursive: Boolean, excludeNulls: Boolean): Object
+        
+        PURPOSE: Serializes the Request with correct execute property handling
+        
+        RETURNS: Plain object suitable for JSON encoding
+        
+        BEHAVIOR:
+            COMMENT: Get base object from parent
+            CREATE jsonObject AS parent.toObject(recursive, excludeNulls)
+            
+            COMMENT: Determine which execute format to include
+            IF executeIsArray() THEN
+                COMMENT: Convert each Execute to JSON-ready format
+                CREATE executeJsonArray AS empty array
+                FOR EACH executeItem IN this.executeList
+                    IF executeItem has method toObject THEN
+                        ADD executeItem.toObject(recursive, excludeNulls) TO executeJsonArray
+                    ELSE
+                        ADD executeItem TO executeJsonArray
+                    END IF
+                END FOR
+                SET jsonObject['execute'] TO executeJsonArray
+            ELSE IF this.execute is not null THEN
+                IF this.execute has method toObject THEN
+                    SET jsonObject['execute'] TO this.execute.toObject(recursive, excludeNulls)
+                ELSE
+                    SET jsonObject['execute'] TO this.execute
+                END IF
+            END IF
+            
+            RETURN jsonObject
+    END METHOD
+    
     COMMENT: Override prepareForJson() to output the correct format.
     METHOD prepareForJson(): Object
         
@@ -71,18 +105,30 @@
         
         BEHAVIOR:
             COMMENT: Get base object from parent
-            CREATE jsonObject AS parent.prepareForJson()
+            CREATE jsonObject AS parent.toObject(false, true)
             
             COMMENT: Determine which execute format to include
             IF executeIsArray() THEN
                 COMMENT: Convert each Execute to JSON-ready format
                 CREATE executeJsonArray AS empty array
                 FOR EACH executeItem IN this.executeList
-                    ADD executeItem.prepareForJson() TO executeJsonArray
+                    IF executeItem has method prepareForJson THEN
+                        ADD executeItem.prepareForJson() TO executeJsonArray
+                    ELSE IF executeItem has method toObject THEN
+                        ADD executeItem.toObject() TO executeJsonArray
+                    ELSE
+                        ADD executeItem TO executeJsonArray
+                    END IF
                 END FOR
                 SET jsonObject['execute'] TO executeJsonArray
             ELSE IF this.execute is not null THEN
-                SET jsonObject['execute'] TO this.execute.prepareForJson()
+                IF this.execute has method prepareForJson THEN
+                    SET jsonObject['execute'] TO this.execute.prepareForJson()
+                ELSE IF this.execute has method toObject THEN
+                    SET jsonObject['execute'] TO this.execute.toObject()
+                ELSE
+                    SET jsonObject['execute'] TO this.execute
+                END IF
             END IF
             
             RETURN jsonObject

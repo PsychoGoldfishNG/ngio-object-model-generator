@@ -40,27 +40,33 @@ CLASS Core
         WHY: Instead of contacting the server repeatedly, we cache the data locally for fast access.
     
     ====================
-    PRIVATE PROPERTIES
-    ====================
-    
-    encryptionKey: string | binary
-        PURPOSE: Stores the encryption key used to encrypt secure components.
-        WHY: The library encrypts certain components (like medal unlocks) to prevent cheating.
-        NOTE: If your language doesn't support encryption, you may not need this.
-    
-    componentQueue: array = []
-        PURPOSE: Temporary storage for components waiting to be sent to the server.
-        WHY: Instead of sending each component immediately, we batch them together for efficiency.
-        This means one network request can execute multiple components at once.
-    
-    ====================
     PUBLIC PROPERTIES
     ====================
+    
+    debugNetworkCalls: boolean = false
+        PURPOSE: Set to true to show packets going to and from the server.
+        WHY: Helps debug network issues by logging all request/response data.
+        USAGE: Set to true during development to see what's being sent to the server.
     
     useDebugMode: boolean = false
         PURPOSE: If true, API calls don't actually save to the server.
         WHY: Useful for testing - you can unlock medals, post scores, etc. without affecting
         the actual game data. When a developer tests, they don't want test data in the real system.
+    
+    ====================
+    PRIVATE PROPERTIES
+    ====================
+    
+    encryptionKeyBytes: BinaryData
+        PURPOSE: Stores the encryption key used to encrypt secure components (decoded from Base64).
+        WHY: The library encrypts certain components (like medal unlocks) to prevent cheating.
+        NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for encryption patterns.
+        SECURITY: Store as binary/bytes for better performance and security.
+    
+    componentQueue: array = []
+        PURPOSE: Temporary storage for components waiting to be sent to the server.
+        WHY: Instead of sending each component immediately, we batch them together for efficiency.
+        This means one network request can execute multiple components at once.
     
     ====================
     CONSTRUCTOR
@@ -72,14 +78,27 @@ CLASS Core
         
         PARAMETERS:
             appId: (required) The unique identifier for the app (from Newgrounds)
-            encryptionKey: (required) The key used for encryption (from Newgrounds)
+            encryptionKey: (required) The Base64-encoded key used for encryption (from Newgrounds)
             buildVersion: (optional, default: null) The app's version number in XX.XX.XXXX format
             useDebugMode: (optional, default: false) Whether to run in test mode (components execute but don't save to server)
         
         BEHAVIOR:
             COMMENT: Store all the configuration values we'll need
             SET this.appId TO appId
-            SET this.encryptionKey TO encryptionKey
+            
+            COMMENT: Decode Base64 encryption key once and store as bytes
+            IF encryptionKey is null OR encryptionKey.length equals 0 THEN
+                LOG_ERROR("Encryption Error: Missing Base64 encryption key")
+                SET this.encryptionKeyBytes TO empty byte array
+            ELSE
+                TRY
+                    SET this.encryptionKeyBytes TO DECODE_BASE64(encryptionKey)
+                CATCH error
+                    LOG_ERROR("Encryption Error: Invalid Base64 encryption key - " + error)
+                    SET this.encryptionKeyBytes TO empty byte array
+                END TRY
+            END IF
+            
             SET this.buildVersion TO buildVersion
             SET this.useDebugMode TO useDebugMode
             
@@ -90,14 +109,130 @@ CLASS Core
             COMMENT: Create a new AppState instance
             SET this.appState TO new NewgroundsIO.AppState(this)
             
-            COMMENT: If encryption requires binary keys (decoded from Base64 or Hex),
-            COMMENT: decode the encryption key now
-            COMMENT: encryptionKey = DECODE_BASE64_OR_HEX(encryptionKey)
     END CONSTRUCTOR
     
     ====================
     PUBLIC METHODS
     ====================
+    
+    FUNCTION hasSession(): boolean
+        
+        PURPOSE: Check if the user has an active session.
+        WHY: Many operations require a logged-in user with a valid session.
+        
+        RETURNS: true if there's an active session with a valid session ID
+        
+        BEHAVIOR:
+            RETURN (appState is not null AND 
+                    appState.session is not null AND 
+                    appState.session.id is not null AND 
+                    appState.session.id.length > 0)
+    END FUNCTION
+    
+    FUNCTION GET sessionId(): string | null
+        
+        PURPOSE: Get the current session ID.
+        WHY: Convenient access to session ID for checking login state.
+        
+        RETURNS: The current session ID, or null if no session exists
+        
+        BEHAVIOR:
+            IF appState is not null AND appState.session is not null THEN
+                RETURN appState.session.id
+            END IF
+            RETURN null
+    END FUNCTION
+    
+    FUNCTION SET sessionId(value: string)
+        
+        PURPOSE: Set the session ID.
+        WHY: Allows manually setting session after login or restoration from storage.
+        
+        PARAMETERS:
+            value: (required) The session ID to set
+        
+        BEHAVIOR:
+            IF appState is not null THEN
+                IF appState.session is null THEN
+                    COMMENT: Create a new session if needed
+                    IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                        SET appState.session TO ObjectFactory.CreateObject("Session", null, this)
+                    ELSE
+                        SET appState.session TO new Session()
+                    END IF
+                END IF
+                SET appState.session.id TO value
+            END IF
+    END FUNCTION
+    
+    FUNCTION callComponent(componentPath: string, componentParams: object|null = null, callback: function|null = null, thisArg: any = null, callbackParams: object|null = null)
+        
+        PURPOSE: Convenience method to call a component directly with parameters.
+        WHY: This handles creating the component, executing it, and managing callbacks in one call.
+        
+        PARAMETERS:
+            componentPath: (required) The component to call (e.g. "Medal.unlock")
+            componentParams: (optional) Parameters for the component
+            callback: (optional) Function to call with the result
+            thisArg: (optional) Context for the callback
+            callbackParams: (optional) Additional parameters to pass to callback
+        CALLBACK PARAMETERS:
+            result: (Required) The result object from the component execution
+            callbackParams: (Optional) Additional parameters passed from callComponent
+        
+        BEHAVIOR:
+            COMMENT: Parse the component path (e.g. "Medal.unlock" -> component="Medal", method="unlock")
+            CREATE parts AS SPLIT(componentPath, ".")
+            IF parts.length NOT equals 2 THEN
+                LOG_ERROR("callComponent Error: Invalid component path - " + componentPath)
+                IF callback is not null THEN
+                    CREATE error AS {success: false, error: "Invalid component path: " + componentPath}
+                    CALL callback.call(thisArg, error, callbackParams)
+                END IF
+                RETURN
+            END IF
+            
+            CREATE componentName AS parts[0]
+            CREATE methodName AS parts[1]
+            
+            TRY
+                COMMENT: Create component using ObjectFactory if available
+                CREATE component AS null
+                IF ObjectFactory exists AND ObjectFactory.CreateComponent exists THEN
+                    SET component TO ObjectFactory.CreateComponent(componentName, methodName, null, this)
+                ELSE
+                    COMMENT: Create component using platform-specific instantiation or mapping
+                    SET component TO new (componentName + "." + methodName)()
+                END IF
+                
+                IF component is not null AND componentParams is not null THEN
+                    COMMENT: Set component properties from params
+                    FOR EACH key IN componentParams
+                        IF component has property key THEN
+                            SET component[key] TO componentParams[key]
+                        END IF
+                    END FOR
+                END IF
+                
+                COMMENT: Create wrapper for callback parameters
+                CREATE wrappedCallback AS null
+                IF callback is not null THEN
+                    SET wrappedCallback TO FUNCTION(result, params)
+                        CALL callback.call(thisArg, result, callbackParams)
+                    END FUNCTION
+                END IF
+                
+                COMMENT: Execute the component
+                CALL executeComponent(component, wrappedCallback)
+            CATCH error
+                LOG_ERROR("callComponent Error: " + error)
+                COMMENT: Component not found or error creating it
+                IF callback is not null THEN
+                    CREATE errorResult AS {success: false, error: "Component not found: " + componentPath}
+                    CALL callback.call(thisArg, errorResult, callbackParams)
+                END IF
+            END TRY
+    END FUNCTION
     
     FUNCTION queueComponent(componentModel: NewgroundsIO.BaseComponent)
         
@@ -111,111 +246,192 @@ CLASS Core
             COMMENT: Check that the queue isn't full
             COMMENT: If it is, sending it would exceed the server's limits
             IF componentQueue.length < MAX_QUEUE_SIZE THEN
-                COMMENT: Room in the queue - add the component
-                APPEND componentModel TO componentQueue
+                COMMENT: Wrap the component in an Execute object for transmission
+                CREATE executeModel AS null
+                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                    SET executeModel TO ObjectFactory.CreateObject("Execute", null, this)
+                ELSE
+                    SET executeModel TO new Execute()
+                    SET executeModel.core TO this
+                END IF
+                
+                CALL executeModel.setComponent(componentModel)
+                
+                COMMENT: Add to queue
+                APPEND executeModel TO componentQueue
             ELSE
                 COMMENT: Queue is full - this is a developer error
                 THROW error "Component queue limit exceeded"
             END IF
     END FUNCTION
     
-    FUNCTION executeQueue(callback: function|null)
+    FUNCTION executeQueue(callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Send all queued components to the server in a single request.
         WHY: Batching requests improves performance and reduces server load.
+        Note: Components are already wrapped in Execute objects by queueComponent()
         
         PARAMETERS:
             callback: Function called with (resultModel) when server replies
+            thisArg: Context for the callback
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.models.objects.Response - The response object returned from the server
         
         BEHAVIOR:
             COMMENT: If queue is empty, nothing to do
-            IF componentQueue is empty THEN
+            IF componentQueue.length equals 0 THEN
                 IF callback is not null THEN
-                    CALL callback([])
+                    CALL callback.call(thisArg, null)
                 END IF
                 RETURN
             END IF
             
-            COMMENT: Create array to hold Execute wrappers (each wraps a component)
+            COMMENT: Create array to hold Execute wrappers that will be sent
             CREATE toExecute AS new array
             
-            COMMENT: Process each queued component
-            FOR EACH componentModel IN componentQueue
-                COMMENT: Loader components are special, they open browser windows instead of returning JSON
-                COMMENT: Component models meant to load in browser windows have a true redirect property
-                IF componentModel.redirect is true THEN
-                    COMMENT: Execute this loader separately (these components don't get batched with others)
-                    CALL executeComponent(componentModel, callback)
-                    CONTINUE
+            COMMENT: Process each queued Execute object (queue already contains wrapped Execute objects)
+            FOR EACH executeWrapper IN componentQueue
+                COMMENT: Get the component model inside the Execute wrapper
+                CREATE componentModel AS executeWrapper.componentModel
+                
+                COMMENT: Check if the wrapped component is a redirect loader
+                COMMENT: These open external windows instead of returning JSON responses
+                CREATE isRedirect AS false
+                IF componentModel is not null AND componentModel has property isRedirect THEN
+                    SET isRedirect TO componentModel.isRedirect
                 END IF
                 
-                COMMENT: Wrap the component in an Execute object
-                COMMENT: The Execute wrapper handles object formatting and component-specific logic like encryption
-                CREATE executeModel AS new NewgroundsIO.models.objects.Execute()
-                SET executeModel.core TO this
-                CALL executeModel.setComponent(componentModel)
-                APPEND executeModel TO toExecute
+                IF isRedirect equals true THEN
+                    COMMENT: Execute this loader separately (these don't batch with regular components)
+                    CALL executeComponent(componentModel, callback, thisArg)
+                    CONTINUE TO NEXT COMPONENT
+                END IF
+                
+                COMMENT: Add the already-wrapped Execute object to the batch
+                COMMENT: It's already been processed by queueComponent() and has the component set
+                SET executeWrapper.core TO this
+                APPEND executeWrapper TO toExecute
             END FOR
             
             COMMENT: Queue has been processed - clear it for next batch
             CLEAR componentQueue
             
             COMMENT: If we ended up with no components to send, we're done
-            IF toExecute is empty THEN
+            IF toExecute.length equals 0 THEN
                 IF callback is not null THEN
-                    CALL callback([])
+                    CALL callback.call(thisArg, null)
                 END IF
                 RETURN
             END IF
             
             COMMENT: Send all the components to the server
-            CALL sendRequest(toExecute, false, callback)
+            CALL sendRequest(toExecute, false, callback, thisArg)
     END FUNCTION
     
-    FUNCTION executeComponent(componentModel: NewgroundsIO.BaseComponent, callback: function|null)
+    FUNCTION executeComponent(componentModel: NewgroundsIO.BaseComponent, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Execute a single component immediately (not queued).
-        WHY: Some components (like Medal.unlock) need immediate execution, not batching.
+        WHY: Some components need immediate execution, not batching.
         
         PARAMETERS:
             componentModel: The component to execute
             callback: Function called with (resultModel) when server replies
+            thisArg: Context for the callback
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.models.objects.Response - The response object returned from the server
         
         BEHAVIOR:
+            COMMENT: Set core reference on component if not already set
+            IF componentModel is not null AND componentModel.core is null THEN
+                SET componentModel.core TO this
+            END IF
+            
             COMMENT: Wrap the component for transmission
-            CREATE executeModel AS new NewgroundsIO.models.objects.Execute()
+            CREATE executeModel AS null
+            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                SET executeModel TO ObjectFactory.CreateObject("Execute", null, this)
+            ELSE
+                SET executeModel TO new Execute()
+            END IF
+            
             SET executeModel.core TO this
             CALL executeModel.setComponent(componentModel)
             
+            COMMENT: Get redirect flag from the component
+            CREATE isRedirect AS componentModel.isRedirect
             COMMENT: Send it with the redirect flag from the component
-            CALL sendRequest(executeModel, componentModel.redirect, callback)
+            CALL sendRequest(executeModel, isRedirect, callback, thisArg)
     END FUNCTION
     
-    FUNCTION encryptData(text: string): string
+    FUNCTION encryptObject(obj: object): string | null
+        
+        PURPOSE: Encrypts a plain object to obfuscate secure components.
+        WHY: Makes cheating harder - medal unlocks and score posts are encrypted.
+        
+        PARAMETERS:
+            obj: The plain object to encrypt (usually a JSON-compatible object)
+        
+        RETURNS: The encrypted data encoded as Base64 string, or null if encryption failed
+        
+        BEHAVIOR:
+            TRY
+                COMMENT: Convert the object to a JSON string
+                CREATE jsonString AS JSON_ENCODE(obj)
+            CATCH error
+                LOG_ERROR("Encryption Error: Failed to convert object to JSON - " + error)
+                RETURN null
+            END TRY
+
+            TRY
+                COMMENT: Encrypt the JSON string using the encryption key
+                CREATE encryptedString AS CALL encryptData(jsonString)
+            CATCH error
+                LOG_ERROR("Encryption Error: Failed to encrypt JSON string - " + error)
+                RETURN null
+            END TRY
+
+            RETURN encryptedString
+    END FUNCTION
+    
+    FUNCTION encryptData(text: string): string | null
         
         PURPOSE: Encrypts text (usually JSON) to obfuscate secure components.
         WHY: Makes cheating harder - medal unlocks and score posts are encrypted so cheaters can't easily manipulate server requests.
         
+        IMPLEMENTATION: Uses AES-128-CBC (Advanced Encryption Standard, 128-bit key, Cipher Block Chaining mode)
+        - Padding: PKCS5 (standard padding for block ciphers)
+        - Output: Base64-encoded ciphertext with prepended IV
+        
         PARAMETERS:
             text: The data to encrypt (usually a JSON string)
         
-        RETURNS: The encrypted data encoded as a string (Base64 or Hex)
+        RETURNS: The encrypted data encoded as Base64 string, or null if encryption failed
         
         BEHAVIOR:
-            COMMENT: Encrypt the text using the encryption cipher
-            COMMENT: This uses AES-128 or RC4 depending on the project settings
-            ENCRYPTED_DATA = CIPHER_ENCRYPT(text, this.encryptionKey)
-            
-            COMMENT: If encrypted data is binary, encode it to a string
-            IF ENCRYPTED_DATA is binary THEN
-                ENCRYPTED_DATA = ENCODE_BASE64_OR_HEX(ENCRYPTED_DATA)
+            COMMENT: Use the cached Base64-decoded encryption key bytes
+            IF this.encryptionKeyBytes is null OR this.encryptionKeyBytes.length equals 0 THEN
+                LOG_ERROR("Encryption Error: Encryption key bytes not set")
+                RETURN null
             END IF
             
-            RETURN ENCRYPTED_DATA
+            COMMENT: Create a copy of the key bytes for encryption
+            CREATE keyBytes AS COPY(this.encryptionKeyBytes)
+            
+            COMMENT: Create AES-128-CBC cipher with automatic IV handling
+            COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific encryption patterns
+            CREATE cipher AS CREATE_CIPHER("AES-128-CBC", keyBytes, "PKCS5")
+            
+            COMMENT: Convert the input text to binary data
+            CREATE inputBytes AS TEXT_TO_BYTES(text)
+            
+            COMMENT: Encrypt the data
+            COMMENT: The cipher modifies the binary data in-place
+            CALL cipher.encrypt(inputBytes)
+            
+            COMMENT: Encode encrypted bytes as Base64 string for transmission
+            CREATE encryptedBase64 AS ENCODE_BASE64(inputBytes)
+            
+            RETURN encryptedBase64
     END FUNCTION
     
     ====================
@@ -224,17 +440,18 @@ CLASS Core
     
     FUNCTION sendRequest(toExecute: NewgroundsIO.models.objects.Execute | array, 
                         openInBrowser: boolean, 
-                        callback: function|null)
+                        callback: function|null = null, thisArg: any = null)
         
         PURPOSE: The core network communication method. Handles all server communication.
         WHY: This method coordinates encryption, HTTPS requests, response parsing, and error handling.
         
         PARAMETERS:
             toExecute: One or more Execute objects wrapping components
-            openInBrowser: If true, open in browser window instead of making AJAX request
+            openInBrowser: If true, open in new window instead of making network request
             callback: Function called with (resultModel) when server replies
+            thisArg: Context for the callback
         CALLBACK PARAMETERS:
-            resultModel: (Required) NewgroundsIO.BaseResult - The result object returned from the server
+            resultModel: (Required) NewgroundsIO.models.objects.Response - The response object returned from the server
         
         EXPLANATION:
             This method does several things:
@@ -249,112 +466,209 @@ CLASS Core
         
         BEHAVIOR:
             COMMENT: ==================== PREPARE THE REQUEST ====================
-            COMMENT: Wrap the components in a Request object
-            CREATE requestModel AS new NewgroundsIO.models.objects.Request()
-            SET requestModel.core TO this
-            COMMENT: Add components to the request (handle single or multiple)
-            IF toExecute is array THEN
-                CALL requestModel.setExecuteList(toExecute)
+            COMMENT: Create a proper Request object using ObjectFactory
+            CREATE requestModel AS null
+            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                SET requestModel TO ObjectFactory.CreateObject("Request", null, this)
             ELSE
-                CALL requestModel.setExecute(toExecute)
+                SET requestModel TO new Request()
             END IF
             
-            COMMENT: Convert to plain object (this handles encryption automatically)
-            CREATE plainObject AS CALL requestModel.prepareForJson()
+            SET requestModel.core TO this
+            SET requestModel.app_id TO this.appId
+            SET requestModel.debug TO this.useDebugMode
             
+            COMMENT: Add session ID if available
+            IF this.appState is not null AND this.appState.session is not null AND this.appState.session.id is not null THEN
+                SET requestModel.session_id TO this.appState.session.id
+            END IF
+            
+            COMMENT: Add components to the request using mixed-type handling
+            IF toExecute is not null THEN
+                COMMENT: Handle both single Execute object and array of Execute objects
+                IF toExecute is array THEN
+                    COMMENT: Array of Execute objects
+                    IF toExecute.length > 0 THEN
+                        CALL requestModel.setExecuteList(toExecute)
+                    END IF
+                ELSE
+                    COMMENT: Single Execute object
+                    CALL requestModel.setExecute(toExecute)
+                END IF
+            END IF
+            
+            COMMENT: Convert to API format using prepareForJson (handles encryption, formatting)
+            CREATE plainObject AS CALL requestModel.prepareForJson()
             COMMENT: Encode as JSON string for transmission
             CREATE requestString AS JSON_ENCODE(plainObject)
             
             COMMENT: ==================== SEND THE REQUEST ====================
             
-            COMMENT: Loader components go to the browser window, not JSON API
-            IF openInBrowser is true THEN
-                COMMENT: Open in a new window with the request data
-                OPEN_BROWSER_WINDOW(GATEWAY_URL, plainObject)
-                COMMENT: Loaders don't return responses
+            COMMENT: Loader components open external windows, not JSON API
+            IF openInBrowser equals true THEN
+                COMMENT: Create URL request with the same parameters as the background process
+                CREATE browserRequest AS CREATE_URL_REQUEST(GATEWAY_URL)
+                SET browserRequest.method TO "POST"
+                SET browserRequest.contentType TO "application/x-www-form-urlencoded"
+                
+                COMMENT: Add the request data as form parameter
+                CREATE browserFormData AS "request=" + URL_ENCODE(requestString)
+                SET browserRequest.data TO browserFormData
+                
+                COMMENT: Open in a new external window
+                TRY
+                    COMMENT: Determine window target from the component
+                    CREATE browserTarget AS "_blank"
+                    IF toExecute is not null AND toExecute is NOT array THEN
+                        CREATE component AS toExecute.component
+                        IF component is not null AND component has property "browserTarget" AND component.browserTarget is not null THEN
+                            SET browserTarget TO component.browserTarget
+                        END IF
+                    END IF
+
+                    IF this.debugNetworkCalls equals true THEN
+                        LOG_INFO("NETWORK: Opening external window to " + GATEWAY_URL + " with target " + browserTarget)
+                        LOG_INFO("         Request Data: " + requestString)
+                    END IF
+
+                    OPEN_URL(browserRequest, browserTarget)
+
+                CATCH error
+                    IF this.debugNetworkCalls equals true THEN
+                        LOG_ERROR("NETWORK: Error opening external window - " + error.message)
+                    END IF
+                END TRY
+                
+                COMMENT: Call callback with null (external windows don't return JSON responses)
                 IF callback is not null THEN
-                    CALL callback(null)
+                    CALL callback.call(thisArg, null)
                 END IF
                 RETURN
             END IF
             
-            COMMENT: ==================== HTTP REQUEST METHODS ====================
-            COMMENT: Choose the appropriate HTTP method based on your platform:
-            COMMENT:
-            COMMENT: METHOD 1: Fetch API / Raw Body (Modern web, some game engines)
-            COMMENT: - Send requestString directly as the request body
-            COMMENT: - Content-Type: application/json (or text/plain)
-            COMMENT: - Example: fetch(GATEWAY_URL, {method: 'POST', body: requestString})
-            COMMENT:
-            COMMENT: METHOD 2: Form POST (Traditional web, many game engines)
-            COMMENT: - Send requestString as a form parameter named "request"
-            COMMENT: - Content-Type: application/x-www-form-urlencoded
-            COMMENT: - Example: POST data as "request=<encoded requestString>"
-            COMMENT:
-            COMMENT: WHY TWO METHODS?
-            COMMENT: - Modern platforms (Unity, JavaScript, etc.) support raw body POST
-            COMMENT: - Many game engines (Flash, GameMaker, etc.) may only support form data
-            COMMENT: - Both methods work equally well - use whichever your platform supports
-            COMMENT:
-            COMMENT: IMPORTANT: The Newgrounds gateway accepts both formats!
+            COMMENT: ==================== MAKE THE HTTPS REQUEST ====================
             
-            COMMENT: For normal requests, set up the callback to handle the response
-            ASYNC FUNCTION onHTTPResponse(statusCode, responseText)
-                
-                COMMENT: Create a Response object to hold all the results
-                CREATE responseModel AS new NewgroundsIO.models.objects.Response()
+            CREATE request AS CREATE_URL_REQUEST(GATEWAY_URL)
+            SET request.method TO "POST"
+            
+            COMMENT: Set proper headers for JSON POST request
+            SET request.contentType TO "application/x-www-form-urlencoded"
+            
+            COMMENT: Send as form parameter "request" with the JSON string
+            COMMENT: This is the format the Newgrounds API expects
+            CREATE formData AS "request=" + URL_ENCODE(requestString)
+            SET request.data TO formData
+            
+            COMMENT: Set up event handlers
+            CREATE onSuccess AS FUNCTION(event)
+                IF this.debugNetworkCalls equals true THEN
+                    LOG_INFO("NETWORK: Received response from server")
+                    LOG_INFO("         Response Data: " + event.responseText)
+                END IF
+                CALL onHTTPResponse(200, event.responseText, callback, thisArg)
+            END FUNCTION
+            
+            CREATE onIOError AS FUNCTION(event)
+                IF this.debugNetworkCalls equals true THEN
+                    LOG_ERROR("NETWORK: IOError occurred - " + event.text)
+                END IF
+                COMMENT: Network error occurred
+                CALL onHTTPResponse(500, null, callback, thisArg)
+            END FUNCTION
+            
+            CREATE onSecurityError AS FUNCTION(event)
+                IF this.debugNetworkCalls equals true THEN
+                    LOG_ERROR("NETWORK: SecurityError occurred - " + event.text)
+                END IF
+                COMMENT: Security error occurred
+                CALL onHTTPResponse(403, null, callback, thisArg)
+            END FUNCTION
+            
+            COMMENT: Send the request
+            TRY
+                IF this.debugNetworkCalls equals true THEN
+                    LOG_INFO("NETWORK: Sending request to " + GATEWAY_URL)
+                    LOG_INFO("         Request Data: " + requestString)
+                END IF
+                SEND_HTTP_REQUEST(request, onSuccess, onIOError, onSecurityError)
+            CATCH error
+                IF this.debugNetworkCalls equals true THEN
+                    LOG_ERROR("NETWORK: Error sending request - " + error.message)
+                END IF
+                COMMENT: Network error occurred
+                CALL onHTTPResponse(500, null, callback, thisArg)
+            END TRY
+        
+    END FUNCTION
+    
+    FUNCTION onHTTPResponse(statusCode: number, responseText: string|null, callback: function|null, thisArg: any = null)
+        
+        PURPOSE: Handle HTTP response from the server.
+        WHY: Centralizes response processing, error handling, and callback management.
+        
+        PARAMETERS:
+            statusCode: HTTP status code (200 = success, 4xx/5xx = error)
+            responseText: Response body from server
+            callback: Developer's callback function
+            thisArg: Context for the callback
+        
+        BEHAVIOR:
+            IF this.debugNetworkCalls equals true THEN
+                LOG_INFO("NETWORK: HTTP Response received with status " + statusCode)
+                LOG_INFO("         Response Text: " + responseText)
+            END IF
+            
+            COMMENT: Create a Response object to hold all the results
+            CREATE responseModel AS null
+            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
+                SET responseModel TO ObjectFactory.CreateObject("Response", null, this)
+            ELSE
+                SET responseModel TO new Response()
                 SET responseModel.core TO this
-                
-                COMMENT: Check HTTP status code
-                COMMENT: 200-299 = success, anything else = error
-                IF statusCode < 200 OR statusCode > 299 THEN
-                    COMMENT: HTTP error - create error model
-                    SET responseModel.error TO NewgroundsIO.Errors.getError(statusCode)
-                ELSE
-                    COMMENT: HTTP succeeded - parse the response JSON
+            END IF
+
+            COMMENT: Check HTTP status code
+            COMMENT: 200-299 = success, anything else = error
+            IF statusCode < 200 OR statusCode > 299 THEN
+                COMMENT: HTTP error - create error model
+                SET responseModel.error TO Errors.getError(statusCode)
+            ELSE
+                COMMENT: HTTP succeeded - parse the response JSON
+                TRY
+                    CREATE jsonObject AS JSON_DECODE(responseText)
+                CATCH error
+                    COMMENT: JSON parsing failed - create appropriate error
+                    LOG_ERROR("JSON parsing error - " + error.message)
+
+                    SET responseModel.error TO Errors.getError(
+                        Errors.INVALID_REQUEST,
+                        "Unable to parse JSON response"
+                    )
+
+                    SET jsonObject TO null
+                END TRY
+
+                COMMENT: Import the JSON into the Response model
+                COMMENT: This also automatically updates appState
+                IF jsonObject is not null THEN
                     TRY
-                        CREATE jsonObject AS JSON_DECODE(responseText)
-                        COMMENT: Import the JSON into the Response model
-                        COMMENT: This also automatically updates appState
                         CALL responseModel.importFromObject(jsonObject)
-                    CATCH error
-                        COMMENT: JSON parsing failed - create appropriate error
-                        SET responseModel.error TO NewgroundsIO.Errors.getError(
-                            NewgroundsIO.Errors.INVALID_REQUEST, 
-                            "Unable to parse JSON response"
+                    CATCH importError
+                        COMMENT: Importing JSON into model failed
+                        LOG_ERROR("IMPORT ERROR: Error importing into Response model with object: "+ JSON_ENCODE(jsonObject)+ " :: " + importError.message)
+
+                        SET responseModel.error TO Errors.getError(
+                            Errors.INVALID_RESPONSE,
+                            "Error importing response data"
                         )
                     END TRY
                 END IF
-                
-                COMMENT: Call the callback to return results to the developer
-                IF callback is not null THEN
-                    CALL callback(responseModel)
-                END IF
-            END FUNCTION
+            END IF
             
-            COMMENT: ==================== MAKE THE HTTP REQUEST ====================
-            COMMENT: Send the request using your platform's HTTP capabilities:
-            COMMENT:
-            COMMENT: FETCH API EXAMPLE (JavaScript, modern web):
-            COMMENT:     fetch(GATEWAY_URL, {
-            COMMENT:         method: 'POST',
-            COMMENT:         body: requestString,
-            COMMENT:         headers: {'Content-Type': 'application/json'}
-            COMMENT:     })
-            COMMENT:     .then(response => response.text())
-            COMMENT:     .then(responseText => onHTTPResponse(200, responseText))
-            COMMENT:
-            COMMENT: FORM POST EXAMPLE (Flash, GameMaker, older platforms):
-            COMMENT:     WWWForm form = new WWWForm()
-            COMMENT:     form.AddField("request", requestString)
-            COMMENT:     POST_TO_URL(GATEWAY_URL, form, onHTTPResponse)
-            COMMENT:
-            COMMENT: The key difference:
-            COMMENT: - Fetch/raw: requestString goes in the request body directly
-            COMMENT: - Form: requestString goes in a parameter named "request"
-            COMMENT:
-            SEND_HTTP_POST(GATEWAY_URL, requestString, onHTTPResponse)
-        
+            COMMENT: Call the callback to return results to the developer
+            IF callback is not null THEN
+                CALL callback.call(thisArg, responseModel)
+            END IF
     END FUNCTION
 
 END CLASS
