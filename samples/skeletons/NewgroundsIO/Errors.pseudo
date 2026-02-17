@@ -106,7 +106,7 @@ CLASS Errors
     PUBLIC STATIC METHODS
     ====================
     
-    FUNCTION getDefaultMessage(errorCode: number = 0): string
+    FUNCTION getDefaultMessage(errorCode: integer = 0): string
         
         PURPOSE: Look up the default error message for a specific error code
         WHY: Developers need readable error messages to show users
@@ -131,7 +131,7 @@ CLASS Errors
             END IF
     END FUNCTION
     
-    FUNCTION getError(errorCode: number = 0, 
+    FUNCTION getError(errorCode: integer = 0, 
                      errorMessage: string|null = null, 
                      appendMessage: boolean = false): NewgroundsIO.models.objects.Error
         

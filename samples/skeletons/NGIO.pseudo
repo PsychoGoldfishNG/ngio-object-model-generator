@@ -683,7 +683,7 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION getMedalScore(): number | null
+    FUNCTION getMedalScore(): integer | null
         
         PURPOSE: Get cached total medal score, or null if not loaded.
         BEHAVIOR:
@@ -714,7 +714,7 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION getMedal(medalId: number): NewgroundsIO.models.objects.Medal | null
+    FUNCTION getMedal(medalId: integer): NewgroundsIO.models.objects.Medal | null
         
         PURPOSE: Find and return a specific medal by ID.
         PARAMETERS:
@@ -782,7 +782,7 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION getScoreBoard(boardId: number): NewgroundsIO.models.objects.ScoreBoard | null
+    FUNCTION getScoreBoard(boardId: integer): NewgroundsIO.models.objects.ScoreBoard | null
         
         PURPOSE: Find and return a specific scoreboard by ID.
         PARAMETERS:
@@ -846,7 +846,7 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION getSaveSlot(slotId: number): NewgroundsIO.models.objects.SaveSlot | null
+    FUNCTION getSaveSlot(slotId: integer): NewgroundsIO.models.objects.SaveSlot | null
         
         PURPOSE: Find and return a specific save slot by ID.
         PARAMETERS:

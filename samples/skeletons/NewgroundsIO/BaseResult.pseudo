@@ -55,7 +55,7 @@ CLASS BaseResult
     COMMENT:
     COMMENT: Medal.unlockResult adds:
     COMMENT:   - medal: Medal object (the medal that was unlocked)
-    COMMENT:   - medalScore: number (new total score)
+    COMMENT:   - medalScore: integer (new total score)
     COMMENT:
     COMMENT: Score.postScoreResult adds:
     COMMENT:   - scoreboard: ScoreBoard object (updated board info)

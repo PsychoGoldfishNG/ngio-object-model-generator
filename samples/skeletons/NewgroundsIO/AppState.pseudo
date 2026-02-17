@@ -98,7 +98,7 @@ CLASS AppState
         PURPOSE: Array of Medal objects for achievements
         WHY: Stores medal data loaded from server
     
-    medalScore: number = 0
+    medalScore: integer = 0
         PURPOSE: Total points earned from all unlocked medals, across all games
         WHY: Displays user's achievement score
     

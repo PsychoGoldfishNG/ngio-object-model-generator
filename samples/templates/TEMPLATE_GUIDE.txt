@@ -212,7 +212,7 @@ partial, config).
 
 HANDLER METHODS VS INLINE CALLBACKS
 -----------------------------------
-Some methods partials can be written with separate handler methods (e.g.,
+Some 'methods' partials can be written with separate handler methods (e.g.,
 onScoresLoaded) or inline callbacks (anonymous functions/promises). For
 language-neutral templates, prefer inline handling with clear steps, and
 let the implementer choose whether to extract handlers.
@@ -250,9 +250,12 @@ To adapt templates to your target language:
    API Type    →  JavaScript  →  C#        →  Python
    ──────────────────────────────────────────────────
    String      →  string      →  string    →  str
-   Number      →  number      →  int       →  int
+  Number (integer)
+          →  number      →  int       →  int
    Boolean     →  boolean     →  bool      →  bool
    Array       →  Array       →  List<T>   →  list
+
+NOTE: API numeric values are integers. Treat "Number" as integer in model types.
 
 3. NAMING CONVENTIONS
    Use helper functions to transform names:

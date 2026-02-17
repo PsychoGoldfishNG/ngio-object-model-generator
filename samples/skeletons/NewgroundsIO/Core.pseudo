@@ -601,7 +601,7 @@ CLASS Core
         
     END FUNCTION
     
-    FUNCTION onHTTPResponse(statusCode: number, responseText: string|null, callback: function|null, thisArg: any = null)
+    FUNCTION onHTTPResponse(statusCode: integer, responseText: string|null, callback: function|null, thisArg: any = null)
         
         PURPOSE: Handle HTTP response from the server.
         WHY: Centralizes response processing, error handling, and callback management.

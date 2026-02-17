@@ -260,7 +260,7 @@ Strongly-typed languages:
 - Use explicit types matching pseudo-code hints
 - string - String/string/str
 - number/int - int/Integer/int32/i32
-- number/float - float/double/f64
+- number/float - float/double/f64 (not used by model classes)
 - boolean - bool/boolean/Boolean
 - array - List<T>/Array<T>/Vec<T>/[]T
 - object/dictionary - Map<K,V>/Dictionary<K,V>/HashMap<K,V>
@@ -785,7 +785,7 @@ TIMESTAMP HANDLING VARIATIONS
 -----------------------------
 The pseudo-code uses "Timestamp" for time values. Platform translations:
 
-- JavaScript: Date object or number (milliseconds since epoch)
+- JavaScript: Date object or integer (milliseconds since epoch)
 - Python: datetime object or time.time() float
 - C#: DateTime or DateTimeOffset
 - Java: Instant, LocalDateTime, or long milliseconds

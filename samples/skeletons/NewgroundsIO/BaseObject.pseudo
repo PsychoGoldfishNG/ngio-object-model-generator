@@ -51,12 +51,12 @@ CLASS BaseObject
     
     castTypes: object (ABSTRACT - must be overridden in subclass)
         PURPOSE: Specifies how to cast (convert) each property value to the correct type
-        WHY: Server returns everything as JSON strings. We need to convert to numbers, booleans, 
+        WHY: Server returns everything as JSON strings. We need to convert to integers, booleans, 
              nested objects, arrays, etc.
         EXAMPLE: { id: 'number', name: 'string', unlocked: 'boolean', metadata: User }
         CAST TYPE VALUES:
             - 'string': Keep as text
-            - 'number': Convert to integer or float
+            - 'number': Convert to integer
             - 'boolean': Convert to true/false
             - ClassName: Create an instance of ClassName and recursively import
             - 'array-of-ClassName': Create array of instances
@@ -105,7 +105,7 @@ CLASS BaseObject
         EXPLANATION:
             STEP 1: Validate input and handle BaseObject imports
             STEP 2: Loop through each property in propertyNames
-            STEP 3: Cast the value to the correct type (string, number, object, array, etc.)
+            STEP 3: Cast the value to the correct type (string, integer, object, array, etc.)
             STEP 4: Set the property on this object
             STEP 5: Handle error property if present
         
@@ -181,7 +181,7 @@ CLASS BaseObject
             - JSON has: { "unlocked": "true" }  -> cast to: boolean true
             - JSON has: { "medals": [...] } -> cast to: array of Medal instances
             - JSON has: { "user": {...} } -> cast to: User instance
-            - JSON has: { "score": "1000" } -> cast to: number 1000
+            - JSON has: { "score": "1000" } -> cast to: integer 1000
         
         BEHAVIOR:
             COMMENT: If value is null or undefined, keep it null
@@ -201,7 +201,7 @@ CLASS BaseObject
             IF castType equals 'string' THEN
                 RETURN TO_STRING(value)
             ELSE IF castType equals 'number' THEN
-                RETURN TO_NUMBER(value)
+                RETURN TO_INTEGER(value)
             ELSE IF castType equals 'boolean' THEN
                 IF value is string THEN
                     RETURN value.toLowerCase() equals 'true'
@@ -325,7 +325,7 @@ CLASS BaseObject
                     END IF
                 END IF
                 
-                COMMENT: Note: The number 0 and boolean false are considered valid values
+                COMMENT: Note: The integer 0 and boolean false are considered valid values
             END FOR
             
             COMMENT: All required properties are present and valid
@@ -369,7 +369,7 @@ CLASS BaseObject
                     END IF
                 END IF
                 
-                COMMENT: Note: The number 0 and boolean false are considered valid values
+                COMMENT: Note: The integer 0 and boolean false are considered valid values
             END FOR
             
             RETURN errors

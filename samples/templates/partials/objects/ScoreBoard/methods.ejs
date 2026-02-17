@@ -14,8 +14,8 @@
                 - user_name: Filter by username
                 - user: User object (uses id property)
                 - period: Time period ('D'=day, 'W'=week, 'M'=month, 'Y'=year, 'A'=all-time)
-                - limit: Max number of scores to return (1-100, default: 10)
-                - skip: Number of scores to skip (for pagination, default: 0)
+                - limit: Max scores to return (1-100, default: 10)
+                - skip: Scores to skip (for pagination, default: 0)
                 - social: Get only friends' scores (requires logged-in user)
                 - tag: Filter by score tag
             callback: Function to call with the loaded scores
@@ -71,10 +71,10 @@
             
             COMMENT: Handle user filtering with strict typing
             IF filters.user_id is defined THEN
-                IF filters.user_id is number THEN
+                IF filters.user_id is integer THEN
                     SET componentParams.user TO filters.user_id
                 ELSE
-                    THROW error "ScoreBoard filter user_id must be a number"
+                    THROW error "ScoreBoard filter user_id must be an integer"
                 END IF
             ELSE IF filters.user_name is defined THEN
                 IF filters.user_name is string THEN
@@ -113,7 +113,7 @@
     END METHOD
 
     COMMENT: Posts a score to this scoreboard.
-    METHOD postScore(value: Number, tag: String, callback: Function, thisArg: Object)
+    METHOD postScore(value: Integer, tag: String, callback: Function, thisArg: Object)
         
         PURPOSE: Submits a score to this scoreboard for the current user
         

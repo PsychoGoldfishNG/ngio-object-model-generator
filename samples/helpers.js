@@ -194,9 +194,9 @@ module.exports = {
             case "string":
                 return "String";
             case "int":
-                return "Number"; // or Integer, depending on your language
+                return "Integer"; // or Number, depending on your language
             case "float":
-                return "Number"; // or Float/Double, depending on your language
+                return "Float"; // or Number/Double, if your language doesn't have floats
             case "boolean":
                 return "Boolean";
             case "mixed":
@@ -219,8 +219,11 @@ module.exports = {
         // Handle primitives that can't be null
         const dataType = this.getDataType(property);
         
-        // Number types may need to default to NaN (not-a-number) instead of null
-        if (dataType === "Number") {
+        // Numeric types may need non-null defaults; choose what's idiomatic.
+        if (dataType === "Integer") {
+            return "0";
+        }
+        if (dataType === "Number" || dataType === "Float") {
             return "NaN";
         }
         
