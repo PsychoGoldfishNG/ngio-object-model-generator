@@ -88,17 +88,21 @@
             COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific URL loading patterns
             TRY
                 CALL LOAD_URL_ASYNC(loadUrl, FUNCTION onLoadComplete(data: String)
+                    COMMENT: Load succeeded - clear any previous error
+                    SET this.error TO null
                     CALL callback WITH context thisArg
                         PASSING data
                 END FUNCTION, FUNCTION onLoadError(error)
-                    COMMENT: Load failed - log the error and return null gracefully
-                    LOG_ERROR("Failed to load SaveSlot data from URL: " + error.message)
+                    COMMENT: Load failed - set error property and log
+                    SET this.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE, "Failed to load SaveSlot data from URL: " + error.message)
+                    LOG_ERROR(this.error.message)
                     CALL callback WITH context thisArg
                         PASSING null
                 END FUNCTION)
             CATCH loadError
-                COMMENT: URL loading setup failed
-                LOG_ERROR("Failed to load SaveSlot data from URL: " + loadError.message)
+                COMMENT: URL loading setup failed - set error property
+                SET this.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE, "Failed to load SaveSlot data from URL: " + loadError.message)
+                LOG_ERROR(this.error.message)
                 CALL callback WITH context thisArg
                     PASSING null
             END TRY
@@ -124,11 +128,17 @@
                 IF data is not null THEN
                     TRY
                         SET decoded TO JSON_DECODE(data)
+                        COMMENT: JSON parsing succeeded - clear any previous error
+                        SET this.error TO null
                     CATCH parseError
-                        COMMENT: JSON parsing failed
-                        LOG_ERROR("Failed to decode SaveSlot data JSON: " + parseError.message)
+                        COMMENT: JSON parsing failed - set error property
+                        SET this.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE, "Failed to decode SaveSlot data JSON: " + parseError.message)
+                        LOG_ERROR(this.error.message)
                         SET decoded TO null
                     END TRY
+                ELSE
+                    COMMENT: URL load failed (error already set by loadDataRaw)
+                    COMMENT: decoded remains null
                 END IF
                 
                 COMMENT: Return the decoded data to the user's callback
@@ -200,6 +210,24 @@
         BEHAVIOR:
             CREATE jsonString AS JSON_ENCODE(data)
             CALL this.setDataRaw WITH jsonString, callback, thisArg
+    END METHOD
+
+    COMMENT: Returns a string representation of this save slot.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable save slot representation
+        
+        RETURNS: SaveSlot description formatted as "SaveSlot #[id]"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Return slot ID in readable format
+            IF this.id is not null THEN
+                RETURN "SaveSlot #" + this.id
+            ELSE
+                RETURN "SaveSlot #null"
+            END IF
     END METHOD
     
     COMMENT: ====================================================================================

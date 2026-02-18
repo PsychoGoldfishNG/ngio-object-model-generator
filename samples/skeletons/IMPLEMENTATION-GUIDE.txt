@@ -888,6 +888,38 @@ COMMON PITFALLS
 BEST PRACTICES
 ================================================================================
 
+STRING CONVERSION (toString methods)
+------------------------------------
+Most model objects implement toString() for human-readable string conversion.
+This is useful for logging, debugging, and display purposes.
+
+BaseObject provides a default toString() that returns the object type name.
+Specific objects provide more meaningful output:
+
+  Error.toString()    → error message or "null"
+  Medal.toString()    → "Medal #[id] - [name]"
+  ScoreBoard.toString() → "ScoreBoard #[id] - [name]"
+  SaveSlot.toString() → "SaveSlot #[id]"
+  User.toString()     → user name or "null"
+  Score.toString()    → "Score Value: [value]"
+
+For languages that support automatic string conversion:
+  - Java: Implement toString() method (called by System.out.println)
+  - Python: Implement __str__() method (called by str() and print())
+  - C#: Override ToString() method (called by string concatenation)
+  - JavaScript: Implement toString() method (called by string context)
+  - Ruby: Implement to_s method (called by puts and string context)
+
+This allows convenient debugging:
+  - console.log(medal)  // outputs: Medal #5 - Achievement Unlocked
+  - LOG_INFO(error)     // outputs: Requested Medal does not exist
+
+Example usage in error handling:
+  IF error is not null THEN
+      LOG_ERROR("Operation failed: " + error)  // uses error.toString()
+  END IF
+
+
 CODE STYLE
 ----------
 1. Follow your language's official style guide

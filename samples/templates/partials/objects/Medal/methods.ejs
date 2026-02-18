@@ -30,6 +30,32 @@
             END IF
     END METHOD
     
+    COMMENT: Returns a string representation of this medal.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable medal representation
+        
+        RETURNS: Medal description formatted as "Medal #[id] - [name]"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Construct string representation with ID and name
+            CREATE description AS "Medal #"
+            IF this.id is not null THEN
+                SET description TO description + this.id
+            ELSE
+                SET description TO description + "null"
+            END IF
+            SET description TO description + " - "
+            IF this.name is not null THEN
+                SET description TO description + this.name
+            ELSE
+                SET description TO description + "null"
+            END IF
+            RETURN description
+    END METHOD
+    
     COMMENT: ====================================================================================
     COMMENT: SESSION MANAGEMENT METHOD
     COMMENT: ====================================================================================

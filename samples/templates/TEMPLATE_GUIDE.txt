@@ -226,6 +226,25 @@ If a methods/properties partial references external models (e.g., User, Response
 ScoreBoard.getScoresResult), add an imports.ejs partial with those dependencies
 so the generated code has clear import hints for import-requiring languages.
 
+STRING REPRESENTATION - toString() METHODS
+-------------------------------------------
+Many object models include a toString() method to provide human-readable string
+conversion, useful for logging, debugging, and display.
+
+BaseObject provides a default toString() that returns the object type name.
+Specific objects override this with meaningful representations:
+
+  - Error: Returns the error message (or "null" if message is empty)
+  - Medal: "Medal #[id] - [name]" 
+  - ScoreBoard: "ScoreBoard #[id] - [name]"
+  - SaveSlot: "SaveSlot #[id]"
+  - User: Returns the user's name (or "null" if name is empty)
+  - Score: "Score Value: [value]"
+
+For languages that support automatic string conversion (Java toString(),
+Python __str__(), C# ToString(), JavaScript toString(), etc.), use the
+toString() method for convenient debugging output.
+
 
 ================================================================================
 6. CUSTOMIZING TEMPLATES
@@ -250,8 +269,7 @@ To adapt templates to your target language:
    API Type    →  JavaScript  →  C#        →  Python
    ──────────────────────────────────────────────────
    String      →  string      →  string    →  str
-  Number (integer)
-          →  number      →  int       →  int
+   Number      →  number      →  int       →  int
    Boolean     →  boolean     →  bool      →  bool
    Array       →  Array       →  List<T>   →  list
 

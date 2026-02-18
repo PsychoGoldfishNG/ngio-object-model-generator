@@ -473,6 +473,22 @@ CLASS BaseObject
             RETURN CALL prepareForJson()
     END FUNCTION
     
+    FUNCTION toString(): string
+        
+        PURPOSE: Convert this object to a human-readable string representation
+        WHY: Allows automatic string conversion for logging, debugging, and display.
+        Subclasses can override for specific, meaningful representations.
+        
+        RETURNS: String representation of this object (defaults to object type name)
+        
+        BEHAVIOR:
+            COMMENT: Default implementation returns the object type name
+            COMMENT: Example: User -> "User", Medal -> "Medal", etc.
+            COMMENT: Subclasses are encouraged to override with more meaningful output
+            COMMENT: See partials/objects/*/methods.ejs for examples
+            RETURN this.objectName
+    END FUNCTION
+    
     ====================
     PROTECTED METHODS
     ====================

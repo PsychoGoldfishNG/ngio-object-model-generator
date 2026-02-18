@@ -152,3 +152,30 @@
                 END FUNCTION, thisArg)
             END IF
     END METHOD
+
+    COMMENT: Returns a string representation of this scoreboard.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable scoreboard representation
+        
+        RETURNS: ScoreBoard description formatted as "ScoreBoard #[id] - [name]"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Construct string representation with ID and name
+            CREATE description AS "ScoreBoard #"
+            IF this.id is not null THEN
+                SET description TO description + this.id
+            ELSE
+                SET description TO description + "null"
+            END IF
+            SET description TO description + " - "
+            IF this.name is not null THEN
+                SET description TO description + this.name
+            ELSE
+                SET description TO description + "null"
+            END IF
+            RETURN description
+    END METHOD
+
