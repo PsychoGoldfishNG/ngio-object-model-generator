@@ -1,0 +1,22 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR User OBJECT
+    COMMENT: ====================================================================================
+    
+    COMMENT: Returns a string representation of this user.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable user representation
+        
+        RETURNS: The user's name if present, otherwise the string "null"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Return the user's name if available, otherwise "null"
+            IF this.name is not null AND this.name is not empty THEN
+                RETURN this.name
+            ELSE
+                RETURN "null"
+            END IF
+    END METHOD

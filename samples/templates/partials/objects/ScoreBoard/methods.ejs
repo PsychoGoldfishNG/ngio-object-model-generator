@@ -95,11 +95,6 @@
             COMMENT: Add this scoreboard's ID
             SET componentParams.id TO this.id
             
-            CREATE callbackParams WITH {
-                callback: callback,
-                thisArg: thisArg
-            }
-            
             COMMENT: Execute the component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("ScoreBoard.getScores", componentParams, FUNCTION onComplete(response)
@@ -137,17 +132,12 @@
                 SET componentParams.tag TO tag
             END IF
             
-            CREATE callbackParams WITH {
-                callback: callback,
-                thisArg: thisArg
-            }
-            
             COMMENT: Execute the component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("ScoreBoard.postScore", componentParams, FUNCTION onComplete(result)
                     IF callback is not null THEN
                         CALL callback WITH context thisArg
-                            PASSING result.score
+                            PASSING result.score, this
                     END IF
                 END FUNCTION, thisArg)
             END IF

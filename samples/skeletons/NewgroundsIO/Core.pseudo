@@ -165,7 +165,7 @@ CLASS Core
             END IF
     END FUNCTION
     
-    FUNCTION callComponent(componentPath: string, componentParams: object|null = null, callback: function|null = null, thisArg: any = null, callbackParams: object|null = null)
+    FUNCTION callComponent(componentPath: string, componentParams: object|null = null, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Convenience method to call a component directly with parameters.
         WHY: This handles creating the component, executing it, and managing callbacks in one call.
@@ -175,10 +175,8 @@ CLASS Core
             componentParams: (optional) Parameters for the component
             callback: (optional) Function to call with the result
             thisArg: (optional) Context for the callback
-            callbackParams: (optional) Additional parameters to pass to callback
         CALLBACK PARAMETERS:
             result: (Required) The result object from the component execution
-            callbackParams: (Optional) Additional parameters passed from callComponent
         
         BEHAVIOR:
             COMMENT: Parse the component path (e.g. "Medal.unlock" -> component="Medal", method="unlock")
@@ -187,7 +185,7 @@ CLASS Core
                 LOG_ERROR("callComponent Error: Invalid component path - " + componentPath)
                 IF callback is not null THEN
                     CREATE error AS {success: false, error: "Invalid component path: " + componentPath}
-                    CALL callback.call(thisArg, error, callbackParams)
+                    CALL callback.call(thisArg, error)
                 END IF
                 RETURN
             END IF
@@ -214,22 +212,20 @@ CLASS Core
                     END FOR
                 END IF
                 
-                COMMENT: Create wrapper for callback parameters
-                CREATE wrappedCallback AS null
-                IF callback is not null THEN
-                    SET wrappedCallback TO FUNCTION(result, params)
-                        CALL callback.call(thisArg, result, callbackParams)
-                    END FUNCTION
-                END IF
-                
                 COMMENT: Execute the component
-                CALL executeComponent(component, wrappedCallback)
+                IF callback is not null THEN
+                    CALL executeComponent(component, FUNCTION(result)
+                        CALL callback.call(thisArg, result)
+                    END FUNCTION)
+                ELSE
+                    CALL executeComponent(component, null)
+                END IF
             CATCH error
                 LOG_ERROR("callComponent Error: " + error)
                 COMMENT: Component not found or error creating it
                 IF callback is not null THEN
                     CREATE errorResult AS {success: false, error: "Component not found: " + componentPath}
-                    CALL callback.call(thisArg, errorResult, callbackParams)
+                    CALL callback.call(thisArg, errorResult)
                 END IF
             END TRY
     END FUNCTION

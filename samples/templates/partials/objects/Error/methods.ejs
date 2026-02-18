@@ -1,0 +1,22 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR Error OBJECT
+    COMMENT: ====================================================================================
+    
+    COMMENT: Returns a string representation of this error.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable error representation
+        
+        RETURNS: The error message if present, otherwise the string "null"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Return the error message if it exists, otherwise return "null" string
+            IF this.message is not null AND this.message is not empty THEN
+                RETURN this.message
+            ELSE
+                RETURN "null"
+            END IF
+    END METHOD

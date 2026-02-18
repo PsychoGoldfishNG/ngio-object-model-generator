@@ -1,0 +1,22 @@
+    <%# EJS DOCUMENTATION: https://ejs.co/ %>
+    COMMENT: ====================================================================================
+    COMMENT: CUSTOM METHODS FOR Score OBJECT
+    COMMENT: ====================================================================================
+    
+    COMMENT: Returns a string representation of this score.
+    METHOD toString(): String
+        
+        PURPOSE: Provides human-readable score representation
+        
+        RETURNS: Score description formatted as "Score Value: [value]"
+        
+        WHY: Allows convenient string conversion for logging, debugging, and display
+        
+        BEHAVIOR:
+            COMMENT: Return score value in readable format
+            IF this.value is not null THEN
+                RETURN "Score Value: " + this.value
+            ELSE
+                RETURN "Score Value: null"
+            END IF
+    END METHOD
