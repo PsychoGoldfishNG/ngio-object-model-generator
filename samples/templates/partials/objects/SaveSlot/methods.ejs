@@ -17,7 +17,7 @@
     END METHOD
     
     COMMENT: Clears all data from this save slot.
-    METHOD clear(callback: Function, thisArg: Object)
+    METHOD clearData(callback: Function, thisArg: Object)
         
         PURPOSE: Deletes the data stored in this save slot
         
@@ -34,24 +34,6 @@
             END IF
     END METHOD
 
-    COMMENT: Loads the raw string data from this save slot.
-    METHOD loadRaw(callback: Function, thisArg: Object)
-        
-        PURPOSE: Retrieves the unprocessed data string from the cloud save slot
-        
-        PARAMETERS:
-            callback: Function to call with the raw data string
-            thisArg: Context to use when calling the callback
-        
-        WHY: Sometimes you want the raw data without JSON parsing
-        
-        BEHAVIOR:
-            COMMENT: Call CloudSave.loadSlot via the core wrapper
-            IF this.core is not null THEN
-                CALL this.core.callComponent("CloudSave.loadSlot", { id: this.id }, callback, thisArg)
-            END IF
-    END METHOD
-    
     COMMENT: Loads the raw string data from the URL stored on this save slot.
     METHOD loadDataRaw(callback: Function, thisArg: Object)
         
@@ -148,7 +130,7 @@
     END METHOD
     
     COMMENT: Saves raw string data to this save slot.
-    METHOD setDataRaw(data: String, callback: Function, thisArg: Object)
+    METHOD saveDataRaw(data: String, callback: Function, thisArg: Object)
         
         PURPOSE: Stores raw string data in this cloud save slot
         
@@ -166,37 +148,8 @@
             END IF
     END METHOD
 
-    COMMENT: Loads data from this save slot and parses it as JSON.
-    METHOD load(callback: Function, thisArg: Object)
-        
-        PURPOSE: Retrieves and decodes the JSON data from this save slot
-        
-        PARAMETERS:
-            callback: Function to call with the decoded object
-            thisArg: Context to use when calling the callback
-        
-        WHY: Most save data is stored as JSON, this combines loading and parsing
-        
-        BEHAVIOR:
-            COMMENT: Load the raw data first
-            CALL this.loadRaw WITH callback function
-                SET decoded TO null
-                
-                COMMENT: If data exists, decode it from JSON
-                IF data exists THEN
-                    SET decoded TO JSON_DECODE(data)
-                END IF
-                
-                COMMENT: Return the decoded data to the user's callback
-                IF callback is not null THEN
-                    CALL callback WITH context thisArg
-                        PASSING decoded
-                END IF
-            END callback function, WITH context this
-    END METHOD
-
     COMMENT: Encodes data as JSON and saves it to this save slot.
-    METHOD setData(data: Object, callback: Function, thisArg: Object)
+    METHOD saveData(data: Object, callback: Function, thisArg: Object)
         
         PURPOSE: Encodes an object as JSON and saves it to the cloud
         
@@ -209,7 +162,7 @@
         
         BEHAVIOR:
             CREATE jsonString AS JSON_ENCODE(data)
-            CALL this.setDataRaw WITH jsonString, callback, thisArg
+            CALL this.saveDataRaw WITH jsonString, callback, thisArg
     END METHOD
 
     COMMENT: Returns a string representation of this save slot.
