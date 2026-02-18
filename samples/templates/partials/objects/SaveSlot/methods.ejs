@@ -52,6 +52,91 @@
             END IF
     END METHOD
     
+    COMMENT: Loads the raw string data from the URL stored on this save slot.
+    METHOD loadDataRaw(callback: Function, thisArg: Object)
+        
+        PURPOSE: Retrieves unprocessed data from the cloud storage URL linked to this save slot
+        
+        PARAMETERS:
+            callback: (required) Function to call with the raw data string (or null if load fails)
+            thisArg: Context to use when calling the callback
+        
+        WHY: Some apps store large save files on external cloud URLs instead of inline
+        
+        IMPORTANT NOTE: The Newgrounds API v3 may not include the protocol (https://) in the URL.
+        If the URL is missing the protocol, prepend "https:" to prevent load errors.
+        Prepare for both cases - some URLs may already have the protocol.
+        
+        BEHAVIOR:
+            COMMENT: Check if URL exists and is not empty
+            IF this.url is null OR this.url is empty THEN
+                COMMENT: No URL stored - call callback with null
+                CALL callback WITH context thisArg
+                    PASSING null
+                RETURN
+            END IF
+            
+            COMMENT: Prepare the URL for loading
+            SET loadUrl TO this.url
+            
+            COMMENT: Add protocol if missing (URL may be missing "https:" prefix)
+            IF loadUrl does not contain "://" THEN
+                SET loadUrl TO "https:" + loadUrl
+            END IF
+            
+            COMMENT: Load the data from the URL (implementation-specific)
+            COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific URL loading patterns
+            TRY
+                CALL LOAD_URL_ASYNC(loadUrl, FUNCTION onLoadComplete(data: String)
+                    CALL callback WITH context thisArg
+                        PASSING data
+                END FUNCTION, FUNCTION onLoadError(error)
+                    COMMENT: Load failed - log the error and return null gracefully
+                    LOG_ERROR("Failed to load SaveSlot data from URL: " + error.message)
+                    CALL callback WITH context thisArg
+                        PASSING null
+                END FUNCTION)
+            CATCH loadError
+                COMMENT: URL loading setup failed
+                LOG_ERROR("Failed to load SaveSlot data from URL: " + loadError.message)
+                CALL callback WITH context thisArg
+                    PASSING null
+            END TRY
+    END METHOD
+    
+    COMMENT: Loads data from the URL stored on this save slot and parses it as JSON.
+    METHOD loadData(callback: Function, thisArg: Object)
+        
+        PURPOSE: Retrieves and decodes JSON data from the cloud storage URL linked to this save slot
+        
+        PARAMETERS:
+            callback: (required) Function to call with the decoded object (or null if load/parse fails)
+            thisArg: Context to use when calling the callback
+        
+        WHY: Combines URL loading and JSON parsing for external cloud-stored data
+        
+        BEHAVIOR:
+            COMMENT: Load the raw data from URL first
+            CALL this.loadDataRaw WITH callback function
+                SET decoded TO null
+                
+                COMMENT: If data was loaded successfully, decode it from JSON
+                IF data is not null THEN
+                    TRY
+                        SET decoded TO JSON_DECODE(data)
+                    CATCH parseError
+                        COMMENT: JSON parsing failed
+                        LOG_ERROR("Failed to decode SaveSlot data JSON: " + parseError.message)
+                        SET decoded TO null
+                    END TRY
+                END IF
+                
+                COMMENT: Return the decoded data to the user's callback
+                CALL callback WITH context thisArg
+                    PASSING decoded
+            END callback function, WITH context this
+    END METHOD
+    
     COMMENT: Saves raw string data to this save slot.
     METHOD setDataRaw(data: String, callback: Function, thisArg: Object)
         
