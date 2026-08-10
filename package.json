@@ -13,7 +13,9 @@
     "url": "git+https://github.com/PsychoGoldfishNG/ngio-object-model-generator.git"
   },
   "scripts": {
-    "test": "echo \"Do, or do not, there is no test!\" && exit 1"
+    "test": "echo \"Do, or do not, there is no test!\" && exit 1",
+    "sync-wiki": "node sync-wiki-codegen.js ../ngio-developer-guide-wiki",
+    "sync-wiki:check": "node sync-wiki-codegen.js ../ngio-developer-guide-wiki --check"
   },
   "keywords": [
     "newgrounds",

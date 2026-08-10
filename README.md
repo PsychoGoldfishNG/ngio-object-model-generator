@@ -297,6 +297,25 @@ npx ngio-scaffold <config-path> --force  # Overwrite existing files
 npx ngio-build <config-path>
 ```
 
+## Maintaining the developer guide wiki
+
+`samples/skeletons/` is the single source of truth for the pseudo-code skeletons.
+The [developer guide wiki](https://github.com/PsychoGoldfishNG/ngio-developer-guide/wiki)
+publishes a copy under `codegen/`, and that copy is an **artifact of this repo** —
+never edit it by hand.
+
+```bash
+npm run sync-wiki           # copy samples/skeletons/ -> ../ngio-developer-guide-wiki/codegen/
+npm run sync-wiki:check     # report drift without writing; non-zero exit if stale
+```
+
+Both assume the wiki is checked out beside this repo. Pass a different path to
+`node sync-wiki-codegen.js <path>` if it isn't.
+
+This exists because the two copies were previously maintained separately, and the
+wiki fell an entire rewrite behind without anyone noticing — by the time it was
+caught, not one of the eight skeleton files matched. Edit here, sync, commit both.
+
 ## Additional Resources
 
 - [Newgrounds.io API Documentation](https://www.newgrounds.io/help/)
