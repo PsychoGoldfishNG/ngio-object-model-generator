@@ -59,9 +59,85 @@ CLASS NGIO
         NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
     
     ====================
+    UI COMPONENT REGISTRATION SLOTS
+    ====================
+
+    COMMENT: These are OPTIONAL. Port them only if you are also porting the drop-in
+    COMMENT: UI components (a login connector, a medal-unlock popup, a scoreboard
+    COMMENT: browser, a save-slot manager). If your port is library-only, skip this
+    COMMENT: whole section - nothing in the API surface depends on it.
+    COMMENT:
+    COMMENT: The problem they solve: these components need to find each other, and
+    COMMENT: they have no shared parent to look under. A medal popup has to know
+    COMMENT: whether a connector is currently showing a login prompt; a scoreboard has
+    COMMENT: to know it is already open. NGIO is the one object all of them can
+    COMMENT: already see, so it holds the slots.
+
+    connectorComponent: UIElement | null = null
+        PURPOSE: The login/connector component, if one is present.
+
+    medalPopup: UIElement | null = null
+        PURPOSE: The medal unlock notification component, if one is present.
+
+    scoreboardComponent: UIElement | null = null
+        PURPOSE: The scoreboard browser component, if one is present.
+
+    saveManagerComponent: UIElement | null = null
+        PURPOSE: The cloud-save slot manager component, if one is present.
+
+    audio: object = { volume: 1, muted: false }
+        PURPOSE: Global volume control for sounds the components play.
+        WHY: Games need one place to duck or mute library sound effects along with
+        their own audio, without reaching inside each component.
+
+    COMMENT: THE REGISTRATION CONTRACT, which components must follow exactly:
+    COMMENT:
+    COMMENT:   On appear/initialize:  SET NGIO.<slot> TO this
+    COMMENT:   On disappear/dispose:  SET NGIO.<slot> TO null
+    COMMENT:
+    COMMENT: Both halves are required. A component that registers but never clears
+    COMMENT: leaves a dangling reference to something no longer on screen, and every
+    COMMENT: later `IF NGIO.medalPopup is not null` test believes a popup exists.
+    COMMENT: Whatever your platform's teardown hook is called, clear the slot there.
+
+    ====================
+    THE CALLBACK CONVENTION
+    ====================
+
+    COMMENT: EVERY method here that takes a callback also takes a trailing `thisArg`,
+    COMMENT: and invokes the callback with thisArg as its context:
+    COMMENT:
+    COMMENT:     FUNCTION loadMedals(callback: function|null = null, thisArg: any = null)
+    COMMENT:         ...
+    COMMENT:         CALL callback WITH context thisArg PASSING core.appState.medals, error
+    COMMENT:
+    COMMENT: "WITH context thisArg" means: invoke the callback such that its `this` /
+    COMMENT: `self` is thisArg. In ActionScript and JavaScript that is
+    COMMENT: callback.call(thisArg, ...). In a language with bound methods or
+    COMMENT: closures that capture their receiver, the parameter may be unnecessary -
+    COMMENT: accept it and ignore it rather than dropping it from the signature, so
+    COMMENT: call sites stay portable across ports.
+    COMMENT:
+    COMMENT: WHY THIS IS NOT OPTIONAL: it is the whole reason callers can pass a plain
+    COMMENT: method reference instead of building a closure at every call site. The
+    COMMENT: shipped Flash components are written against it throughout:
+    COMMENT:
+    COMMENT:     NGIO.checkSession(this.onCheckSession, this)
+    COMMENT:     NGIO.loadAppData(["medals", "scoreBoards"], this.onDataLoaded, this)
+    COMMENT:     medal.unlock(this.onMedalUnlocked, this)
+    COMMENT:
+    COMMENT: Drop thisArg and every one of those becomes a closure the caller has to
+    COMMENT: write by hand.
+    COMMENT:
+    COMMENT: thisArg goes on the METHOD, never in the callback's own parameter list.
+    COMMENT: Callback signatures are (value, error) - see the wrapper-callback rule in
+    COMMENT: BaseResult.pseudo - with `error` null on success. It is the ONLY reliable
+    COMMENT: success signal, because most of these hand back a value either way.
+
+    ====================
     PUBLIC STATIC METHODS
     ====================
-    
+
     COMMENT: ==================== CORE INITIALIZATION & SESSION MANAGEMENT ====================
     COMMENT: Essential methods for starting your app and managing user authentication.
     COMMENT: These are typically called first and used throughout your app's lifecycle.
@@ -263,11 +339,12 @@ CLASS NGIO
             COMMENT: library declares the field at all.
     END FUNCTION
 
-    FUNCTION checkSession(callback: function)
+    FUNCTION checkSession(callback: function, thisArg: any = null)
         
         PURPOSE: Check the current session status and report back via callback.
         PARAMETERS:
             callback: (required) Function to call when done. Receives SessionStatus object.
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             sessionStatus: (required) SessionStatus - The current session status information
         NOTE: This is asynchronous - the callback will be called later when the server responds.
@@ -295,7 +372,7 @@ CLASS NGIO
             IF hasUser() is true THEN
                 SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGGED_IN
                 SET sessionStatus.user TO core.appState.session.user
-                CALL callback(sessionStatus)
+                CALL callback WITH context thisArg PASSING sessionStatus
                 RETURN
             END IF
             
@@ -313,7 +390,7 @@ CLASS NGIO
                 ELSE
                     SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
                 END IF
-                CALL callback(sessionStatus)
+                CALL callback WITH context thisArg PASSING sessionStatus
                 RETURN
             END IF
             
@@ -343,7 +420,7 @@ CLASS NGIO
                         END IF
                         
                         COMMENT: Call the callback to report the result
-                        CALL callback(sessionStatus)
+                        CALL callback WITH context thisArg PASSING sessionStatus
                     END FUNCTION
                 )
                 RETURN
@@ -410,16 +487,17 @@ CLASS NGIO
                         END IF
                     END IF
                     
-                    CALL callback(sessionStatus)
+                    CALL callback WITH context thisArg PASSING sessionStatus
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION endSession(callback: function|null = null)
+    FUNCTION endSession(callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Log the user out and end the session.
         PARAMETERS:
             callback: (optional, default: null) Function to call when logout is complete.
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             None - callback receives no parameters
         
@@ -432,7 +510,7 @@ CLASS NGIO
             IF hasSession() is false THEN
                 COMMENT: No session to end, but call callback if provided to avoid hanging
                 IF callback is not null THEN
-                    CALL callback()
+                    CALL callback WITH context thisArg
                 END IF
                 RETURN
             END IF
@@ -448,7 +526,7 @@ CLASS NGIO
                 FUNCTION onComplete(result)
                     COMMENT: Ignore result and call user callback with no parameters
                     IF callback is not null THEN
-                        CALL callback()
+                        CALL callback WITH context thisArg
                     END IF
                 END FUNCTION
             )
@@ -462,12 +540,13 @@ CLASS NGIO
     COMMENT: Methods for checking app version status, host approval, and gateway information.
     COMMENT: Use these to ensure your app is running the correct version on an approved domain.
     
-    FUNCTION loadAppData(propertyNames: array, callback: function|null = null)
+    FUNCTION loadAppData(propertyNames: array, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load metadata about the app from the server (versions, medals, scoreboards, etc.)
         PARAMETERS:
             propertyNames: (required) Array of property names to load (e.g., ['medals', 'scoreboards'])
             callback: (optional, default: null) Function called when done - receives (error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             error: (optional, default: null) Error object if something went wrong, or null on success
         
@@ -481,7 +560,7 @@ CLASS NGIO
             IF callback is not null THEN
                 SET wrappedCallback TO FUNCTION(appState, error)
                     COMMENT: Call user's callback with just the error (or null if success)
-                    CALL callback(error)
+                    CALL callback WITH context thisArg PASSING error
                 END FUNCTION
             END IF
             
@@ -502,12 +581,13 @@ CLASS NGIO
             RETURN core.appState.gatewayVersion
     END FUNCTION
     
-    FUNCTION loadGatewayVersion(callback: function|null)
+    FUNCTION loadGatewayVersion(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load the current Newgrounds gateway version from the server.
         PARAMETERS:
             callback: Function called with (gatewayVersion, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -518,7 +598,7 @@ CLASS NGIO
                 FUNCTION onComplete(appState, error)
                     COMMENT: Extract the version and pass to callback
                     IF callback is not null THEN
-                        CALL callback(core.appState.gatewayVersion, error)
+                        CALL callback WITH context thisArg PASSING core.appState.gatewayVersion, error
                     END IF
                 END FUNCTION
             )
@@ -537,12 +617,13 @@ CLASS NGIO
             RETURN core.appState.currentVersion
     END FUNCTION
     
-    FUNCTION loadCurrentVersion(callback: function|null)
+    FUNCTION loadCurrentVersion(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load the current production version from server.
         PARAMETERS:
             callback: Function called with (currentVersion, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -551,7 +632,7 @@ CLASS NGIO
             CALL core.appState.loadData(['currentVersion'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.currentVersion, error)
+                        CALL callback WITH context thisArg PASSING core.appState.currentVersion, error
                     END IF
                 END FUNCTION
             )
@@ -568,12 +649,13 @@ CLASS NGIO
             RETURN core.appState.clientDeprecated
     END FUNCTION
     
-    FUNCTION loadClientDeprecated(callback: function|null)
+    FUNCTION loadClientDeprecated(callback: function|null, thisArg: any = null)
         
         PURPOSE: Check if the local build version differs from server's production version.
         PARAMETERS:
             callback: Function called with (clientDeprecated, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -582,7 +664,7 @@ CLASS NGIO
             CALL core.appState.loadData(['currentVersion'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.clientDeprecated, error)
+                        CALL callback WITH context thisArg PASSING core.appState.clientDeprecated, error
                     END IF
                 END FUNCTION
             )
@@ -599,12 +681,13 @@ CLASS NGIO
             RETURN core.appState.hostApproved
     END FUNCTION
     
-    FUNCTION loadHostApproved(callback: function|null)
+    FUNCTION loadHostApproved(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load host approval status from server.
         PARAMETERS:
             callback: Function called with (hostApproved, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -613,7 +696,7 @@ CLASS NGIO
             CALL core.appState.loadData(['hostApproved'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.hostApproved, error)
+                        CALL callback WITH context thisArg PASSING core.appState.hostApproved, error
                     END IF
                 END FUNCTION
             )
@@ -634,12 +717,13 @@ CLASS NGIO
             RETURN core.appState.medals
     END FUNCTION
     
-    FUNCTION loadMedals(callback: function|null)
+    FUNCTION loadMedals(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load list of medals from server.
         PARAMETERS:
             callback: Function called with (medals, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -648,7 +732,7 @@ CLASS NGIO
             CALL core.appState.loadData(['medals'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.medals, error)
+                        CALL callback WITH context thisArg PASSING core.appState.medals, error
                     END IF
                 END FUNCTION
             )
@@ -665,12 +749,13 @@ CLASS NGIO
             RETURN core.appState.medalScore
     END FUNCTION
     
-    FUNCTION loadMedalScore(callback: function|null)
+    FUNCTION loadMedalScore(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load user's total medal score from server.
         PARAMETERS:
             callback: Function called with (medalScore, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -679,7 +764,7 @@ CLASS NGIO
             CALL core.appState.loadData(['medalScore'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.medalScore, error)
+                        CALL callback WITH context thisArg PASSING core.appState.medalScore, error
                     END IF
                 END FUNCTION
             )
@@ -733,12 +818,13 @@ CLASS NGIO
             RETURN core.appState.scoreBoards
     END FUNCTION
     
-    FUNCTION loadScoreBoards(callback: function|null)
+    FUNCTION loadScoreBoards(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load list of scoreboards from server.
         PARAMETERS:
             callback: Function called with (scoreBoards, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -747,7 +833,7 @@ CLASS NGIO
             CALL core.appState.loadData(['scoreBoards'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.scoreBoards, error)
+                        CALL callback WITH context thisArg PASSING core.appState.scoreBoards, error
                     END IF
                 END FUNCTION
             )
@@ -797,12 +883,13 @@ CLASS NGIO
             RETURN core.appState.saveSlots
     END FUNCTION
     
-    FUNCTION loadSaveSlots(callback: function|null)
+    FUNCTION loadSaveSlots(callback: function|null, thisArg: any = null)
         
         PURPOSE: Load list of cloud save slots from server.
         PARAMETERS:
             callback: Function called with (saveSlots, error)
         
+            thisArg: (optional, default: null) Context to use when calling the callback
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
@@ -811,7 +898,7 @@ CLASS NGIO
             CALL core.appState.loadData(['saveSlots'], 
                 FUNCTION onComplete(appState, error)
                     IF callback is not null THEN
-                        CALL callback(core.appState.saveSlots, error)
+                        CALL callback WITH context thisArg PASSING core.appState.saveSlots, error
                     END IF
                 END FUNCTION
             )
@@ -860,7 +947,7 @@ CLASS NGIO
         PURPOSE: Get current server time as an ISO 8601 string.
         PARAMETERS:
             callback: (required) Function called with (dateTime, error)
-            thisArg: Context to use when calling the callback
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             dateTime: string|null - ISO 8601 server time, null on failure
             error: NewgroundsIO.models.objects.Error|null - null on success
@@ -874,7 +961,7 @@ CLASS NGIO
         PURPOSE: Get current server time as a UNIX timestamp (seconds).
         PARAMETERS:
             callback: (required) Function called with (timestamp, error)
-            thisArg: Context to use when calling the callback
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             timestamp: number|null - seconds since the epoch, null on failure
             error: NewgroundsIO.models.objects.Error|null - null on success
@@ -890,7 +977,7 @@ CLASS NGIO
         to parse. Skip this method only if your language has no native date type.
         PARAMETERS:
             callback: (required) Function called with (date, error)
-            thisArg: Context to use when calling the callback
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             date: Date|null - native date built from the server timestamp, null on failure
             error: NewgroundsIO.models.objects.Error|null - null on success
@@ -899,11 +986,12 @@ CLASS NGIO
             CALL executeGatewayDateTime(callback, thisArg, "date")
     END FUNCTION
 
-    FUNCTION sendPing(callback: function|null = null)
+    FUNCTION sendPing(callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Send a simple ping to test server connectivity.
         PARAMETERS:
             callback: (optional, default: null) Function called with (pong, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             pong: (required) A simple string 'pong' indicating successful connection
             error: (optional, default: null) Error object if something went wrong, or null on success
@@ -923,7 +1011,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -932,17 +1020,18 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback('pong', error)
+                    CALL callback WITH context thisArg PASSING 'pong', error
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION logEvent(eventName: string, callback: function|null = null)
+    FUNCTION logEvent(eventName: string, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Log a custom event to server for tracking.
         PARAMETERS:
             eventName: (required) Name of the event to log
             callback: (optional, default: null) Function called with (error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             error: (optional, default: null) Error object if something went wrong, or null on success
         
@@ -965,7 +1054,7 @@ CLASS NGIO
                         IF result is not null AND result.error is not null THEN
                             SET error TO result.error
                         END IF
-                        CALL callback(error)
+                        CALL callback WITH context thisArg PASSING error
                     END IF
                 END FUNCTION
             )
@@ -975,7 +1064,7 @@ CLASS NGIO
     COMMENT: Methods for opening and loading various URLs.
     COMMENT: NOTE: Some platforms have security restrictions on programmatic URL opening.
     
-    FUNCTION openOfficialUrl(target: string|null = null, logEvent: boolean = true)
+    FUNCTION openOfficialUrl(target: string = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open URL where latest official version can be found in a new window/tab.
         NOTE: Some platforms have security restrictions on programmatic URL opening.
@@ -1008,12 +1097,13 @@ CLASS NGIO
             CALL core.executeComponent(component, null)
     END FUNCTION
     
-    FUNCTION loadOfficialUrl(logEvent: boolean = true, callback: function|null = null)
+    FUNCTION loadOfficialUrl(logEvent: boolean = true, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load URL where latest official version can be found (asynchronously).
         PARAMETERS:
             logEvent: (optional, default: true) Log this action
             callback: (optional, default: null) Function called with (url, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             url: (required) String - The URL to open
             error: (optional, default: null) Error - Error object if something went wrong
@@ -1041,7 +1131,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -1050,12 +1140,12 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback(result.url, error)
+                    CALL callback WITH context thisArg PASSING result.url, error
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION openAuthorUrl(target: string|null = "_blank", logEvent: boolean = true)
+    FUNCTION openAuthorUrl(target: string = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open author's home page URL in a new browser window.
         NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
@@ -1088,12 +1178,13 @@ CLASS NGIO
             CALL core.executeComponent(component, null)
     END FUNCTION
     
-    FUNCTION loadAuthorUrl(logEvent: boolean = true, callback: function|null = null)
+    FUNCTION loadAuthorUrl(logEvent: boolean = true, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load author's home page URL (asynchronously).
         PARAMETERS:
             logEvent: (optional, default: true) Log this action
             callback: (optional, default: null) Function called with (url, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             url: (required) String - The URL to open
             error: (optional, default: null) Error - Error object if something went wrong
@@ -1121,7 +1212,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -1130,12 +1221,12 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback(result.url, error)
+                    CALL callback WITH context thisArg PASSING result.url, error
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION openMoreGames(target: string|null = "_blank", logEvent: boolean = true)
+    FUNCTION openMoreGames(target: string = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open author's "More Games" page URL in a new browser window.
         NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
@@ -1168,12 +1259,13 @@ CLASS NGIO
             CALL core.executeComponent(component, null)
     END FUNCTION
     
-    FUNCTION loadMoreGames(logEvent: boolean = true, callback: function|null = null)
+    FUNCTION loadMoreGames(logEvent: boolean = true, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load author's "More Games" page URL (asynchronously).
         PARAMETERS:
             logEvent: (optional, default: true) Log this action
             callback: (optional, default: null) Function called with (url, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             url: (required) String - The URL to open
             error: (optional, default: null) Error - Error object if something went wrong
@@ -1201,7 +1293,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -1210,12 +1302,12 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback(result.url, error)
+                    CALL callback WITH context thisArg PASSING result.url, error
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION openNewgrounds(target: string|null = null, logEvent: boolean = true)
+    FUNCTION openNewgrounds(target: string = "_blank", logEvent: boolean = true)
         
         PURPOSE: Open Newgrounds.com in a new window/tab.
         NOTE: Some platforms have security restrictions on programmatic URL opening.
@@ -1248,12 +1340,13 @@ CLASS NGIO
             CALL core.executeComponent(component, null)
     END FUNCTION
     
-    FUNCTION loadNewgrounds(logEvent: boolean = true, callback: function|null = null)
+    FUNCTION loadNewgrounds(logEvent: boolean = true, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load Newgrounds.com URL (asynchronously).
         PARAMETERS:
             logEvent: (optional, default: true) Log this action
             callback: (optional, default: null) Function called with (url, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             url: (required) String - The URL to open
             error: (optional, default: null) Error - Error object if something went wrong
@@ -1281,7 +1374,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -1290,12 +1383,12 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback(result.url, error)
+                    CALL callback WITH context thisArg PASSING result.url, error
                 END FUNCTION
             )
     END FUNCTION
     
-    FUNCTION openReferral(referralName: string, target: string|null = "_blank", logReferral: boolean = true)
+    FUNCTION openReferral(referralName: string, target: string = "_blank", logReferral: boolean = true)
         
         PURPOSE: Open a custom referral URL by name in a new browser window.
         NOTE: URL opening must be triggered by user interaction in many platforms (security requirement).
@@ -1330,13 +1423,14 @@ CLASS NGIO
             CALL core.executeComponent(component, null)
     END FUNCTION
     
-    FUNCTION loadReferral(referralName: string, logReferral: boolean = true, callback: function|null = null)
+    FUNCTION loadReferral(referralName: string, logReferral: boolean = true, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Load a custom referral URL by name (asynchronously).
         PARAMETERS:
             referralName: (required) Name of referral configured in Newgrounds project
             logReferral: (optional, default: true) Log this action
             callback: (optional, default: null) Function called with (url, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             url: (required) String - The URL to open
             error: (optional, default: null) Error - Error object if something went wrong
@@ -1365,7 +1459,7 @@ CLASS NGIO
                     IF callback is null THEN RETURN END IF
                     
                     IF result is null THEN
-                        CALL callback(null, null)
+                        CALL callback WITH context thisArg PASSING null, null
                         RETURN
                     END IF
                     
@@ -1374,7 +1468,7 @@ CLASS NGIO
                         SET error TO result.error
                     END IF
                     
-                    CALL callback(result.url, error)
+                    CALL callback WITH context thisArg PASSING result.url, error
                 END FUNCTION
             )
     END FUNCTION
@@ -1403,7 +1497,7 @@ CLASS NGIO
 
         PARAMETERS:
             callback: Function to call with (value, error)
-            thisArg: Context to use when calling the callback
+            thisArg: (optional, default: null) Context to use when calling the callback
             returnType: One of "datetime", "timestamp", "date"
 
         BEHAVIOR:

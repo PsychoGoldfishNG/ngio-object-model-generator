@@ -154,7 +154,7 @@ CLASS AppState
     PUBLIC METHODS
     ====================
     
-    FUNCTION loadData(propertyNames: array, callback: function|null = null)
+    FUNCTION loadData(propertyNames: array, callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Bulk-load app data from the server (medals, scoreboards, versions, etc.)
         WHY: Instead of loading each piece separately, batch them in one request for efficiency
@@ -162,6 +162,7 @@ CLASS AppState
         PARAMETERS:
             propertyNames: (required) Array of property names to load (must exist in dataProperties)
             callback: (optional, default: null) Function called when done - receives (appState, error)
+            thisArg: (optional, default: null) Context to use when calling the callback
         CALLBACK PARAMETERS:
             appState: (required) AppState - The updated AppState instance
             error: (optional, default: null) Error - Error object if something went wrong
@@ -258,7 +259,7 @@ CLASS AppState
                     
                     COMMENT: Call the developer's callback with results
                     IF callback is not null THEN
-                        CALL callback(this, localError)
+                        CALL callback WITH context thisArg PASSING this, localError
                     END IF
                 END FUNCTION
             )
