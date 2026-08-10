@@ -155,11 +155,7 @@ CLASS Core
             IF appState is not null THEN
                 IF appState.session is null THEN
                     COMMENT: Create a new session if needed
-                    IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                        SET appState.session TO ObjectFactory.CreateObject("Session", null, this)
-                    ELSE
-                        SET appState.session TO new Session()
-                    END IF
+                    SET appState.session TO ObjectFactory.CreateObject("Session", null, this)
                 END IF
                 SET appState.session.id TO value
             END IF
@@ -195,13 +191,7 @@ CLASS Core
             
             TRY
                 COMMENT: Create component using ObjectFactory if available
-                CREATE component AS null
-                IF ObjectFactory exists AND ObjectFactory.CreateComponent exists THEN
-                    SET component TO ObjectFactory.CreateComponent(componentName, methodName, null, this)
-                ELSE
-                    COMMENT: Create component using platform-specific instantiation or mapping
-                    SET component TO new (componentName + "." + methodName)()
-                END IF
+                CREATE component AS ObjectFactory.CreateComponent(componentName, methodName, null, this)
                 
                 IF component is not null AND componentParams is not null THEN
                     COMMENT: Set component properties from params
@@ -243,13 +233,7 @@ CLASS Core
             COMMENT: If it is, sending it would exceed the server's limits
             IF componentQueue.length < MAX_QUEUE_SIZE THEN
                 COMMENT: Wrap the component in an Execute object for transmission
-                CREATE executeModel AS null
-                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                    SET executeModel TO ObjectFactory.CreateObject("Execute", null, this)
-                ELSE
-                    SET executeModel TO new Execute()
-                    SET executeModel.core TO this
-                END IF
+                CREATE executeModel AS ObjectFactory.CreateObject("Execute", null, this)
                 
                 CALL executeModel.setComponent(componentModel)
                 
@@ -347,12 +331,7 @@ CLASS Core
             END IF
             
             COMMENT: Wrap the component for transmission
-            CREATE executeModel AS null
-            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                SET executeModel TO ObjectFactory.CreateObject("Execute", null, this)
-            ELSE
-                SET executeModel TO new Execute()
-            END IF
+            CREATE executeModel AS ObjectFactory.CreateObject("Execute", null, this)
             
             SET executeModel.core TO this
             CALL executeModel.setComponent(componentModel)
@@ -467,12 +446,7 @@ CLASS Core
         BEHAVIOR:
             COMMENT: ==================== PREPARE THE REQUEST ====================
             COMMENT: Create a proper Request object using ObjectFactory
-            CREATE requestModel AS null
-            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                SET requestModel TO ObjectFactory.CreateObject("Request", null, this)
-            ELSE
-                SET requestModel TO new Request()
-            END IF
+            CREATE requestModel AS ObjectFactory.CreateObject("Request", null, this)
             
             SET requestModel.core TO this
             SET requestModel.app_id TO this.appId
@@ -619,13 +593,7 @@ CLASS Core
             END IF
             
             COMMENT: Create a Response object to hold all the results
-            CREATE responseModel AS null
-            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                SET responseModel TO ObjectFactory.CreateObject("Response", null, this)
-            ELSE
-                SET responseModel TO new Response()
-                SET responseModel.core TO this
-            END IF
+            CREATE responseModel AS ObjectFactory.CreateObject("Response", null, this)
 
             COMMENT: Check HTTP status code
             COMMENT: 200-299 = success, anything else = error

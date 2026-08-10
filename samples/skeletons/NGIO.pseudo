@@ -46,9 +46,11 @@ CLASS NGIO
     
     lastKeepAliveTime: Timestamp | null = null
         PURPOSE: Tracks the last time we sent a keep-alive ping to the server.
-        WHY: Used for manual throttling when automatic timers aren't available.
-        See KEEP_ALIVE_TIME.
-    
+        WHY: Used for manual throttling ONLY on platforms with no repeating-timer
+        facility, where keepAlive() has to be driven by hand. See the note at the
+        bottom of keepAlive(). Where real timers exist the timer supplies the
+        spacing and this field is unused - neither reference library declares it.
+
     keepAliveTimer: TimerHandle | null = null
         PURPOSE: Handle for the automatic keep-alive timer mechanism.
         WHY: Sessions expire after inactivity. This automatically sends keep-alive pings
@@ -87,15 +89,9 @@ CLASS NGIO
             
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET logViewComponent TO CALL ObjectFactory.CreateComponent("App", "logView", null, core)
-                IF logViewComponent is null THEN
-                    THROW error "Could not create App.logView component"
-                END IF
-            ELSE
-                CREATE logViewComponent AS new NewgroundsIO.models.components.App.logView()
-                SET logViewComponent.core TO core
+            CREATE logViewComponent AS CALL ObjectFactory.CreateComponent("App", "logView", null, core)
+            IF logViewComponent is null THEN
+                THROW error "Could not create App.logView component"
             END IF
             SET logViewComponent.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             CALL core.executeComponent(logViewComponent, null)
@@ -222,37 +218,51 @@ CLASS NGIO
     END FUNCTION
     
     FUNCTION keepAlive()
-        
+
         PURPOSE: Pings the server to keep the current authenticated session alive.
         WHY: Sessions expire after a period of inactivity. This ping resets the expiration timer.
-        NOTE: Usually called automatically by a timer. Manual call is for advanced use.
-        
+        NOTE: Normally driven by the keep-alive timer that init() starts. Calling it by
+        hand is valid but rarely needed.
+
         BEHAVIOR:
             IF core is null THEN
                 THROW error "Core not initialized"
             END IF
-            
-            COMMENT: Only keep alive authenticated sessions (sessions with a logged-in user)
-            COMMENT: Guest sessions don't need to be kept alive
+
+            COMMENT: Only keep alive authenticated sessions (sessions with a logged-in user).
+            COMMENT: Guest sessions don't expire, so there is nothing to refresh.
             IF hasUser() is false THEN
                 RETURN
             END IF
-            
-            COMMENT: If automatic timer unavailable, manually throttle requests to avoid server overload
-            IF automatic_timer_unavailable THEN
-                COMMENT: Check if enough time has passed since the last keep-alive
-                IF lastKeepAliveTime is not null AND 
-                   (GET_CURRENT_TIME() - lastKeepAliveTime) < KEEP_ALIVE_TIME THEN
-                    RETURN
-                END IF
-                COMMENT: Update the timestamp since we're about to make the request
-                SET lastKeepAliveTime TO GET_CURRENT_TIME()
+
+            COMMENT: Send a ping to the server to keep the session alive.
+            COMMENT: This builds the component directly rather than going through
+            COMMENT: sendPing(), because sendPing() is the PUBLIC ping - it takes a
+            COMMENT: callback and reports reachability to the caller. Keep-alive is
+            COMMENT: fire-and-forget and wants no callback plumbing.
+            CREATE pingComponent AS CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
+            IF pingComponent is null THEN
+                THROW error "Could not create Gateway.ping component"
             END IF
-            
-            COMMENT: Send a ping to the server to keep the session alive
-            CALL sendPing()
+            CALL core.executeComponent(pingComponent, null)
+
+        PLATFORMS WITHOUT TIMERS:
+            COMMENT: If your platform has no repeating-timer facility, startKeepAliveTimer()
+            COMMENT: cannot do its job and you must call keepAlive() yourself - typically
+            COMMENT: from whatever per-frame or per-update hook you do have. In that case
+            COMMENT: throttle it, or you will ping the server every frame:
+            COMMENT:
+            COMMENT:     IF lastKeepAliveTime is not null AND
+            COMMENT:        (GET_CURRENT_TIME() - lastKeepAliveTime) < KEEP_ALIVE_TIME THEN
+            COMMENT:         RETURN
+            COMMENT:     END IF
+            COMMENT:     SET lastKeepAliveTime TO GET_CURRENT_TIME()
+            COMMENT:
+            COMMENT: This is the ONLY use for lastKeepAliveTime. On a platform with real
+            COMMENT: timers the timer already provides the spacing, and neither reference
+            COMMENT: library declares the field at all.
     END FUNCTION
-    
+
     FUNCTION checkSession(callback: function)
         
         PURPOSE: Check the current session status and report back via callback.
@@ -312,15 +322,9 @@ CLASS NGIO
             
             COMMENT: If we don't have any session yet, we need to create one on the server
             IF hasSession() is false THEN
-                COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                IF ObjectFactory exists THEN
-                    SET startSessionComponent TO CALL ObjectFactory.CreateComponent("App", "startSession", null, core)
-                    IF startSessionComponent is null THEN
-                        THROW error "Could not create App.startSession component"
-                    END IF
-                ELSE
-                    CREATE startSessionComponent AS new NewgroundsIO.models.components.App.startSession()
-                    SET startSessionComponent.core TO core
+                CREATE startSessionComponent AS CALL ObjectFactory.CreateComponent("App", "startSession", null, core)
+                IF startSessionComponent is null THEN
+                    THROW error "Could not create App.startSession component"
                 END IF
                 CALL core.executeComponent(startSessionComponent, 
                     FUNCTION onComplete(result)
@@ -346,15 +350,9 @@ CLASS NGIO
             END IF
             
             COMMENT: We have a session but no user. Check with the server if that's changed.
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET checkSessionComponent TO CALL ObjectFactory.CreateComponent("App", "checkSession", null, core)
-                IF checkSessionComponent is null THEN
-                    THROW error "Could not create App.checkSession component"
-                END IF
-            ELSE
-                CREATE checkSessionComponent AS new NewgroundsIO.models.components.App.checkSession()
-                SET checkSessionComponent.core TO core
+            CREATE checkSessionComponent AS CALL ObjectFactory.CreateComponent("App", "checkSession", null, core)
+            IF checkSessionComponent is null THEN
+                THROW error "Could not create App.checkSession component"
             END IF
             CALL core.executeComponent(checkSessionComponent, 
                 FUNCTION onComplete(response)
@@ -417,37 +415,6 @@ CLASS NGIO
             )
     END FUNCTION
     
-    FUNCTION keepAlive()
-        
-        PURPOSE: Pings the server to keep the current authenticated session alive.
-        NOTE: Sessions expire after a period of inactivity. This ping resets the expiration timer.
-        Usually called automatically by a timer. Only keeps alive authenticated sessions.
-        
-        BEHAVIOR:
-            IF core is null THEN
-                THROW error "Core not initialized"
-            END IF
-            
-            COMMENT: Only keep alive authenticated sessions (sessions with a logged-in user)
-            COMMENT: Guest sessions don't need to be kept alive
-            IF hasUser() is false THEN
-                RETURN
-            END IF
-            
-            COMMENT: Send a ping to the server to keep the session alive
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET pingComponent TO CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
-                IF pingComponent is null THEN
-                    THROW error "Could not create Gateway.ping component"
-                END IF
-            ELSE
-                CREATE pingComponent AS new NewgroundsIO.models.components.Gateway.ping()
-                SET pingComponent.core TO core
-            END IF
-            CALL core.executeComponent(pingComponent, null)
-    END FUNCTION
-    
     FUNCTION endSession(callback: function|null = null)
         
         PURPOSE: Log the user out and end the session.
@@ -470,10 +437,14 @@ CLASS NGIO
                 RETURN
             END IF
             
-            COMMENT: Create the end session component and send it to the server
-            CREATE endSessionComponent AS new NewgroundsIO.models.components.App.endSession()
-            SET endSessionComponent.core TO core
-            CALL core.executeComponent(endSessionComponent, 
+            COMMENT: Create the end session component and send it to the server.
+            COMMENT: Build it through the factory, like every other component call here -
+            COMMENT: the factory sets core for you and keeps name resolution in one place.
+            CREATE endSessionComponent AS CALL ObjectFactory.CreateComponent("App", "endSession", null, core)
+            IF endSessionComponent is null THEN
+                THROW error "Could not create App.endSession component"
+            END IF
+            CALL core.executeComponent(endSessionComponent,
                 FUNCTION onComplete(result)
                     COMMENT: Ignore result and call user callback with no parameters
                     IF callback is not null THEN
@@ -879,75 +850,55 @@ CLASS NGIO
     COMMENT: Methods for server time synchronization, connectivity testing, and custom event tracking.
     COMMENT: These are utility functions for advanced features.
     
-    FUNCTION loadGatewayDateTime(callback: function)
-        
-        PURPOSE: Get current server time in ISO 8601 format.
+    COMMENT: The next three methods all call the SAME component, Gateway.getDatetime,
+    COMMENT: and differ only in how they present its result. Implement them as three
+    COMMENT: thin wrappers over one shared private routine (see
+    COMMENT: executeGatewayDateTime below) rather than three copies of the same call.
+
+    FUNCTION loadGatewayDateTime(callback: function, thisArg: any = null)
+
+        PURPOSE: Get current server time as an ISO 8601 string.
         PARAMETERS:
-            callback: Function called with (dateTime, error)
-        
+            callback: (required) Function called with (dateTime, error)
+            thisArg: Context to use when calling the callback
+        CALLBACK PARAMETERS:
+            dateTime: string|null - ISO 8601 server time, null on failure
+            error: NewgroundsIO.models.objects.Error|null - null on success
+
         BEHAVIOR:
-            IF core is null THEN
-                THROW error "Core not initialized"
-            END IF
-            
-            CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
-            
-            CALL core.executeComponent(component, 
-                FUNCTION onComplete(result)
-                    IF result is null THEN
-                        CALL callback(null, null)
-                        RETURN
-                    END IF
-                    
-                    CREATE error AS null
-                    IF result.error is not null THEN
-                        SET error TO result.error
-                    END IF
-                    
-                    CALL callback(result.datetime, error)
-                END FUNCTION
-            )
+            CALL executeGatewayDateTime(callback, thisArg, "datetime")
     END FUNCTION
-    
-    FUNCTION loadGatewayTimestamp(callback: function)
-        
-        PURPOSE: Get current server time as UNIX timestamp.
+
+    FUNCTION loadGatewayTimestamp(callback: function, thisArg: any = null)
+
+        PURPOSE: Get current server time as a UNIX timestamp (seconds).
         PARAMETERS:
-            callback: Function called with (timestamp, error)
-        
+            callback: (required) Function called with (timestamp, error)
+            thisArg: Context to use when calling the callback
+        CALLBACK PARAMETERS:
+            timestamp: number|null - seconds since the epoch, null on failure
+            error: NewgroundsIO.models.objects.Error|null - null on success
+
         BEHAVIOR:
-            IF core is null THEN
-                THROW error "Core not initialized"
-            END IF
-            
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Gateway", "getDateTime", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Gateway.getDateTime component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Gateway.getDateTime()
-                SET component.core TO core
-            END IF
-            
-            CALL core.executeComponent(component, 
-                FUNCTION onComplete(result)
-                    IF result is null THEN
-                        CALL callback(null, null)
-                        RETURN
-                    END IF
-                    
-                    CREATE error AS null
-                    IF result.error is not null THEN
-                        SET error TO result.error
-                    END IF
-                    
-                    CALL callback(result.timestamp, error)
-                END FUNCTION
-            )
+            CALL executeGatewayDateTime(callback, thisArg, "timestamp")
     END FUNCTION
-    
+
+    FUNCTION loadGatewayDate(callback: function, thisArg: any = null)
+
+        PURPOSE: Get current server time as your platform's native date type.
+        WHY: Most callers want a date object they can format or compare, not a string
+        to parse. Skip this method only if your language has no native date type.
+        PARAMETERS:
+            callback: (required) Function called with (date, error)
+            thisArg: Context to use when calling the callback
+        CALLBACK PARAMETERS:
+            date: Date|null - native date built from the server timestamp, null on failure
+            error: NewgroundsIO.models.objects.Error|null - null on success
+
+        BEHAVIOR:
+            CALL executeGatewayDateTime(callback, thisArg, "date")
+    END FUNCTION
+
     FUNCTION sendPing(callback: function|null = null)
         
         PURPOSE: Send a simple ping to test server connectivity.
@@ -962,15 +913,9 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Gateway.ping component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Gateway.ping()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Gateway", "ping", null, core)
+            IF component is null THEN
+                THROW error "Could not create Gateway.ping component"
             END IF
             
             CALL core.executeComponent(component, 
@@ -1006,15 +951,9 @@ CLASS NGIO
                 THROW error "Core not initialized"
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Event", "logEvent", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Event.logEvent component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Event.logEvent()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Event", "logEvent", null, core)
+            IF component is null THEN
+                THROW error "Could not create Event.logEvent component"
             END IF
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
             SET component.event_name TO eventName
@@ -1056,15 +995,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadOfficialUrl component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadOfficialUrl component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1094,15 +1027,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadOfficialUrl component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadOfficialUrl()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadOfficialUrl", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadOfficialUrl component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1148,15 +1075,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadAuthorUrl component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadAuthorUrl component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1186,15 +1107,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadAuthorUrl component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadAuthorUrl()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadAuthorUrl", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadAuthorUrl component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1240,15 +1155,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadMoreGames component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadMoreGames component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1278,15 +1187,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadMoreGames component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadMoreGames()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadMoreGames", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadMoreGames component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1332,15 +1235,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadNewgrounds component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadNewgrounds component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1370,15 +1267,9 @@ CLASS NGIO
                 SET logEvent TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadNewgrounds component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadNewgrounds()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadNewgrounds", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadNewgrounds component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1425,15 +1316,9 @@ CLASS NGIO
                 SET logReferral TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadReferral component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadReferral component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1465,15 +1350,9 @@ CLASS NGIO
                 SET logReferral TO true
             END IF
             
-            COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-            IF ObjectFactory exists THEN
-                SET component TO CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
-                IF component is null THEN
-                    THROW error "Could not create Loader.loadReferral component"
-                END IF
-            ELSE
-                CREATE component AS new NewgroundsIO.models.components.Loader.loadReferral()
-                SET component.core TO core
+            CREATE component AS CALL ObjectFactory.CreateComponent("Loader", "loadReferral", null, core)
+            IF component is null THEN
+                THROW error "Could not create Loader.loadReferral component"
             END IF
             
             SET component.host TO (core.appState.host IF NOT NULL, OTHERWISE "N/A")
@@ -1515,6 +1394,73 @@ CLASS NGIO
             IF platform_supports_timers THEN
                 SET keepAliveTimer TO START_REPEATING_TIMER(keepAlive, KEEP_ALIVE_TIME)
             END IF
+    END FUNCTION
+
+    FUNCTION executeGatewayDateTime(callback: function, thisArg: any, returnType: string)
+
+        PURPOSE: Shared body for loadGatewayDateTime / loadGatewayTimestamp / loadGatewayDate.
+        WHY: All three send the same component and differ only in what they hand back.
+
+        PARAMETERS:
+            callback: Function to call with (value, error)
+            thisArg: Context to use when calling the callback
+            returnType: One of "datetime", "timestamp", "date"
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+
+            COMMENT: CASING: the component class is Gateway.getDatetime - lowercase 't'.
+            COMMENT: The factory lowercases before matching, so the string passed here is
+            COMMENT: forgiving, but a direct `new ...Gateway.getDateTime()` is not: that
+            COMMENT: class does not exist and will not compile. Always go through the
+            COMMENT: factory, and spell the class name getDatetime if you must name it.
+            CREATE component AS CALL ObjectFactory.CreateComponent("Gateway", "getDatetime", null, core)
+            IF component is null THEN
+                THROW error "Could not create Gateway.getDatetime component"
+            END IF
+
+            CALL core.executeComponent(component,
+                FUNCTION onComplete(response)
+                    IF response is null THEN
+                        IF callback is not null THEN
+                            CALL callback WITH context thisArg PASSING null, null
+                        END IF
+                        RETURN
+                    END IF
+
+                    COMMENT: Resolve the error from BOTH levels. The gateway returns a
+                    COMMENT: successful RESPONSE carrying a component result that failed,
+                    COMMENT: so the outer flag alone is not a success signal.
+                    CREATE error AS response.error
+
+                    CREATE result AS null
+                    IF response.success equals true THEN
+                        SET result TO response.getResult()
+                    END IF
+
+                    IF error is null AND result is not null AND result.error is not null THEN
+                        SET error TO result.error
+                    END IF
+
+                    IF callback is null THEN
+                        RETURN
+                    END IF
+
+                    IF error is not null OR result is null THEN
+                        CALL callback WITH context thisArg PASSING null, error
+                    ELSE IF returnType equals "datetime" THEN
+                        CALL callback WITH context thisArg PASSING result.datetime, error
+                    ELSE IF returnType equals "date" THEN
+                        COMMENT: Server timestamp is in SECONDS. Scale it to whatever unit
+                        COMMENT: your platform's date type expects - milliseconds in most.
+                        CALL callback WITH context thisArg PASSING NEW_DATE_FROM_SECONDS(result.timestamp), error
+                    ELSE
+                        CALL callback WITH context thisArg PASSING result.timestamp, error
+                    END IF
+                END FUNCTION
+            )
     END FUNCTION
 
 END CLASS

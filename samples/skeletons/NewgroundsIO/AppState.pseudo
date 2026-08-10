@@ -197,79 +197,37 @@ CLASS AppState
                 SWITCH propertyName
                     CASE 'gatewayVersion':
                         COMMENT: Component to get gateway version info
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("Gateway", "getVersion", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.Gateway.getVersion()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("Gateway", "getVersion", null, this.core)
                     
                     CASE 'currentVersion':
                         COMMENT: Component to check for app updates
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("App", "getCurrentVersion", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.App.getCurrentVersion()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("App", "getCurrentVersion", null, this.core)
                         IF component is not null THEN
                             SET component.version TO core.buildVersion
                         END IF
                     
                     CASE 'hostApproved':
                         COMMENT: Component to check if current domain is approved
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("App", "getHostLicense", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.App.getHostLicense()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("App", "getHostLicense", null, this.core)
                         IF component is not null THEN
                             SET component.host TO this.host
                         END IF
                     
                     CASE 'saveSlots':
                         COMMENT: Component to load cloud save slots
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("CloudSave", "loadSlots", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.CloudSave.loadSlots()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("CloudSave", "loadSlots", null, this.core)
                     
                     CASE 'medals':
                         COMMENT: Component to load medal list
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("Medal", "getList", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.Medal.getList()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("Medal", "getList", null, this.core)
                     
                     CASE 'medalScore':
                         COMMENT: Component to get user's total medal score
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("Medal", "getMedalScore", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.Medal.getMedalScore()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("Medal", "getMedalScore", null, this.core)
                     
                     CASE 'scoreBoards':
                         COMMENT: Component to load scoreboard data
-                        COMMENT: Use ObjectFactory if available (preferred), otherwise direct model creation
-                        IF ObjectFactory exists THEN
-                            SET component TO CALL ObjectFactory.CreateComponent("ScoreBoard", "getBoards", null, this.core)
-                        ELSE
-                            CREATE component AS new NewgroundsIO.models.components.ScoreBoard.getBoards()
-                            SET component.core TO this.core
-                        END IF
+                        CREATE component AS CALL ObjectFactory.CreateComponent("ScoreBoard", "getBoards", null, this.core)
                 END SWITCH
                 
                 COMMENT: Queue the component for execution

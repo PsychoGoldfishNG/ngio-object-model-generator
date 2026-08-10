@@ -158,8 +158,11 @@ CLASS Errors
             - appendMessage=true: "Your session has expired. Attempt was made at 3:45 PM"
         
         BEHAVIOR:
-            COMMENT: Create a new Error model
-            CREATE errorModel AS new NewgroundsIO.models.objects.Error()
+            COMMENT: Create a new Error model. Look it up by its SCHEMA name, "Error" -
+            COMMENT: the emitted class is usually renamed to avoid colliding with the
+            COMMENT: language's own Error type (NgioError in the ActionScript ports), and
+            COMMENT: the factory is what owns that mapping.
+            CREATE errorModel AS ObjectFactory.CreateObject("Error")
             
             COMMENT: Set the error code
             SET errorModel.code TO errorCode

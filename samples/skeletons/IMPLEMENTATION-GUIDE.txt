@@ -561,98 +561,57 @@ IMPLEMENTATION PATTERN:
 This ensures type safety while supporting the API's flexibility.
 
 
-OBJECT CREATION PATTERNS
+OBJECT CREATION
 -------------------------
-The skeleton files contain conditional logic for object creation. You must choose
-ONE pattern based on whether your implementation will include an ObjectFactory.
+Every model instance in these skeletons is built through ObjectFactory. There is
+no second pattern to choose between, and the skeletons no longer contain the
+"IF ObjectFactory exists ... ELSE new Medal() ... END IF" branches that earlier
+revisions used.
 
-IMPORTANT FOR AI/LLM TRANSLATORS: 
-If you are using AI assistance to translate these skeletons, ALWAYS prompt the
-user to choose which pattern they prefer before beginning translation. The 
-ObjectFactory may not exist when translating skeletons, so user choice is critical.
+WHY THERE IS NO CHOICE HERE
 
-PATTERN 1: OBJECTFACTORY PATTERN (Strongly Recommended)
+The factory is not an optional convenience layer - it is generated output. If you
+ran the model generator, you have one. It is emitted from the same schema as the
+models themselves, so it always covers exactly the types you built.
 
-When to use:
-- Your language has strong typing
-- You want centralized object creation
-- You plan to use the model generator to create an ObjectFactory
-- You need runtime type resolution by name
+More to the point, "direct creation" is not actually available at the places that
+matter. Look at what castToExpectedType has to work with:
 
-Implementation:
-- Translate all "IF ObjectFactory exists" branches
-- Remove all "ELSE" branches for direct creation
-- Rely on ObjectFactory.CreateObject() and ObjectFactory.CreateComponent()
-- ObjectFactory handles type mapping and instantiation
+    CREATE itemType AS castType.substring(9)   // e.g. "Medal", from "array-of-Medal"
+    CREATE element AS ObjectFactory.CreateObject(itemType, value, this.core)
 
-Example pseudo-code translation:
-```
-// Skeleton shows:
-IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-    SET medal TO ObjectFactory.CreateObject("Medal", medalData, this.core)
-ELSE
-    SET medal TO new Medal()
-    CALL medal.importFromObject(medalData)
-END IF
+itemType is a STRING, discovered at runtime. Turning it into an instance requires
+either reflection or a name-to-class lookup table - and a name-to-class lookup
+table maintained by hand is an ObjectFactory, just one that drifts out of sync
+with the schema instead of being regenerated with it. The same is true of
+Core.callComponent(), which receives "Medal.unlock" as a string.
 
-// Pattern 1 translation (ObjectFactory):
-medal = ObjectFactory.CreateObject("Medal", medalData, this.core);
-```
+WHAT THE FACTORY GIVES YOU
 
-PATTERN 2: DIRECT CREATION PATTERN (Okay for some dynamically-typed languages)
+    ObjectFactory.CreateObject(name, data, core)     - "Medal", "Session", "Error"
+    ObjectFactory.CreateComponent(component, method, data, core)
+    ObjectFactory.CreateResult(component, method, data, core)
 
-When to use:
-- Your language has dynamic typing or weak typing
-- You prefer simple, direct object creation
-- You want to avoid the complexity of a factory system
-- Smaller libraries or simpler implementations
+Each one constructs with NO arguments, assigns core, then imports the data - in
+that order. The order is load-bearing: importFromObject casts nested values by
+calling back into the factory, which needs core already set to build them.
 
-Implementation:
-- Translate all "ELSE" branches for direct creation
-- Remove all "IF ObjectFactory exists" branches  
-- Use direct constructor calls: new Medal(), new User(), etc.
-- Handle object initialization manually
+Two rules that are easy to get wrong:
 
-Example pseudo-code translation:
-```
-// Skeleton shows:
-IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-    SET medal TO ObjectFactory.CreateObject("Medal", medalData, this.core)
-ELSE
-    SET medal TO new Medal()
-    CALL medal.importFromObject(medalData)
-END IF
+1. Look types up by their SCHEMA name, not the emitted class name. Where a schema
+   name collides with a language built-in the generator renames the class, but the
+   lookup key does not change. Schema "Error" emits class NgioError in the
+   ActionScript ports and is still requested as CreateObject("Error").
 
-// Pattern 2 translation (Direct Creation):
-medal = new Medal();
-medal.importFromObject(medalData);
-```
+2. Match case-insensitively. Callers pass "getDateTime" for a component whose
+   class is getDatetime, and both must resolve.
 
-CHOOSING YOUR PATTERN:
+IF YOU ARE TRANSLATING WITHOUT A GENERATED FACTORY
 
-Ask these questions:
-1. Does your language have strong typing? (ObjectFactory recommended)
-2. Do you want centralized object creation? (ObjectFactory recommended)
-3. Are you building a large, complex library? (ObjectFactory recommended)
-4. Do you prefer simplicity over features? (Direct Creation recommended)
-5. Are you using the model generator? (ObjectFactory available)
-
-CRITICAL: Be consistent throughout your entire implementation. Don't mix patterns.
-
-AI/LLM PROMPT TEMPLATE:
-"Before I translate the Newgrounds.io skeletons, I need to choose an object 
-creation pattern. The skeletons support two approaches:
-
-1. ObjectFactory Pattern - Uses centralized factory for all object creation
-2. Direct Creation Pattern - Uses direct constructor calls (new Object())
-
-Which pattern would you prefer for this implementation? Consider:
-- Language typing system (strong vs dynamic)
-- Library complexity preferences  
-- Whether you'll use the model generator
-
-Please specify your preference so I can translate the conditional logic correctly."
-
+Write the factory first, by hand, as three switch statements over the schema
+names. Do not scatter direct constructor calls through the models instead - that
+is the same work spread across fifty files, where nothing tells you when you have
+missed a type.
 
 ================================================================================
 DEBUGGING AND TESTING

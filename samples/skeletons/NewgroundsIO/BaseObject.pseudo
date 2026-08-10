@@ -178,14 +178,13 @@ CLASS BaseObject
             COMMENT: ==================== CHECK FOR ERROR PROPERTY ====================
             COMMENT: If the import object contains an error property, create an Error model
             IF "error" in importObject AND importObject.error is not null THEN
-                COMMENT: Use ObjectFactory if available, otherwise create directly
-                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                    SET this.error TO ObjectFactory.CreateObject("Error", importObject.error, this.core)
-                ELSE
-                    COMMENT: Create Error object directly
-                    CREATE this.error AS new Error()
-                    CALL this.error.importFromObject(importObject.error)
-                END IF
+                COMMENT: Look the class up by its SCHEMA name, "Error", even though the
+                COMMENT: emitted class is probably called something else - most languages
+                COMMENT: already have an Error type, so the generator renames this one
+                COMMENT: (NgioError in the ActionScript ports). The factory owns that
+                COMMENT: mapping; naming the class directly here would hardcode the
+                COMMENT: wrong side of it.
+                SET this.error TO ObjectFactory.CreateObject("Error", importObject.error, this.core)
             END IF
             
     END FUNCTION
@@ -254,31 +253,20 @@ CLASS BaseObject
                     COMMENT: Value is already an array - convert each element
                     FOR EACH element IN value
                         IF element is an object AND element is NOT an array THEN
-                            COMMENT: Convert plain object to typed object using factory
-                            IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                                CREATE convertedElement AS ObjectFactory.CreateObject(itemType, element, this.core)
-                                APPEND convertedElement TO resultArray
-                            ELSE
-                                COMMENT: Create object directly without factory
-                                CREATE convertedElement AS new (itemType)()
-                                CALL convertedElement.importFromObject(element)
-                                APPEND convertedElement TO resultArray
-                            END IF
+                            COMMENT: Convert plain object to typed object using the factory.
+                            COMMENT: itemType is a NAME, not a class - the factory is what
+                            COMMENT: turns one into the other. Passing this.core is what
+                            COMMENT: lets the nested object build ITS nested objects.
+                            CREATE convertedElement AS ObjectFactory.CreateObject(itemType, element, this.core)
+                            APPEND convertedElement TO resultArray
                         ELSE
                             APPEND element TO resultArray
                         END IF
                     END FOR
                 ELSE IF value is an object THEN
                     COMMENT: Value is a single object - convert and wrap in array
-                    IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                        CREATE singleElement AS ObjectFactory.CreateObject(itemType, value, this.core)
-                        RETURN [singleElement]
-                    ELSE
-                        COMMENT: Create object directly without factory
-                        CREATE singleElement AS new (itemType)()
-                        CALL singleElement.importFromObject(value)
-                        RETURN [singleElement]
-                    END IF
+                    CREATE singleElement AS ObjectFactory.CreateObject(itemType, value, this.core)
+                    RETURN [singleElement]
                 ELSE
                     COMMENT: Value is neither array nor object - return empty array
                     RETURN []
@@ -292,14 +280,7 @@ CLASS BaseObject
             COMMENT: value should be a plain object that we'll convert to castType
             
             IF value is an object AND value is NOT an array AND castType is NOT equals to "Array" THEN
-                IF ObjectFactory exists AND ObjectFactory.CreateObject exists THEN
-                    RETURN ObjectFactory.CreateObject(castType, value, this.core)
-                ELSE
-                    COMMENT: Create object directly without factory
-                    CREATE instance AS new (castType)()
-                    CALL instance.importFromObject(value)
-                    RETURN instance
-                END IF
+                RETURN ObjectFactory.CreateObject(castType, value, this.core)
             END IF
             
             COMMENT: Value isn't the right format - return as-is
