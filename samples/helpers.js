@@ -206,6 +206,68 @@ module.exports = {
     },
 
     /**
+     * Gets the castTypes entry for a property, or null if it needs no cast.
+     *
+     * castTypes is what lets BaseObject.importFromObject() turn raw JSON into typed
+     * models. It is fully derivable from the schema, so it should never be hand-maintained:
+     *
+     *     property has `object: "Medal"`                 -> "Medal"
+     *     property has `object: "Medal"` and `array`     -> "array-of-Medal"
+     *     property has `array` with no object type       -> "Array"
+     *     anything else                                  -> null (no cast needed)
+     *
+     * NOTE: the value here is the **schema** name ("Error"), not the mapped class name
+     * ("NgioError"). The object factory keys on schema names, so casting must too --
+     * see getClassName() for where the two differ and why.
+     *
+     * NOTE: "array-of-X" is a string convention, not a real generic type. BaseObject
+     * looks for the "array-of-" prefix and builds each element via the factory.
+     *
+     * Primitive casts ("string" / "number" / "boolean") are also understood by BaseObject,
+     * but the reference libraries do not emit them: values arrive from JSON already
+     * correctly typed. Add them here if your language needs explicit coercion.
+     *
+     * @param {object} property The property definition from the schema
+     * @returns {string|null} The cast type string, or null if no cast is needed
+     */
+    getCastType(property) {
+        if (!property) return null;
+
+        if (property.object) {
+            // Result objects are per-component, so there is no single class to cast to.
+            // Leave these uncast and let the caller resolve the specific result type.
+            if (property.object === "Result") return null;
+
+            return property.array
+                ? `array-of-${property.object}`
+                : property.object;
+        }
+
+        if (property.array) return "Array";
+
+        return null;
+    },
+
+    /**
+     * Builds the full castTypes map for a model.
+     * @param {object} properties The model's properties object from the schema
+     * @param {string[]} [propertyNames] Optional ordered list to limit/order the output
+     * @returns {object} A plain object mapping property name -> cast type string
+     */
+    getCastTypes(properties, propertyNames) {
+        const map = {};
+        if (!properties) return map;
+
+        const names = propertyNames || Object.keys(properties);
+        for (const name of names) {
+            const castType = this.getCastType(properties[name]);
+            if (castType !== null) map[name] = castType;
+        }
+
+        return map;
+    },
+
+    /**
      * Gets the appropriate default value for a property
      * @param {object} property The property definition
      * @returns {string} The default value as a string
@@ -232,13 +294,14 @@ module.exports = {
         // If your language has a real "absent" value (null for a nullable numeric,
         // Option/Maybe, etc.), prefer that over both - and omit the property from the
         // payload rather than sending a placeholder.
-        if (dataType === "Integer") {
+        //
+        // Match these names to whatever getDataType() actually returns. As written above
+        // it yields "Integer" and "Float" -- never "Number" -- so a lone `=== "Number"`
+        // check would be unreachable and every numeric would silently default to null.
+        if (dataType === "Integer" || dataType === "Float") {
             return "0";
         }
-        if (dataType === "Number" || dataType === "Float") {
-            return "0";
-        }
-        
+
         // Boolean types may need to default to false instead of null
         if (dataType === "Boolean") {
             return "false";
