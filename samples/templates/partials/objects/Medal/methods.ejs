@@ -23,8 +23,14 @@
                     END IF
                     
                     IF callback is defined THEN
+                        COMMENT: result stays null when the request failed, so guard the
+                        COMMENT: dereference - do not read result.medal_score unconditionally
+                        CREATE medalScore AS null
+                        IF result is not null THEN
+                            SET medalScore TO result.medal_score
+                        END IF
                         CALL callback WITH context thisArg
-                            PASSING this, result.medal_score
+                            PASSING this, medalScore
                     END IF
                 END FUNCTION, thisArg)
             END IF

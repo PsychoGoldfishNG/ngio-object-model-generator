@@ -220,11 +220,23 @@ module.exports = {
         const dataType = this.getDataType(property);
         
         // Numeric types may need non-null defaults; choose what's idiomatic.
+        //
+        // Prefer 0 over a NaN sentinel. NaN caused two real bugs in the AS3 library:
+        //   1. Guards written as `this.id != 0` are always true for NaN, so a
+        //      default-constructed model rendered as "Medal #NaN".
+        //   2. It changed the wire payload. toObject(excludeNulls) drops values where
+        //      `value == null`, but `NaN == null` is false, so NaN survived and JSON
+        //      encoders emit it as null - an unset optional numeric went out as
+        //      {"skip": null} instead of {"skip": 0}.
+        //
+        // If your language has a real "absent" value (null for a nullable numeric,
+        // Option/Maybe, etc.), prefer that over both - and omit the property from the
+        // payload rather than sending a placeholder.
         if (dataType === "Integer") {
             return "0";
         }
         if (dataType === "Number" || dataType === "Float") {
-            return "NaN";
+            return "0";
         }
         
         // Boolean types may need to default to false instead of null
