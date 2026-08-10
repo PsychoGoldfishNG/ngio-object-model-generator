@@ -2,20 +2,19 @@
 /**
  * sync-wiki-codegen
  *
- * Copies samples/skeletons/ into the developer guide wiki's codegen/ directory.
- *
- * The wiki used to carry its own hand-edited copy of the skeletons. It fell a
- * long way behind - one snapshot against eight commits of maintenance here -
- * and by the time anyone noticed, no two of the eight files matched. This makes
- * the wiki copy an artifact of this repo instead: run the script, commit the
- * result, never edit the wiki copy by hand.
+ * Copies samples/skeletons/ into the developer guide wiki's codegen/ directory,
+ * making the wiki copy an artifact of this repo rather than a second thing to
+ * maintain. The two were previously kept in sync by hand and weren't.
  *
  *   node sync-wiki-codegen.js ../ngio-developer-guide-wiki
  *   node sync-wiki-codegen.js ../ngio-developer-guide-wiki --check
  *
- * --check reports drift without writing anything, and exits non-zero if the
- * wiki copy is stale. Comparison ignores line endings, since the two repos can
- * be checked out with different eol settings.
+ * Exit codes: 0 in sync, 1 stale (--check only), 2 bad usage.
+ *
+ * NOTE: this DELETES anything in codegen/ that is not in samples/skeletons/.
+ *
+ * Full documentation - including what to do when --check reports drift you did
+ * not cause - is under "Maintaining the developer guide wiki" in README.md.
  */
 
 const fs = require("fs");
@@ -89,7 +88,7 @@ function main() {
         : [];
 
     for (const rel of stale) {
-        changed.push(rel + " (stale, removed)");
+        changed.push(rel + (checkOnly ? " (stale, would be removed)" : " (stale, removed)"));
         if (!checkOnly) fs.unlinkSync(path.join(targetRoot, rel));
     }
 

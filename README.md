@@ -310,17 +310,71 @@ The [developer guide wiki](https://github.com/PsychoGoldfishNG/ngio-developer-gu
 publishes a copy under `codegen/`, and that copy is an **artifact of this repo** —
 never edit it by hand.
 
+### Why this exists
+
+The two copies used to be maintained separately. The wiki's copy was committed once
+and never touched again; this one took eight commits of corrections. By the time
+anyone compared them, not one of the eight skeleton files matched — and the wiki
+copy is the one most readers actually see.
+
+Nothing was going to catch that by hand, because nothing was comparing the two.
+`sync-wiki-codegen.js` makes the wiki copy derived rather than maintained: edit
+here, sync, commit both repos.
+
+### Usage
+
 ```bash
 npm run sync-wiki           # copy samples/skeletons/ -> ../ngio-developer-guide-wiki/codegen/
-npm run sync-wiki:check     # report drift without writing; non-zero exit if stale
+npm run sync-wiki:check     # report drift without writing anything
 ```
 
-Both assume the wiki is checked out beside this repo. Pass a different path to
-`node sync-wiki-codegen.js <path>` if it isn't.
+Both npm scripts assume the wiki is checked out beside this repo. If it isn't, call
+the script directly:
 
-This exists because the two copies were previously maintained separately, and the
-wiki fell an entire rewrite behind without anyone noticing — by the time it was
-caught, not one of the eight skeleton files matched. Edit here, sync, commit both.
+```bash
+node sync-wiki-codegen.js /path/to/ngio-developer-guide-wiki
+node sync-wiki-codegen.js /path/to/ngio-developer-guide-wiki --check
+```
+
+**Exit codes** — `0` when in sync (or after a successful write), `1` from `--check`
+when the wiki copy is stale, `2` for a missing or nonexistent target path. The `1`
+is what makes `--check` usable as a pre-commit hook or CI step: it fails the build
+if someone edits a skeleton here and forgets to sync.
+
+### What it does
+
+Every file under `samples/skeletons/` is copied to the same relative path under the
+wiki's `codegen/`, so the `skeletons/` directory level is collapsed — `codegen` is
+already the name.
+
+```
+samples/skeletons/IMPLEMENTATION-GUIDE.txt      ->  codegen/IMPLEMENTATION-GUIDE.txt
+samples/skeletons/NGIO.pseudo                   ->  codegen/NGIO.pseudo
+samples/skeletons/NewgroundsIO/BaseObject.pseudo->  codegen/NewgroundsIO/BaseObject.pseudo
+```
+
+It also writes `codegen/GENERATED-FILE-DO-NOT-EDIT.txt`, so someone who lands in
+that directory from the wiki knows where the real source is.
+
+**It deletes anything in `codegen/` that isn't in the source.** This is deliberate —
+it is how the old `NewgroundsIO/models/` layout got cleaned up when the base classes
+moved — but it means `codegen/` is not a place to put anything else. A file dropped
+in there will be reported as `(stale, removed)` and deleted on the next sync. Empty
+directories left behind by removals are pruned too.
+
+**Line endings are ignored when comparing.** The two repos can be checked out with
+different `core.autocrlf` settings; without normalizing, every file would report as
+drifted on every run and `--check` would be useless.
+
+### When `--check` reports drift you didn't cause
+
+That means someone edited the wiki copy by hand. **Do not just re-run the sync** —
+that silently discards their edit, and the edit is presumably there because
+something in the skeletons is wrong.
+
+Diff the two, move the change into `samples/skeletons/`, then sync. That way the
+correction reaches everyone using the generator directly, which is most people — a
+wiki-only edit reaches nobody else and gets overwritten anyway.
 
 ## Additional Resources
 
