@@ -314,7 +314,7 @@ GETTING HELP
 Documentation files:
   - GETTING_STARTED.txt (this file) - Overview and workflow
   - TEMPLATE_GUIDE.txt (after scaffold) - Template system details
-  - IMPLEMENTATION_GUIDE.txt (after scaffold) - Skeleton file guide
+  - IMPLEMENTATION-GUIDE.txt (after scaffold) - Skeleton file guide
 
 Online resources:
   - NGIO Developer Guide: https://github.com/PsychoGoldfishNG/ngio-developer-guide

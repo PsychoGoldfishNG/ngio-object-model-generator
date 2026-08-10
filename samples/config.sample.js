@@ -13,6 +13,10 @@ module.exports = {
     /**
      * The file extension for the generated files, will be passed as prop.file_extension in config functions.
      * For example: ".js" for JavaScript, ".cs" for C#, etc.
+     *
+     * ".ext" is a deliberate placeholder, not a default. Nothing validates it, so
+     * leaving it produces a build_dir full of Medal.ext files that compile nowhere.
+     * Change it before your first build.
      */
     output_file_extension: ".ext",
 
@@ -228,7 +232,7 @@ module.exports = {
             // A guide explaining how to implement and customize the generated library
             // If you don't need this, you can remove this line.
             ImplementationGuide: (config) => {
-                return `${config.build_dir}/IMPLEMENTATION_GUIDE.txt`;
+                return `${config.build_dir}/IMPLEMENTATION-GUIDE.txt`;
             },
 
             // The main wrapper class your developers will use to access the API

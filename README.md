@@ -63,7 +63,7 @@ This creates:
 - `templates/` directory with EJS template files for code generation
 - Skeleton files (if `core_files.enabled` is true in config) - foundation code in pseudo-code format
 - `TEMPLATE_GUIDE.txt` - Documentation on how templates work
-- `IMPLEMENTATION_GUIDE.txt` - Documentation on translating skeleton files
+- `IMPLEMENTATION-GUIDE.txt` - Documentation on translating skeleton files
 
 You'll need to:
 - Customize the templates to output code in your target language
@@ -143,12 +143,18 @@ core_files: {
   overwrite: false,  // Whether to overwrite existing skeleton files
   files: {
     NGIO: (config) => `${config.build_dir}/NGIO.js`,
-    Core: (config) => `${config.build_dir}/Core.js`,
-    BaseObject: (config) => `${config.build_dir}/models/BaseObject.js`,
+    Core: (config) => `${config.build_dir}/NewgroundsIO/Core.js`,
+    BaseObject: (config) => `${config.build_dir}/NewgroundsIO/BaseObject.js`,
     // ... etc
   }
 }
 ```
+
+Note that the base classes go under `NewgroundsIO/`, **not** `NewgroundsIO/models/`.
+Keep `models/` for generated output only — `ngio-build` regenerates everything in
+there on every run, so it can be deleted and rebuilt safely. That only holds if
+nothing hand-written lives in it. `overwrite: false` protects the core files, but
+the cleaner rule is to keep the two kinds of file in separate directories.
 
 ## Understanding Helpers
 
@@ -281,7 +287,7 @@ After setup, you'll have these guides:
 
 - `GETTING_STARTED.txt` (created by ngio-init) - Overview and workflow
 - `TEMPLATE_GUIDE.txt` (created by ngio-scaffold) - Template system details
-- `IMPLEMENTATION_GUIDE.txt` (created by ngio-scaffold) - Skeleton file guide
+- `IMPLEMENTATION-GUIDE.txt` (created by ngio-scaffold) - Skeleton file guide
 
 ## Command Reference
 
