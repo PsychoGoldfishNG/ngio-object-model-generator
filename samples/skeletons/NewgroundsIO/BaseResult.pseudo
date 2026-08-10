@@ -55,7 +55,7 @@ CLASS BaseResult
     COMMENT:
     COMMENT: Medal.unlockResult adds:
     COMMENT:   - medal: Medal object (the medal that was unlocked)
-    COMMENT:   - medalScore: integer (new total score)
+    COMMENT:   - medal_score: number (new total score)
     COMMENT:
     COMMENT: Score.postScoreResult adds:
     COMMENT:   - scoreboard: ScoreBoard object (updated board info)
@@ -68,11 +68,43 @@ CLASS BaseResult
     COMMENT: CloudSave.loadSlotResult adds:
     COMMENT:   - saveSlot: SaveSlot object (with data loaded from cloud)
     COMMENT:
-    COMMENT: Subclasses define:
-    COMMENT: - propertyNames: include 'success', 'error', plus component-specific props
-    COMMENT: - castTypes: define how to convert each property
-    COMMENT: - requiredProperties: usually just ['success']
-    
+    COMMENT: Subclasses define the same five identity members every model overrides.
+    COMMENT: For Medal.unlockResult they are, exactly:
+    COMMENT:
+    COMMENT:    objectName         -> "Medal.unlock"
+    COMMENT:    objectType         -> "result"
+    COMMENT:    propertyNames      -> ["medal", "medal_score"]
+    COMMENT:    requiredProperties -> []
+    COMMENT:    castTypes          -> { "medal": "Medal" }
+    COMMENT:
+    COMMENT: Three rules there are easy to get wrong, and all three break something:
+    COMMENT:
+    COMMENT: 1. objectName is the COMPONENT path that produced this result -
+    COMMENT:    "Medal.unlock", NOT "Medal.unlockResult". The class is named
+    COMMENT:    `unlockResult` but it reports the bare component path.
+    COMMENT:    WHY IT MATTERS: AppState.setValueFromResult() dispatches on this string
+    COMMENT:    to decide which cached state a result updates. Add the "Result" suffix
+    COMMENT:    and every branch silently stops matching - no error, the app just
+    COMMENT:    quietly never updates its medals, scoreboards or save slots.
+    COMMENT:
+    COMMENT: 2. propertyNames lists ONLY the component-specific properties.
+    COMMENT:    Do NOT add 'success' or 'error'.
+    COMMENT:    WHY IT MATTERS: propertyNames drives toObject(). Those two are transport
+    COMMENT:    control fields, not payload - listing them round-trips them back into
+    COMMENT:    serialized output as though the client were reporting its own success.
+    COMMENT:    They are still imported: 'success' by the importFromObject override
+    COMMENT:    below, 'error' by BaseObject. Being off the list costs you nothing.
+    COMMENT:
+    COMMENT: 3. requiredProperties is USUALLY EMPTY.
+    COMMENT:    WHY IT MATTERS: requiredProperties describes what must be filled in
+    COMMENT:    before something can be SENT. Results are received, never sent, so
+    COMMENT:    there is nothing to gate. Putting 'success' there is actively harmful:
+    COMMENT:    success defaults to false, so hasValidProperties() returns false for
+    COMMENT:    every freshly constructed result and for every genuine failure result.
+    COMMENT:
+    COMMENT: - castTypes: object and array-of-object properties only. Primitives arrive
+    COMMENT:   correctly typed from JSON and need no entry.
+
     ====================
     CONSTRUCTOR
     ====================
@@ -135,7 +167,7 @@ CLASS BaseResult
     COMMENT:             COMMENT: result contains component-specific data
     COMMENT:             IF result is Medal.unlockResult THEN
     COMMENT:                 showNotification("Medal unlocked: " + result.medal.name)
-    COMMENT:                 updateScoreDisplay(result.medalScore)
+    COMMENT:                 updateScoreDisplay(result.medal_score)
     COMMENT:             END IF
     COMMENT:         ELSE
     COMMENT:             COMMENT: Component failed
@@ -165,7 +197,7 @@ CLASS BaseResult
     COMMENT:   Example: Unlock medal updates:
     COMMENT:   - The specific medal object (unlocked=true)
     COMMENT:   - The medals array (triggers observer)
-    COMMENT:   - The user's medal score (medalScore property)
+    COMMENT:   - The user's medal score (result.medal_score -> AppState.medalScore)
     COMMENT:   All in one result
     
     ====================

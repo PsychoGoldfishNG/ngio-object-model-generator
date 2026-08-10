@@ -43,26 +43,33 @@ CLASS BaseComponent
         VALIDATION: If requiresSession=true and user is not logged in,
         hasValidProperties() will fail with an error
     
-    isRedirect: boolean = false
+    redirect: boolean = false
         PURPOSE: Whether this component opens a browser window
-        WHY: Login (Passport) is handled via browser window, not JSON API
+        WHY: Login (Passport) and the Loader components send the player to a URL
+        rather than exchanging JSON
         REDIRECT PROCESS: When true, instead of making AJAX request with JSON,
         the browser is redirected to the gateway with component data in URL
         EXAMPLES:
             - Passport login opens a window for authentication
             - Once complete, window closes and session is updated
-        WHEN TRUE: Usually only Passport.login
-    
+        WHEN TRUE: Passport.login and every Loader.* component
+        NAMING: this property is `redirect`, NOT `isRedirect`. It is read by name
+        from outside the model - the request pipeline branches on
+        `componentModel.redirect` - so the name is part of the contract
+
     browserTarget: string | null = null
-        PURPOSE: The window/frame to open redirect in (if isRedirect=true)
+        PURPOSE: The window/frame to open redirect in (if redirect=true)
         WHY: Specifies where the browser window/tab should open
-        VALUES: 
+        VALUES:
             - "_blank": Open in new window/tab
             - "_self": Replace current window
             - "_parent": Open in parent frame
             - "_top": Open at top level
-        DEFAULT: "_blank" for popups
-    
+        DEFAULT: null
+        WHY NULL: the component does not choose its own target. The NGIO wrapper
+        methods supply one at call time (they pass "_blank"), so a default here
+        would silently override the caller's choice
+
     ====================
     CONSTRUCTOR
     ====================
@@ -78,7 +85,7 @@ CLASS BaseComponent
             COMMENT: Set component-specific defaults
             SET this.isSecure TO false
             SET this.requiresSession TO false
-            SET this.isRedirect TO false
+            SET this.redirect TO false
             SET this.browserTarget TO null
     END CONSTRUCTOR
     
@@ -157,23 +164,30 @@ CLASS BaseComponent
             RETURN true
     END FUNCTION
     
-    FUNCTION getObjectName(): string
-        
-        PURPOSE: Gets the name of this component (without namespace prefix)
-        WHY: Used internally by the framework to identify component types
-        
-        EXAMPLES:
-            - "Medal.unlock" returns "unlock"
-            - "App.checkSession" returns "checkSession" 
-            - "CloudSave.setData" returns "setData"
-        
-        RETURNS: The component method name
-        
-        BEHAVIOR:
-            COMMENT: Subclasses should override this method to return their specific name
-            THROW error "BaseComponent.getObjectName() must be overridden in subclass"
-    END FUNCTION
-    
+    ====================
+    HOW A COMPONENT IDENTIFIES ITSELF
+    ====================
+
+    COMMENT: BaseComponent adds NO identity method of its own. A component identifies
+    COMMENT: itself through the same abstract members every model overrides, inherited
+    COMMENT: from BaseObject: objectName, objectType, propertyNames, requiredProperties
+    COMMENT: and castTypes. Do not invent a component-only accessor for this.
+    COMMENT:
+    COMMENT: For components the two identity members are:
+    COMMENT:
+    COMMENT:    objectName -> the FULL component path, "Component.method"
+    COMMENT:                  e.g. "Medal.unlock", "App.checkSession", "CloudSave.setData"
+    COMMENT:    objectType -> "component"
+    COMMENT:
+    COMMENT: The full path is load-bearing, not decorative. Execute.setComponent() copies
+    COMMENT: objectName straight into the wire payload as the `component` field:
+    COMMENT:
+    COMMENT:    SET this.component TO componentModel.objectName
+    COMMENT:
+    COMMENT: The gateway routes on that string. Returning just the method name ("unlock")
+    COMMENT: produces a request the server cannot dispatch, and the failure surfaces as a
+    COMMENT: server-side error rather than anything the client can point at.
+
     ====================
     COMPONENT EXECUTION FLOW (FOR DEVELOPERS)
     ====================
@@ -244,7 +258,7 @@ CLASS BaseComponent
     COMMENT:   Example: Medal unlock rewards must be encrypted or hacker could fake it
     COMMENT:
     COMMENT: Redirects:
-    COMMENT:   Some components (usually login) use isRedirect=true
+    COMMENT:   Some components (Passport login, the Loader family) use redirect=true
     COMMENT:   These don't get responses back to the app
     COMMENT:   Instead, the browser is redirected to complete the action
     COMMENT:   After redirect completes, session is updated server-side

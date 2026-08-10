@@ -292,11 +292,15 @@ CLASS Core
                 
                 COMMENT: Check if the wrapped component is a redirect loader
                 COMMENT: These open external windows instead of returning JSON responses
+                COMMENT: The flag is named `redirect` on BaseComponent, so every component
+                COMMENT: carries it. Test its value, not its presence - presence checks are
+                COMMENT: unreliable across platforms (see the hasOwnProperty note in
+                COMMENT: BaseObject.pseudo) and there is nothing to detect here anyway.
                 CREATE isRedirect AS false
-                IF componentModel is not null AND componentModel has property isRedirect THEN
-                    SET isRedirect TO componentModel.isRedirect
+                IF componentModel is not null AND componentModel.redirect equals true THEN
+                    SET isRedirect TO true
                 END IF
-                
+
                 IF isRedirect equals true THEN
                     COMMENT: Execute this loader separately (these don't batch with regular components)
                     CALL executeComponent(componentModel, callback, thisArg)
@@ -354,7 +358,7 @@ CLASS Core
             CALL executeModel.setComponent(componentModel)
             
             COMMENT: Get redirect flag from the component
-            CREATE isRedirect AS componentModel.isRedirect
+            CREATE isRedirect AS componentModel.redirect
             COMMENT: Send it with the redirect flag from the component
             CALL sendRequest(executeModel, isRedirect, callback, thisArg)
     END FUNCTION

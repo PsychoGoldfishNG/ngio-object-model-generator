@@ -416,8 +416,11 @@ CLASS AppState
             resultObject: A result model that extends BaseResult.
         
         BEHAVIOR:
-            COMMENT: Get the type name of this result
-            CREATE objectName AS resultObject.getObjectName()
+            COMMENT: Get the type name of this result. For results, objectName is the
+            COMMENT: COMPONENT path that produced it - "Medal.unlock", not
+            COMMENT: "Medal.unlockResult". Every branch below dispatches on that string,
+            COMMENT: so the naming rule in BaseResult.pseudo is what makes this work.
+            CREATE objectName AS resultObject.objectName
             
             COMMENT: === Gateway.getVersion results ===
             IF objectName equals "Gateway.getVersion" THEN

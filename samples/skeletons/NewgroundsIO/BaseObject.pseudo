@@ -134,13 +134,40 @@ CLASS BaseObject
             END IF
             
             COMMENT: ==================== IMPORT EACH PROPERTY ====================
+            COMMENT: importFromObject is a FULL REPLACE, not a patch. A property the
+            COMMENT: import omits is RESET to its default - it does not keep whatever
+            COMMENT: value the instance happened to be holding.
+            COMMENT:
+            COMMENT: WHY: server results are complete snapshots. If absent properties kept
+            COMMENT: their old values, a medal that stopped being unlocked (session ended,
+            COMMENT: different user) would keep reporting unlocked=true forever, because
+            COMMENT: "not mentioned" and "no longer true" look identical on the wire.
+            COMMENT:
+            COMMENT: CONSEQUENCE FOR CALLERS: never use importFromObject to apply a partial
+            COMMENT: update. Anything you do not send is erased.
+            COMMENT:
+            COMMENT: Build one throwaway instance of this same type to read defaults from.
+            COMMENT: Reading them off a fresh instance rather than hardcoding them keeps
+            COMMENT: this in sync with whatever the subclass declares.
+            CREATE defaultObject AS ObjectFactory.CreateObject(this.objectName, null, this.core)
+
             FOR EACH propertyName IN propertyNames
-                COMMENT: Check if property exists in the import object
+                COMMENT: Check if property exists in the import object.
+                COMMENT: Test for MISSING specifically - an explicit null in the payload is
+                COMMENT: a real value the server sent and must be imported as null.
                 IF propertyName NOT in importObject THEN
-                    COMMENT: Property not provided - keep existing value
+                    IF defaultObject is not null THEN
+                        SET this[propertyName] TO defaultObject[propertyName]
+                    END IF
+                    COMMENT: If the factory could not build a default instance, keep the
+                    COMMENT: value the constructor/field initializer set. This happens for
+                    COMMENT: result models, whose objectName is a dotted component path
+                    COMMENT: ("Medal.unlock") that CreateObject does not resolve. Do NOT
+                    COMMENT: skip the null check and index into it - on strict platforms
+                    COMMENT: that is a null-reference crash on every result import.
                     CONTINUE TO NEXT PROPERTY
                 END IF
-                
+
                 CREATE propertyValue AS importObject[propertyName]
                 
                 COMMENT: === STANDARD CAST AND ASSIGN ===
@@ -201,7 +228,11 @@ CLASS BaseObject
             IF castType equals 'string' THEN
                 RETURN TO_STRING(value)
             ELSE IF castType equals 'number' THEN
-                RETURN TO_INTEGER(value)
+                COMMENT: TO_NUMBER, not TO_INTEGER. 'number' covers both int and float
+                COMMENT: properties, and truncating would corrupt every float the API
+                COMMENT: returns - score values, medal point values, unix timestamps.
+                COMMENT: If your language distinguishes them, use its widest numeric type.
+                RETURN TO_NUMBER(value)
             ELSE IF castType equals 'boolean' THEN
                 IF value is string THEN
                     RETURN value.toLowerCase() equals 'true'
@@ -490,25 +521,28 @@ CLASS BaseObject
     END FUNCTION
     
     ====================
-    PROTECTED METHODS
+    NAME-TO-CLASS RESOLUTION
     ====================
-    
-    FUNCTION getClassByName(className: string): Class | null
-        
-        PURPOSE: Helper method to get a class by its name
-        WHY: Override this in subclasses if you need custom class resolution
-        Languages with dynamic class loading can implement proper class mapping here.
-        
-        PARAMETERS:
-            className: (required) The name of the class to resolve
-        
-        RETURNS: The Class object, or null if not found
-        
-        BEHAVIOR:
-            COMMENT: This is a placeholder - subclasses or a factory should implement proper class resolution
-            COMMENT: For now, return null and expect subclasses to override castToExpectedType for complex types
-            RETURN null
-    END FUNCTION
+
+    COMMENT: BaseObject does NOT resolve class names itself. Do not add a
+    COMMENT: getClassByName() hook or any per-subclass class-resolution override -
+    COMMENT: ObjectFactory owns this job completely, and a second mechanism just gives
+    COMMENT: you two places that can disagree about what "Medal" means.
+    COMMENT:
+    COMMENT: Everything that needs a class from a name goes through the factory:
+    COMMENT:
+    COMMENT:    ObjectFactory.CreateObject(name, data, core)     - "Medal", "Session"
+    COMMENT:    ObjectFactory.CreateComponent(name, data, core)  - "Medal.unlock"
+    COMMENT:    ObjectFactory.CreateResult(name, data, core)     - "Medal.unlock"
+    COMMENT:
+    COMMENT: castToExpectedType calls CreateObject for its object and array-of-object
+    COMMENT: casts, so nested models are built by the same single lookup.
+    COMMENT:
+    COMMENT: The factory is generated, so it always covers exactly the schema you built
+    COMMENT: from. Match on the SCHEMA name, lowercased - not the emitted class name.
+    COMMENT: These differ wherever a schema name collides with a language built-in
+    COMMENT: (schema "Error" is emitted as class NgioError but is still looked up,
+    COMMENT: and still reports objectName, as "Error").
 
 END CLASS
 
