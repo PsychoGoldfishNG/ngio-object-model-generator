@@ -18,7 +18,8 @@
                 - skip: Scores to skip (for pagination, default: 0)
                 - social: Get only friends' scores (requires logged-in user)
                 - tag: Filter by score tag
-            callback: Function to call with the loaded scores
+            callback: Function to call when the load completes, as callback(scores, error)
+                      where error is null on success and scores is null on failure
             thisArg: Context to use when calling the callback
         
         WHY: Developers need flexible ways to query scoreboards - by user, time period,
@@ -98,10 +99,42 @@
             COMMENT: Execute the component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("ScoreBoard.getScores", componentParams, FUNCTION onComplete(response)
+                    CREATE result AS null
+                    CREATE scores AS null
+                    CREATE error AS null
+
+                    COMMENT: A failed load surfaces at either of TWO levels, and both must
+                    COMMENT: be checked. The gateway returns a successful RESPONSE for a
+                    COMMENT: component that failed, so trusting the outer flag alone treats
+                    COMMENT: every rejected request as a success - and then reads scores off
+                    COMMENT: a result that was never built.
+                    IF response is null OR response.success is not true THEN
+                        IF response is not null AND response.error is not null THEN
+                            SET error TO response.error
+                        ELSE
+                            SET error TO a newly created error
+                        END IF
+                    ELSE
+                        SET result TO response.getResult()
+
+                        IF result is null THEN
+                            SET error TO a newly created "invalid response" error
+                        ELSE IF result.success is not true THEN
+                            IF result.error is not null THEN
+                                SET error TO result.error
+                            ELSE
+                                SET error TO a newly created error
+                            END IF
+                        ELSE
+                            SET scores TO result.scores
+                        END IF
+                    END IF
+
                     IF callback is not null THEN
-                        CREATE result AS response.getResult()
+                        COMMENT: (scores, error) - matching every other wrapper callback.
+                        COMMENT: scores is null on failure; `error` is the success signal.
                         CALL callback WITH context thisArg
-                            PASSING result.scores
+                            PASSING scores, error
                     END IF
                 END FUNCTION, thisArg)
             END IF
@@ -115,7 +148,8 @@
         PARAMETERS:
             value: The score value to post
             tag: Optional tag to associate with the score (e.g., level name, difficulty)
-            callback: Function to call when posting is complete
+            callback: Function to call when posting completes, as callback(score, error)
+                      where error is null on success and score is null on failure
             thisArg: Context to use when calling the callback
         
         WHY: This is how users submit their scores to leaderboards
@@ -134,10 +168,38 @@
             
             COMMENT: Execute the component via core
             IF this.core is not null THEN
-                CALL this.core.callComponent("ScoreBoard.postScore", componentParams, FUNCTION onComplete(result)
+                CALL this.core.callComponent("ScoreBoard.postScore", componentParams, FUNCTION onComplete(response)
+                    CREATE result AS null
+                    CREATE score AS null
+                    CREATE error AS null
+
+                    COMMENT: Same two-level check as getScores above.
+                    IF response is null OR response.success is not true THEN
+                        IF response is not null AND response.error is not null THEN
+                            SET error TO response.error
+                        ELSE
+                            SET error TO a newly created error
+                        END IF
+                    ELSE
+                        SET result TO response.getResult()
+
+                        IF result is null THEN
+                            SET error TO a newly created "invalid response" error
+                        ELSE IF result.success is not true THEN
+                            IF result.error is not null THEN
+                                SET error TO result.error
+                            ELSE
+                                SET error TO a newly created error
+                            END IF
+                        ELSE
+                            SET score TO result.score
+                        END IF
+                    END IF
+
                     IF callback is not null THEN
+                        COMMENT: (score, error) - score is null on failure.
                         CALL callback WITH context thisArg
-                            PASSING result.score, this
+                            PASSING score, error
                     END IF
                 END FUNCTION, thisArg)
             END IF
