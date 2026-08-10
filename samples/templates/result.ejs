@@ -3,18 +3,18 @@
  * ====================================================================================
  * TEMPLATE: Component Result Model
  * ====================================================================================
- * 
+ *
  * PURPOSE: Generates class files for component result objects.
- * 
+ *
  * WHAT ARE RESULTS?: When you call a component (API method), the server responds with
  * a result object containing the data returned. For example:
  * - Medal.unlock returns: { medal_score: integer, unlocked_medals: array<Medal> }
  * - ScoreBoard.getScores returns: { scores: array<Score>, user: User }
  * - App.checkSession returns: { session: Session }
- * 
+ *
  * WHY SEPARATE FROM COMPONENTS?: Components are what you SEND to the server (input),
  * Results are what you GET BACK from the server (output). They're modeled separately.
- * 
+ *
  * AVAILABLE VARIABLES:
  * - model: Object containing all properties and metadata for this result
  * - model.component: The component namespace (e.g., "Medal", "App", "ScoreBoard")
@@ -23,17 +23,33 @@
  * - helpers: Your custom helper methods (from helpers.js)
  * - partial: Methods to include partial templates (partial.get, partial.getIfExists)
  * - config: Your full config object with all settings
- * 
+ *
  * EJS DOCUMENTATION: https://ejs.co/
- * 
+ *
  * ====================================================================================
  */
 
 // COMMENT: Prepare data structures we'll need while generating this class
-// NOTE: Filter out 'error' because it's inherited from BaseObject
-const propertyNames = Object.keys(model.properties).filter(prop => prop !== 'error');
-const requiredParams = [];
+//
+// Filter out BOTH 'error' and 'success'. They are declared on BaseResult/BaseObject and
+// must NOT be re-declared here, nor appear in propertyNames.
+//
+// This matters more than it looks. propertyNames drives toObject(), so listing 'success'
+// or 'error' would round-trip the server's control fields back into serialized output.
+// And putting 'success' in requiredProperties makes hasValidProperties() return false for
+// every freshly constructed result, because success defaults to false.
+const propertyNames = Object.keys(model.properties)
+    .filter(prop => prop !== 'error' && prop !== 'success');
+const requiredParams = propertyNames.filter(name => model.properties[name].required);
 const hasProperties = propertyNames.length > 0;
+
+// The component path this result belongs to. Note it is the COMPONENT path -- there is
+// no "Result" suffix on it -- because AppState dispatches incoming results by matching
+// objectName against the component that was called.
+const componentPath = `${model.component}.${model.method}`;
+
+// castTypes is fully derivable from the schema -- never hand-maintain it.
+const castTypes = helpers.getCastTypes(model.properties, propertyNames);
 -%>
 
 COMMENT: ====================================================================================
@@ -47,104 +63,95 @@ COMMENT: =======================================================================
 COMMENT: ====================================================================================
 COMMENT: CLASS DEFINITION
 COMMENT: ====================================================================================
-COMMENT: Returned when the <%- model.component %>.<%- model.method %> component is called.
+COMMENT: Result for: <%- componentPath %>
 CLASS <%- model.method %>Result
     EXTENDS: BaseResult
     NAMESPACE: [Your namespace here, e.g., io.newgrounds.models.results.<%- model.component %>]
-    
-    PURPOSE: Contains the data returned by the <%- model.component %>.<%- model.method %> API call.
-    
-    RESULT INFO:
-        Component: <%- model.component %>
-        Method: <%- model.method %>
-    
+
+    PURPOSE: Contains the data returned by the <%- componentPath %> API call
+
     COMMENT: ====================================================================================
-    COMMENT: PRIVATE PROPERTIES
+    COMMENT: PROPERTIES
     COMMENT: ====================================================================================
-    
+    COMMENT: Plain public fields. 'success' and 'error' are NOT here -- they come from
+    COMMENT: BaseResult and BaseObject respectively.
+
 <% if (hasProperties) { -%>
-<%   for (let propertyName in model.properties) { -%>
-<%     if (model.properties[propertyName].required) requiredParams.push(propertyName); -%>
+<%   for (let propertyName of propertyNames) { -%>
     COMMENT: <%- model.properties[propertyName].description %>
-    PRIVATE <%- propertyName %>: <%- helpers.getDataType(model.properties[propertyName]) %> = <%- model.properties[propertyName].default === undefined ? "null" : JSON.stringify(model.properties[propertyName].default) %>
-    
+    PUBLIC <%- propertyName %>: <%- helpers.getDataType(model.properties[propertyName]) %> = <%- helpers.getDefaultValue(model.properties[propertyName]) %>
+
 <%   } -%>
 <% } -%>
-    COMMENT: ====================================================================================
-    COMMENT: PUBLIC PROPERTIES
-    COMMENT: ====================================================================================
-    
-    PUBLIC componentName: string = "<%- model.component %>.<%- model.method %>"
-        PURPOSE: Identifies which component method returned this result
-        WHY: Useful for debugging - knowing which API call produced this data
-    
-    PUBLIC propertyNames: array<string> = <%- JSON.stringify(propertyNames) %>
-        PURPOSE: Lists all property names this result contains
-    
-    PUBLIC requiredParams: array<string> = <%- JSON.stringify(requiredParams) %>
-        PURPOSE: Lists which properties should always be present in a valid result
-        WHY: Used for validation - ensures the server returned all expected data
-    
 <%- partial.getIfExists(`results/${model.component}/${model.method}/properties`) -%>
 
     COMMENT: ====================================================================================
     COMMENT: CONSTRUCTOR
     COMMENT: ====================================================================================
-    
-    CONSTRUCTOR(resultData: object)
-        
-        PURPOSE: Initialize this result object with data returned from the server.
-        
-        PARAMETERS:
-            resultData: An object containing the result data from the API response
-        
+
+    CONSTRUCTOR()
+
+        PURPOSE: Create an empty instance. Data is applied separately.
+
+        COMMENT: Takes NO arguments -- see object.ejs for why the factory imports
+        COMMENT: data only after assigning `core`.
+
         BEHAVIOR:
             COMMENT: Call the parent BaseResult constructor
             CALL super()
-            
 <%- partial.getIfExists(`results/${model.component}/${model.method}/constructor`) -%>
-            
-            COMMENT: Set all properties from the resultData object
-            FOR EACH property IN resultData
-                IF property exists in this.propertyNames THEN
-                    COMMENT: Use the setter to apply the value (handles type conversion, validation)
-                    SET this[property] TO resultData[property]
-                ELSE
-                    COMMENT: Unexpected property in server response
-                    THROW Error("Property '" + property + "' is not defined for result '" + this.componentName + "'")
-                END IF
-            END FOR
     END CONSTRUCTOR
-    
+
     COMMENT: ====================================================================================
-    COMMENT: GETTERS AND SETTERS
+    COMMENT: ABSTRACT PROPERTY OVERRIDES
     COMMENT: ====================================================================================
-    
-<% if (hasProperties) { -%>
-<%   for (let propertyName in model.properties) { -%>
-    <%- helpers.formatMultilineComment(model.properties[propertyName].description, "    ", false) %>
-    GETTER <%- propertyName %>(): <%- helpers.getDataType(model.properties[propertyName]) %>
-        PURPOSE: Returns the current value of <%- propertyName %>
-        RETURN this._<%- propertyName %>
+    COMMENT: BaseObject declares these as abstract and throws if they are not overridden.
+
+    GETTER objectName(): string
+        PURPOSE: Identifies which component produced this result
+        COMMENT: This is the COMPONENT path, NOT the result class name. AppState routes
+        COMMENT: incoming results by matching this against the component that was called,
+        COMMENT: so "<%- model.method %>Result" here would silently stop those updates
+        COMMENT: from ever being applied.
+        RETURN "<%- componentPath %>"
     END GETTER
-    
-    SETTER <%- propertyName %>(value: <%- helpers.getDataType(model.properties[propertyName]) %>)
-        PURPOSE: Sets the value of <%- propertyName %>
-        
-        COMMENT: Add type conversion/validation logic here as needed
-        COMMENT: Property type: <%- model.properties[propertyName].type || 'N/A' %>
-<%     if (model.properties[propertyName].object) { -%>
-        COMMENT: This property is an object type: <%- model.properties[propertyName].object %>
-<%     } -%>
-<%     if (model.properties[propertyName].array) { -%>
-        COMMENT: This property can be an array
-<%     } -%>
-        
-        SET this._<%- propertyName %> TO value
-    END SETTER
-    
-<%   } -%>
+
+    GETTER objectType(): string
+        PURPOSE: Categorises this model as a result (vs. an object or a component)
+        RETURN "result"
+    END GETTER
+
+    GETTER propertyNames(): array<string>
+        PURPOSE: Lists the data properties this result carries
+        COMMENT: 'success' and 'error' are deliberately absent -- see the note at the
+        COMMENT: top of this template.
+        RETURN <%- JSON.stringify(propertyNames) %>
+    END GETTER
+
+    GETTER requiredProperties(): array<string>
+        PURPOSE: Lists properties that must be present for this result to be valid
+        COMMENT: Usually empty. A result arrives already built by the server, and a
+        COMMENT: failed call legitimately carries none of its data properties -- so
+        COMMENT: requiring any of them would mark ordinary error responses invalid.
+        RETURN <%- JSON.stringify(requiredParams) %>
+    END GETTER
+
+    GETTER castTypes(): map<string, string>
+        PURPOSE: Tells importFromObject() how to convert raw JSON into typed models
+        COMMENT: Generated from the schema. Values are SCHEMA names, because the object
+        COMMENT: factory keys on schema names -- "Error", not "NgioError".
+<% if (Object.keys(castTypes).length === 0) { -%>
+        RETURN {}
+<% } else { -%>
+        RETURN {
+<%   const castEntries = Object.entries(castTypes); -%>
+<%   castEntries.forEach(function(entry, i) { -%>
+            "<%- entry[0] %>": "<%- entry[1] %>"<%- i < castEntries.length - 1 ? "," : "" %>
+<%   }); -%>
+        }
 <% } -%>
+    END GETTER
+
     COMMENT: ====================================================================================
     COMMENT: CUSTOM METHODS
     COMMENT: ====================================================================================
