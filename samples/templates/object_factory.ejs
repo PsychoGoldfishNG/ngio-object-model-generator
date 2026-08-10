@@ -72,8 +72,10 @@ CLASS ObjectFactory
             
 <%          for(const model in models.objects) { -%>
                 CASE "<%- model.toLowerCase() %>":
-                    COMMENT: Create a <%- models.objects[model].name %> instance
-                    SET obj TO NEW <%- models.objects[model].name %>(<% if (models.objects[model].properties) { %>objectData<% } %>)
+                    COMMENT: Create a <%- helpers.getClassName(models.objects[model].name) %> instance
+                    COMMENT: The CASE label is the SCHEMA name; the class may be renamed
+                    COMMENT: (e.g. "Error" -> "NgioError"). Never key the switch on the class name.
+                    SET obj TO NEW <%- helpers.getClassName(models.objects[model].name) %>()
                     BREAK
                 
 <%          } -%>
@@ -84,13 +86,23 @@ CLASS ObjectFactory
                 RETURN null
             END IF
             
+            COMMENT: ------------------------------------------------------------------
+            COMMENT: ORDER MATTERS BELOW. Construct empty -> assign core -> import data.
+            COMMENT:
+            COMMENT: importFromObject() builds nested models by calling back into this
+            COMMENT: factory (via castToExpectedType), and it passes `this.core` along.
+            COMMENT: If data were imported before core was assigned -- for instance by a
+            COMMENT: constructor that accepted objectData -- every nested model would be
+            COMMENT: created with a null core.
+            COMMENT: ------------------------------------------------------------------
+            
             COMMENT: Assign core reference if provided
             IF coreReference is not null THEN
                 SET obj.core TO coreReference
             END IF
             
             COMMENT: If object data provided, import it
-            IF obj is not null AND objectData is not null THEN
+            IF objectData is not null THEN
                 CALL obj.importFromObject(objectData)
             END IF
             
@@ -126,8 +138,10 @@ CLASS ObjectFactory
 <%        for(const method in models.components[component]) { -%>
 <%          const name = `${component}.${method}`; -%>
                 CASE "<%- name.toLowerCase() %>":
-                    COMMENT: Create a <%- name %> component instance
-                    SET comp TO NEW <%- name %>(<% if (models.components[component][method].properties) { %>props<% } %>)
+                    COMMENT: Create the component model for <%- name %>
+                    COMMENT: The class is named after the METHOD ("unlock"), and lives in a
+                    COMMENT: namespace named after the component ("...components.Medal").
+                    SET comp TO NEW <%- method %>()
                     BREAK
                 
 <%        } -%>
@@ -139,13 +153,16 @@ CLASS ObjectFactory
                 RETURN null
             END IF
             
+            COMMENT: Construct empty -> assign core -> import. See CreateObject above
+            COMMENT: for why this ordering is load-bearing.
+            
             COMMENT: Assign core reference if provided
             IF coreReference is not null THEN
                 SET comp.core TO coreReference
             END IF
             
             COMMENT: If props provided, import them
-            IF comp is not null AND props is not null THEN
+            IF props is not null THEN
                 CALL comp.importFromObject(props)
             END IF
             
@@ -177,12 +194,15 @@ CLASS ObjectFactory
             CREATE result AS null
             SWITCH fullName.toLowerCase()
             
-<%       for(const result in models.results) { -%>
-<%        for(const method in models.results[result]) { -%>
-<%          const name = `${result}.${method}`; -%>
+<%# NOTE: the loop variable is `resultComponent`, NOT `result`. `result` is the name of -%>
+<%# the accumulator in the generated pseudocode below; reusing it here produced output -%>
+<%# where the loop variable and the local shadowed each other. -%>
+<%       for(const resultComponent in models.results) { -%>
+<%        for(const method in models.results[resultComponent]) { -%>
+<%          const name = `${resultComponent}.${method}`; -%>
                 CASE "<%- name.toLowerCase() %>":
-                    COMMENT: Create a <%- name %> result instance
-                    SET result TO NEW <%- name %>Result(<% if (models.results[result][method].properties) { %>props<% } %>)
+                    COMMENT: Create the result model for <%- name %>
+                    SET result TO NEW <%- method %>Result()
                     BREAK
                 
 <%        } -%>
@@ -194,13 +214,16 @@ CLASS ObjectFactory
                 RETURN null
             END IF
             
+            COMMENT: Construct empty -> assign core -> import. See CreateObject above
+            COMMENT: for why this ordering is load-bearing.
+            
             COMMENT: Assign core reference if provided
             IF coreReference is not null THEN
                 SET result.core TO coreReference
             END IF
             
             COMMENT: If props provided, import them
-            IF result is not null AND props is not null THEN
+            IF props is not null THEN
                 CALL result.importFromObject(props)
             END IF
             
