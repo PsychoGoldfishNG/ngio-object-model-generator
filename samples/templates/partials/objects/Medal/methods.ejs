@@ -5,32 +5,62 @@
     
     COMMENT: Unlocks this medal for the current user.
     METHOD unlock(callback: Function, thisArg: Object)
-        
+
         PURPOSE: Unlocks this medal and notifies the callback when complete
-        
+
         PARAMETERS:
-            callback: Function to call when the unlock completes
+            callback: Function to call when the unlock completes, as callback(medal, error)
+                      where error is null on success. The updated point total is available
+                      from the app state, which is refreshed from this same result.
             thisArg: Context to use when calling the callback
-        
+
         BEHAVIOR:
             COMMENT: Call the Medal.unlock component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("Medal.unlock", { id: this.id }, FUNCTION onComplete(response)
                     CREATE result AS null
-                    IF response is not null AND response.success is true THEN
+                    CREATE error AS null
+
+                    COMMENT: A rejected unlock surfaces at either of TWO levels, and both
+                    COMMENT: must be checked. The gateway returns a successful RESPONSE for a
+                    COMMENT: component that failed, so trusting the outer flag alone reports
+                    COMMENT: every rejected unlock as a success.
+                    IF response is null OR response.success is not true THEN
+                        COMMENT: Level 1 - the request itself failed
+                        IF response is not null AND response.error is not null THEN
+                            SET error TO response.error
+                        ELSE
+                            SET error TO a newly created error
+                        END IF
+                    ELSE
                         SET result TO response.getResult()
+
+                        COMMENT: Level 2 - the request worked, the component did not
+                        IF result is null THEN
+                            SET error TO a newly created "invalid response" error
+                        ELSE IF result.success is not true THEN
+                            IF result.error is not null THEN
+                                SET error TO result.error
+                            ELSE
+                                SET error TO a newly created error
+                            END IF
+                        END IF
+                    END IF
+
+                    COMMENT: Only mark this unlocked if the server actually accepted it.
+                    COMMENT: Setting it on any response leaves the medal permanently showing
+                    COMMENT: as earned, and nothing later corrects it - a rejected unlock
+                    COMMENT: returns no medal object to overwrite the flag.
+                    IF error is null THEN
                         SET this.unlocked TO true
                     END IF
-                    
+
                     IF callback is defined THEN
-                        COMMENT: result stays null when the request failed, so guard the
-                        COMMENT: dereference - do not read result.medal_score unconditionally
-                        CREATE medalScore AS null
-                        IF result is not null THEN
-                            SET medalScore TO result.medal_score
-                        END IF
+                        COMMENT: (medal, error) - matching every other wrapper callback.
+                        COMMENT: The medal is returned either way, so `error` is the only
+                        COMMENT: reliable success signal.
                         CALL callback WITH context thisArg
-                            PASSING this, medalScore
+                            PASSING this, error
                     END IF
                 END FUNCTION, thisArg)
             END IF
