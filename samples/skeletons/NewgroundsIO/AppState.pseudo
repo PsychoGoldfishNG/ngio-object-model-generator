@@ -237,25 +237,14 @@ CLASS AppState
                 END IF
             END FOR
             
-            COMMENT: Store error reference for callback
-            CREATE localError AS null
-            
             COMMENT: Execute all queued components in one request
             CALL core.executeQueue(
-                FUNCTION onComplete(responses)
-                    COMMENT: Process results from all executed components
-                    FOR EACH response IN responses
-                        COMMENT: Check if this response was successful
-                        IF response.success is true AND response.result is not null THEN
-                            COMMENT: Pass successful result to setValueFromResult for processing
-                            CALL setValueFromResult(response.result)
-                        ELSE
-                            COMMENT: Capture first error encountered
-                            IF localError is null AND response.error is not null THEN
-                                SET localError TO response.error
-                            END IF
-                        END IF
-                    END FOR
+                FUNCTION onComplete(response)
+                    CREATE localError AS null
+
+                    IF response is not null AND response.success is not true THEN
+                        SET localError TO response.error
+                    END IF
                     
                     COMMENT: Call the developer's callback with results
                     IF callback is not null THEN

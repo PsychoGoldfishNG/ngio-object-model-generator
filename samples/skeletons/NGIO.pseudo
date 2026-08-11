@@ -970,22 +970,6 @@ CLASS NGIO
             CALL executeGatewayDateTime(callback, thisArg, "timestamp")
     END FUNCTION
 
-    FUNCTION loadGatewayDate(callback: function, thisArg: any = null)
-
-        PURPOSE: Get current server time as your platform's native date type.
-        WHY: Most callers want a date object they can format or compare, not a string
-        to parse. Skip this method only if your language has no native date type.
-        PARAMETERS:
-            callback: (required) Function called with (date, error)
-            thisArg: (optional, default: null) Context to use when calling the callback
-        CALLBACK PARAMETERS:
-            date: Date|null - native date built from the server timestamp, null on failure
-            error: NewgroundsIO.models.objects.Error|null - null on success
-
-        BEHAVIOR:
-            CALL executeGatewayDateTime(callback, thisArg, "date")
-    END FUNCTION
-
     FUNCTION sendPing(callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Send a simple ping to test server connectivity.
@@ -1483,6 +1467,10 @@ CLASS NGIO
         NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
         
         BEHAVIOR:
+            IF keepAliveTimer is not null THEN
+                RETURN
+            END IF
+
             COMMENT: Set up repeating timer that calls keepAlive() every KEEP_ALIVE_TIME seconds
             COMMENT: This prevents active user sessions from expiring due to inactivity
             IF platform_supports_timers THEN
@@ -1492,13 +1480,13 @@ CLASS NGIO
 
     FUNCTION executeGatewayDateTime(callback: function, thisArg: any, returnType: string)
 
-        PURPOSE: Shared body for loadGatewayDateTime / loadGatewayTimestamp / loadGatewayDate.
-        WHY: All three send the same component and differ only in what they hand back.
+        PURPOSE: Shared body for loadGatewayDateTime / loadGatewayTimestamp.
+        WHY: Both send the same component and differ only in what they hand back.
 
         PARAMETERS:
             callback: Function to call with (value, error)
             thisArg: (optional, default: null) Context to use when calling the callback
-            returnType: One of "datetime", "timestamp", "date"
+            returnType: One of "datetime", "timestamp"
 
         BEHAVIOR:
             IF core is null THEN
@@ -1546,10 +1534,6 @@ CLASS NGIO
                         CALL callback WITH context thisArg PASSING null, error
                     ELSE IF returnType equals "datetime" THEN
                         CALL callback WITH context thisArg PASSING result.datetime, error
-                    ELSE IF returnType equals "date" THEN
-                        COMMENT: Server timestamp is in SECONDS. Scale it to whatever unit
-                        COMMENT: your platform's date type expects - milliseconds in most.
-                        CALL callback WITH context thisArg PASSING NEW_DATE_FROM_SECONDS(result.timestamp), error
                     ELSE
                         CALL callback WITH context thisArg PASSING result.timestamp, error
                     END IF

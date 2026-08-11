@@ -161,7 +161,7 @@ CLASS Core
             END IF
     END FUNCTION
     
-    FUNCTION callComponent(componentPath: string, componentParams: object|null = null, callback: function|null = null, thisArg: any = null)
+    FUNCTION callComponent(componentPath: string, componentParams: object|null = null, callback: function|null = null, thisArg: any = null, callbackParams: object|null = null)
         
         PURPOSE: Convenience method to call a component directly with parameters.
         WHY: This handles creating the component, executing it, and managing callbacks in one call.
@@ -169,10 +169,12 @@ CLASS Core
         PARAMETERS:
             componentPath: (required) The component to call (e.g. "Medal.unlock")
             componentParams: (optional) Parameters for the component
-            callback: (optional) Function to call with the result
+            callback: (optional) Function to call with the response
             thisArg: (optional) Context for the callback
+            callbackParams: (optional) Caller data passed through to callback as second argument
         CALLBACK PARAMETERS:
-            result: (Required) The result object from the component execution
+            response: (Required) Response model on success, or local error object on local failure
+            callbackParams: (optional) Caller data passed through unchanged
         
         BEHAVIOR:
             COMMENT: Parse the component path (e.g. "Medal.unlock" -> component="Medal", method="unlock")
@@ -181,7 +183,7 @@ CLASS Core
                 LOG_ERROR("callComponent Error: Invalid component path - " + componentPath)
                 IF callback is not null THEN
                     CREATE error AS {success: false, error: "Invalid component path: " + componentPath}
-                    CALL callback WITH context thisArg PASSING error
+                    CALL callback WITH context thisArg PASSING error, callbackParams
                 END IF
                 RETURN
             END IF
@@ -192,20 +194,32 @@ CLASS Core
             TRY
                 COMMENT: Create component using ObjectFactory if available
                 CREATE component AS ObjectFactory.CreateComponent(componentName, methodName, null, this)
+
+                IF component is null THEN
+                    IF callback is not null THEN
+                        CREATE errorResult AS {success: false, error: "Component not found: " + componentPath}
+                        CALL callback WITH context thisArg PASSING errorResult, callbackParams
+                    END IF
+                    RETURN
+                END IF
                 
                 IF component is not null AND componentParams is not null THEN
-                    COMMENT: Set component properties from params
-                    FOR EACH key IN componentParams
-                        IF component has property key THEN
-                            SET component[key] TO componentParams[key]
-                        END IF
-                    END FOR
+                    COMMENT: Prefer model import for casting/validation; fall back to direct copy.
+                    IF component supports importFromObject THEN
+                        CALL component.importFromObject(componentParams)
+                    ELSE
+                        FOR EACH key IN componentParams
+                            IF component has property key THEN
+                                SET component[key] TO componentParams[key]
+                            END IF
+                        END FOR
+                    END IF
                 END IF
                 
                 COMMENT: Execute the component
                 IF callback is not null THEN
-                    CALL executeComponent(component, FUNCTION(result)
-                        CALL callback WITH context thisArg PASSING result
+                    CALL executeComponent(component, FUNCTION(response)
+                        CALL callback WITH context thisArg PASSING response, callbackParams
                     END FUNCTION)
                 ELSE
                     CALL executeComponent(component, null)
@@ -215,7 +229,7 @@ CLASS Core
                 COMMENT: Component not found or error creating it
                 IF callback is not null THEN
                     CREATE errorResult AS {success: false, error: "Component not found: " + componentPath}
-                    CALL callback WITH context thisArg PASSING errorResult
+                    CALL callback WITH context thisArg PASSING errorResult, callbackParams
                 END IF
             END TRY
     END FUNCTION
