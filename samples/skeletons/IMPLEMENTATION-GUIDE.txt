@@ -402,7 +402,7 @@ KEYS:
 - May need to decode key from Base64/Hex before use
 
 Newgrounds projects assume AES-128 with Base64 encoding by default.
-Be very clear if another cypher and/or encoder are used, 
+Be very clear if another cipher and/or encoder are used, 
 or if encryption is not implemented.
 
 ================================================================================
