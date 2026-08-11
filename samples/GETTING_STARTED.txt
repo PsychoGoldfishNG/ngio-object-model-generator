@@ -43,7 +43,7 @@ The model generator works in four steps:
   3. SCAFFOLD
      → Copies template and skeleton files to your project
      → Command: npx ngio-scaffold config.js
-     → Creates templates/ and skeleton files in your build directory
+     → Creates EJS templates in your template_dir, and skeleton files in your build_dir
      → IMPORTANT: Scaffold files are converted ONCE and can then be manually edited
   
   4. TRANSLATE & BUILD
@@ -229,7 +229,7 @@ EXAMPLE: QUICK START FOR JAVASCRIPT
 3. Run scaffold:
    npx ngio-scaffold config.js
 
-4. Edit templates/object.ejs to use JavaScript syntax:
+4. Edit src/object.ejs (your template_dir) to use JavaScript syntax:
    class <%- model.name %> {
      constructor() { ... }
    }
@@ -244,29 +244,37 @@ DIRECTORY STRUCTURE AFTER SCAFFOLD
 
 After running ngio-scaffold, you'll have:
 
+Directory names below are the ones in the sample config - yours come from
+config.js (template_dir, partials_dir, build_dir, models_dir).
+
+The .EXT suffix stands for your output_file_extension. Scaffolded skeletons are
+named for YOUR language, not .pseudo - set the extension to ".ts" and you get
+NGIO.ts containing pseudo-code, ready to translate in place.
+
   your-project/
     config.js              (already exists - your config)
     helpers.js             (already exists - your helpers)
     GETTING_STARTED.txt    (this file)
-    templates/
+    src/                   (template_dir)
       object.ejs           (template for objects)
       component.ejs        (template for components)
       result.ejs           (template for results)
       object_factory.ejs   (template for object factory)
       TEMPLATE_GUIDE.txt   (detailed template documentation)
-      partials/
+      partials/            (partials_dir)
         objects/           (custom code for specific objects)
-    build/                 (or whatever you named it in config)
-      NGIO.pseudo          (convert once, then safe to edit)
+    build/                 (build_dir)
+      IMPLEMENTATION-GUIDE.txt  (how to translate the skeletons)
+      NGIO.EXT             (convert once, then safe to edit)
       NewgroundsIO/
-        Core.pseudo        (convert once, then safe to edit)
-        AppState.pseudo    (convert once, then safe to edit)
-        Errors.pseudo      (convert once, then safe to edit)
-        SessionStatus.pseudo (convert once, then safe to edit)
-        BaseObject.pseudo  (convert once, then safe to edit)
-        BaseComponent.pseudo (convert once, then safe to edit)
-        BaseResult.pseudo  (convert once, then safe to edit)
-        models/            (REGENERATED on each build - do not manually edit!)
+        Core.EXT           (convert once, then safe to edit)
+        AppState.EXT       (convert once, then safe to edit)
+        Errors.EXT         (convert once, then safe to edit)
+        SessionStatus.EXT  (convert once, then safe to edit)
+        BaseObject.EXT     (convert once, then safe to edit)
+        BaseComponent.EXT  (convert once, then safe to edit)
+        BaseResult.EXT     (convert once, then safe to edit)
+        models/            (models_dir - REGENERATED on each build, never edit!)
           objects/         (generated object models)
           components/      (generated component models)
           results/         (generated result models)
@@ -301,7 +309,7 @@ A: Run ngio-build again - it fetches the latest API documentation
    and/or extend models with new partials
 
 Q: Which files are safe to edit manually?
-A: Safe to edit: templates/, skeleton files (NGIO, Core, BaseObject, BaseComponent,
+A: Safe to edit: your templates, skeleton files (NGIO, Core, BaseObject, BaseComponent,
    BaseResult, etc.), config.js, helpers.js
    Do NOT edit: Anything in the NewgroundsIO/models/ subdirectory - these are
    regenerated on each build
@@ -330,7 +338,7 @@ NEXT STEPS
 1. Edit config.js - Set your file extension and paths
 2. Edit helpers.js - Customize getDataType() for your language
 3. Run: npx ngio-scaffold config.js
-4. Review the templates/ directory and guides
+4. Review your template_dir and the two guides
 5. Translate skeleton files (if using core_files)
 6. Customize templates for your language syntax
 7. Run: npx ngio-build config.js

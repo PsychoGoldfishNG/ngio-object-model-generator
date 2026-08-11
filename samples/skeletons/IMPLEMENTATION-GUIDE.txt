@@ -57,10 +57,20 @@ THE RULE: Use what developers in your language expect to see.
 
 CALLBACK SCOPE BINDING
 ----------------------
-If using callbacks and your language doesn't have arrow functions or .bind():
-- Add optional "thisArg" or "bindTo" parameter to methods
-- Example: unlock(callback, thisArg) instead of unlock(callback)
-- This lets developers maintain proper 'this' context
+EVERY method that takes a callback also takes a trailing "thisArg" parameter:
+
+  unlock(callback, thisArg)
+
+It means: invoke the callback so its 'this' / 'self' is thisArg.
+
+KEEP IT EVEN IF YOUR LANGUAGE DOESN'T NEED IT. Languages with closures, arrow
+functions or bound method references can capture context without it - there,
+thisArg is simply optional for the caller, who passes nothing and uses a closure
+instead. That is fine. What matters is that the SIGNATURE stays the same across
+ports, so example code and developers move between platforms without every call
+site changing shape. Accept it and ignore it; don't remove it.
+
+It goes on the METHOD, never in the callback's own parameter list.
 
 
 NULL vs UNDEFINED vs NONE
@@ -78,6 +88,12 @@ Translate to your language's equivalent:
 ================================================================================
 AI/LLM TRANSLATION GUIDANCE
 ================================================================================
+
+A NOTE ON FILE NAMES: this guide calls the skeletons by their source names -
+NGIO.pseudo, Core.pseudo, and so on. The copies scaffolded into your project are
+named for YOUR language instead, using the output_file_extension from config.js.
+So "NGIO.pseudo" below means the file you actually have at build/NGIO.ts,
+build/NGIO.cs, or whatever you configured. The contents are the same.
 
 CRITICAL: The pseudo-code files (especially NGIO.pseudo) are very large and contain
 many methods. AI models with limited context windows may skip or miss methods in
@@ -181,6 +197,7 @@ NGIO.pseudo Translation Checklist:
 □ getSaveSlot() method
 □ loadGatewayDateTime() method
 □ loadGatewayTimestamp() method
+□ loadGatewayDate() method
 □ sendPing() method
 □ logEvent() method
 □ openOfficialUrl() method
@@ -194,6 +211,7 @@ NGIO.pseudo Translation Checklist:
 □ openReferral() method
 □ loadReferral() method
 □ startKeepAliveTimer() method
+□ executeGatewayDateTime() private helper
 □ All constants (CHECKSESSION_THROTTLE_TIME, KEEP_ALIVE_TIME)
 □ All static properties (core, lastCheckSessionTime, lastKeepAliveTime)
 

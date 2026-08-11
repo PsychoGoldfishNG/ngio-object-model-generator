@@ -59,11 +59,20 @@ Copies template and skeleton files to your project:
 npx ngio-scaffold <path-to-config.js>
 ```
 
-This creates:
-- `templates/` directory with EJS template files for code generation
-- Skeleton files (if `core_files.enabled` is true in config) - foundation code in pseudo-code format
-- `TEMPLATE_GUIDE.txt` - Documentation on how templates work
-- `IMPLEMENTATION-GUIDE.txt` - Documentation on translating skeleton files
+This creates, at the locations your `config.js` specifies:
+
+- **EJS template files** in your `template_dir` — `object.ejs`, `component.ejs`,
+  `result.ejs`, `object_factory.ejs`, plus a `partials/` directory. The sample config puts
+  these in `src/`.
+- **`TEMPLATE_GUIDE.txt`**, alongside the templates - Documentation on how templates work
+- **Skeleton files** in your `build_dir` (if `core_files.enabled` is true) - foundation code
+  in pseudo-code format. The sample config puts these in `build/`.
+- **`IMPLEMENTATION-GUIDE.txt`**, alongside the skeletons - Documentation on translating them
+
+> **The skeletons arrive named for your language, not as `.pseudo` files.** They are written
+> using your `output_file_extension`, so with `".ts"` you get `build/NGIO.ts` containing
+> pseudo-code, ready to translate in place. If you left the extension at its `".ext"`
+> placeholder, that is what you will see — see [Basic Settings](#basic-settings).
 
 You'll need to:
 - Customize the templates to output code in your target language
@@ -98,10 +107,20 @@ helpers: helpers              // Reference to your helpers module
 ### Directory Paths
 
 ```javascript
-partials_dir: "./templates/partials"  // Where partial templates are stored
-template_dir: "./templates"            // Where main templates are located
-build_dir: "./build"                   // Where generated files go
+template_dir: "./src"                 // Where your EJS templates live
+partials_dir: "./src/partials"        // Where partial templates live
+build_dir:    "./build"               // Where generated code goes
+models_dir:   "./build/NewgroundsIO/models"   // Generated models only
 ```
+
+These are the values in the shipped `config.sample.js`; name them whatever suits your
+project. Two things to keep true regardless:
+
+- **`models_dir` must sit inside `build_dir`**, and must contain *only* generated output.
+  `ngio-build` rewrites everything under it on every run.
+- **Keep hand-written code out of `models_dir`.** The skeletons you translate belong in
+  `build_dir` above it, which is why the sample puts them at `build/NewgroundsIO/` and the
+  generated models at `build/NewgroundsIO/models/`.
 
 ### Template Files (used by scaffold)
 
@@ -249,8 +268,11 @@ Partial methods:
    - Update class structures, getters/setters, methods, etc.
 
 5. **Translate skeleton files (if using core_files):**
-   - Convert `.pseudo` files to your language
+   - Rewrite the pseudo-code in your `build_dir` as real code, in place — the files already
+     carry your `output_file_extension`
    - These are foundation files like NGIO, Core, BaseObject, etc.
+   - You do this **once**. `core_files.overwrite` defaults to false, so later scaffolds
+     leave your translations alone.
 
 6. **Run build:**
    ```bash
