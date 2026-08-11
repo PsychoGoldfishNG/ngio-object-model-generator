@@ -404,15 +404,27 @@ CLASS NGIO
                     THROW error "Could not create App.startSession component"
                 END IF
                 CALL core.executeComponent(startSessionComponent, 
-                    FUNCTION onComplete(result)
-                        COMMENT: Check if the server request succeeded
-                        IF result is not null AND result.success is true THEN
-                            COMMENT: Session created successfully (user will not be logged in yet)
-                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
-                        ELSE IF result is not null AND result.error is not null THEN
-                            COMMENT: Something went wrong creating the session
+                    FUNCTION onComplete(response)
+                        COMMENT: Check if the outer response succeeded first
+                        IF response is not null AND response.success is true THEN
+                            SET result TO CALL response.getResult()
+
+                            COMMENT: Then check component success
+                            IF result is not null AND result.success is true THEN
+                                COMMENT: Session created successfully (user will not be logged in yet)
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                            ELSE IF result is not null AND result.error is not null THEN
+                                COMMENT: Something went wrong creating the session
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                                SET sessionStatus.error TO result.error
+                            ELSE
+                                COMMENT: Got an error but no details - create a generic one
+                                SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                            END IF
+                        ELSE IF response is not null AND response.error is not null THEN
                             SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
-                            SET sessionStatus.error TO result.error
+                            SET sessionStatus.error TO response.error
                         ELSE
                             COMMENT: Got an error but no details - create a generic one
                             SET sessionStatus.error TO NewgroundsIO.Errors.getError()
@@ -455,9 +467,16 @@ CLASS NGIO
                             
                         COMMENT: the component failed, lets see why
                         ELSE IF result is not null AND result.error is not null THEN
+
+                            COMMENT: session id is invalid/expired, discard it before reporting
+                            IF result.error.code equals NewgroundsIO.Errors.EXPIRED_SESSION THEN
+                                CALL core.appState.invalidateSession()
+                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.EXPIRED
+                                SET sessionStatus.error TO result.error
                             
                             COMMENT: looks like the user cancelled the login
-                            IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                            ELSE IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                                CALL core.appState.invalidateSession()
                                 SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
                             
                             COMMENT: Some other error occurred

@@ -5,6 +5,7 @@ const fs = require('fs');
 const https = require('https');
 const chokidar = require('chokidar');
 const path = require('path');
+const fsExtra = require('fs-extra');
 
 // We use the more advanced ejs when generating from model templates
 const ejs = require('ejs');
@@ -206,6 +207,11 @@ async function ensureLatestObjectDoc() {
 
     // Load the documentation file
     const object_doc = JSON.parse(fs.readFileSync(object_doc_file, "utf8"));
+
+    // Start from a clean models directory to avoid stale files after schema changes.
+    const modelsDir = path.normalize(config.models_dir);
+    fsExtra.ensureDirSync(modelsDir);
+    fsExtra.emptyDirSync(modelsDir);
 
     // not everything in the object documentation is a model we want to build.
     // we'll keep all the model docs we actually want to build in this object.

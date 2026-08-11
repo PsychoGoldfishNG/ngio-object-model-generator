@@ -25,6 +25,7 @@ const thisFileDir = path.dirname(__filename);
 const configPath = path.join(setupPath, 'config.js');
 const helpersPath = path.join(setupPath, 'helpers.js');
 const gettingStartedPath = path.join(setupPath, 'GETTING_STARTED.txt');
+const localPackagePath = path.join(setupPath, 'package.json');
 
 if (!forceSetup) {
     if (fs.existsSync(configPath)) {
@@ -45,11 +46,20 @@ fs.copyFileSync(path.join(thisFileDir, 'samples/config.sample.js'), configPath);
 fs.copyFileSync(path.join(thisFileDir, 'samples/helpers.js'), helpersPath);
 fs.copyFileSync(path.join(thisFileDir, 'samples/GETTING_STARTED.txt'), gettingStartedPath);
 
+// Create a local CJS island for config.js/helpers.js when parent projects use ESM.
+const createdLocalPackage = !fs.existsSync(localPackagePath);
+if (createdLocalPackage) {
+    fs.writeFileSync(localPackagePath, '{\n  "type": "commonjs"\n}\n');
+}
+
 console.log('\nProject initialized successfully!');
 console.log('\nFiles created:');
 console.log('  - config.js');
 console.log('  - helpers.js');
 console.log('  - GETTING_STARTED.txt');
+if (createdLocalPackage) {
+    console.log('  - package.json');
+}
 console.log('\nNext steps:');
 console.log('1. Read GETTING_STARTED.txt for a complete overview');
 console.log('2. Edit config.js - Set your target language and paths');

@@ -391,15 +391,14 @@ Components that modify user data (medal unlocks, score posts) support encryption
 to prevent cheating. The pseudo-code indicates this with "isSecure" property.
 
 SUPPORTED CIPHERS:
-1. AES-128-CBC (STRONGLY PREFERRED)
+1. AES-128-CBC
    - Block cipher, 128-bit key
    - Requires initialization vector (IV)
-   - Most secure option
+   - Widely available in platform crypto APIs
 
-2. RC4 (FALLBACK ONLY)
+2. RC4
    - Stream cipher, 128-bit key
-   - Simpler but less secure
-   - Use only if AES is unavailable
+   - Simpler to implement on some platforms
 
 ENCODING:
 - Encryption produces binary data
@@ -419,9 +418,8 @@ KEYS:
 - Key format depends on cipher and encoding choices
 - May need to decode key from Base64/Hex before use
 
-Newgrounds projects assume AES-128 with Base64 encoding by default.
-Be very clear if another cipher and/or encoder are used, 
-or if encryption is not implemented.
+Pick whichever supported cipher/encoding pair is practical for your platform.
+Be clear about your chosen cipher and encoder, or if encryption is not implemented.
 
 ================================================================================
 STATE MANAGEMENT
@@ -445,7 +443,7 @@ KEY CONCEPTS:
    - Prevents redundant loads and provides clear state
 
 3. AUTOMATIC UPDATES
-   - Response.importFromObject() calls appState.setValueFromResult()
+   - Response parsing helpers call appState.setValueFromResult()
    - This automatically updates cached data from server responses
    - Developers don't manually sync state
 
@@ -529,7 +527,7 @@ MODEL FILES (Regenerated on each build - DO NOT EDIT MANUALLY):
 - Everything in the NewgroundsIO/models/ subdirectory
 - Objects (NewgroundsIO/models/objects/Medal.xxx, User.xxx, Session.xxx, etc.)
 - Components (NewgroundsIO/models/components/Medal/unlock.xxx, etc.)
-- Results (NewgroundsIO/models/results/Medal/unlock.xxx, etc.)
+- Results (NewgroundsIO/models/results/Medal/unlockResult.xxx, etc.)
 
 Note: Base classes (BaseObject, BaseComponent, BaseResult) are NOT in the models/
 subdirectory - they live in the NewgroundsIO/ directory alongside Core and AppState,
@@ -574,7 +572,7 @@ IMPLEMENTATION PATTERN:
 2. Create setters: setExecute(value) and setExecuteList(array)
 3. Only ONE should be set at a time (setters clear the other)
 4. Create helpers: executeIsArray(), getExecute(), getExecuteList()
-5. Override prepareForJson() to output the correct format
+5. Override toObject() to output the correct format
 
 This ensures type safety while supporting the API's flexibility.
 
@@ -654,7 +652,7 @@ COMMON ISSUES:
     - Newgrounds passes authenticated session_id in URL on hosted games
     - CRITICAL: Must call App.checkSession() and wait for callback before using session.user
     - Common mistake: Trying to unlock medals on title screen before session validates
-    - Always ensure hasLoaded('session') is true and session.user is not null
+   - Always ensure session.verified is true and session.user is not null
 
 3. "Session expired" errors
     - Session IDs expire after 1 hour (or 30 days if remembered)
@@ -804,10 +802,8 @@ The pseudo-code uses GET_CURRENT_DOMAIN() which maps to platform APIs:
 
 WEB BROWSERS:
 - JavaScript: window.location.hostname or window.location.host
-- IMPORTANT: Extract base domain only - remove ALL subdomains
-- Examples: www.example.com → example.com, api.example.com → example.com, sub.api.example.com → example.com
-- Algorithm: Split by dots, keep only the last two components (domain + TLD)
-- Exception: Handle special cases like .co.uk (two-part TLDs) if needed for your use case
+- IMPORTANT: Keep the full host name as-is (do not strip subdomains)
+- Examples: www.example.com stays www.example.com, uploads.ungrounded.net stays uploads.ungrounded.net
 
 MOBILE APPS:
 - iOS: Bundle.main.bundleIdentifier (app bundle ID)  

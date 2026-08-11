@@ -12,8 +12,8 @@ CLASS BaseResult
     RESULT PATTERN:
     Every component produces a result:
     - Medal.unlock component -> Medal.unlockResult
-    - Score.postScore component -> Score.postScoreResult
-    - CheckSession component -> CheckSessionResult
+    - ScoreBoard.postScore component -> ScoreBoard.postScoreResult
+    - App.checkSession component -> App.checkSessionResult
     - etc.
     
     All results extend BaseResult and contain:
@@ -57,16 +57,16 @@ CLASS BaseResult
     COMMENT:   - medal: Medal object (the medal that was unlocked)
     COMMENT:   - medal_score: number (new total score)
     COMMENT:
-    COMMENT: Score.postScoreResult adds:
+    COMMENT: ScoreBoard.postScoreResult adds:
     COMMENT:   - scoreboard: ScoreBoard object (updated board info)
     COMMENT:   - score: Score object (the score that was posted)
     COMMENT:
-    COMMENT: Scoreboard.getScoresResult adds:
+    COMMENT: ScoreBoard.getScoresResult adds:
     COMMENT:   - scoreboard: ScoreBoard object
     COMMENT:   - scores: array of Score objects
     COMMENT:
     COMMENT: CloudSave.loadSlotResult adds:
-    COMMENT:   - saveSlot: SaveSlot object (with data loaded from cloud)
+    COMMENT:   - slot: SaveSlot object (with data loaded from cloud)
     COMMENT:
     COMMENT: Subclasses define the same five identity members every model overrides.
     COMMENT: For Medal.unlockResult they are, exactly:
@@ -153,15 +153,19 @@ CLASS BaseResult
     COMMENT:
     COMMENT: NGIO.core.queueComponent(medalComponent)
     COMMENT: NGIO.core.executeQueue(function(response) {
-    COMMENT:     COMMENT: response is a Response object containing an array of results
+    COMMENT:     COMMENT: response is a Response object containing result or result list
     COMMENT:     IF response is null THEN
     COMMENT:         COMMENT: Network error
     COMMENT:         showError("Network error")
     COMMENT:         RETURN
     COMMENT:     END IF
     COMMENT:
-    COMMENT:     COMMENT: Loop through the results
-    COMMENT:     FOR EACH result IN response.results
+    COMMENT:     COMMENT: Loop through one or many results
+    COMMENT:     CREATE results AS CALL response.getResultList()
+    COMMENT:     IF results is null THEN
+    COMMENT:         SET results TO [CALL response.getResult()]
+    COMMENT:     END IF
+    COMMENT:     FOR EACH result IN results
     COMMENT:         IF result.success THEN
     COMMENT:             COMMENT: Component succeeded
     COMMENT:             COMMENT: result contains component-specific data
@@ -213,7 +217,7 @@ CLASS BaseResult
     COMMENT:   END IF
     COMMENT:
     COMMENT: Error Handling:
-    COMMENT:   If success=false, result.error is guaranteed to exist
+    COMMENT:   If success=false, result.error may still be null
     COMMENT:   - result.error.code: Numeric error code
     COMMENT:   - result.error.message: Human-readable message
     COMMENT:
@@ -221,7 +225,7 @@ CLASS BaseResult
     COMMENT:   The specific properties in a result depend on the component
     COMMENT:   Refer to component documentation for what properties are available
     COMMENT:   Example: Medal.unlockResult will have medal and medalScore,
-    COMMENT:   but Score.postScoreResult might have different properties
+    COMMENT:   but ScoreBoard.postScoreResult might have different properties
     COMMENT:
     COMMENT: Server Authority:
     COMMENT:   The server is the authority. The values in the result represent

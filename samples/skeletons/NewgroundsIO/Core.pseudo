@@ -508,7 +508,7 @@ CLASS Core
                     COMMENT: Determine window target from the component
                     CREATE browserTarget AS "_blank"
                     IF toExecute is not null AND toExecute is NOT array THEN
-                        CREATE component AS toExecute.component
+                        CREATE component AS toExecute.componentModel
                         IF component is not null AND component has property "browserTarget" AND component.browserTarget is not null THEN
                             SET browserTarget TO component.browserTarget
                         END IF
@@ -623,7 +623,7 @@ CLASS Core
                     LOG_ERROR("JSON parsing error - " + error.message)
 
                     SET responseModel.error TO Errors.getError(
-                        Errors.INVALID_REQUEST,
+                        Errors.INVALID_RESPONSE,
                         "Unable to parse JSON response"
                     )
 

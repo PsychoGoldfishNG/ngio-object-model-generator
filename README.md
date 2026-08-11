@@ -48,6 +48,7 @@ This creates:
 - `config.js` - Configuration file defining paths, file extensions, and structure
 - `helpers.js` - Utility functions for type conversion and name transformations
 - `GETTING_STARTED.txt` - Complete guide to customizing the generator
+- `package.json` - Local module marker with `{ "type": "commonjs" }` so `config.js` and `helpers.js` load correctly inside ESM-first projects
 
 **These files are meant to be edited!** Customize them for your target programming language.
 

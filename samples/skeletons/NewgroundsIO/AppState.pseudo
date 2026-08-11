@@ -291,7 +291,7 @@ CLASS AppState
             CREATE sessionStatus AS new NewgroundsIO.SessionStatus()
             
             COMMENT: === Check basic session existence ===
-            IF session.id is empty OR session is null THEN
+            IF session is null OR session.id is empty THEN
                 COMMENT: No session yet - return uninitialized status
                 RETURN sessionStatus
             END IF
@@ -381,7 +381,6 @@ CLASS AppState
                 COMMENT: Create session for first time OR update existing session
                 IF this.session is null THEN
                     SET this.session TO resultObject.session
-                    CALL setLoaded('session')
                 ELSE
                     COMMENT: Update existing session object with new data (observer pattern)
                     CALL this.session.importFromObject(resultObject.session)
@@ -428,8 +427,10 @@ CLASS AppState
                 END IF
             END IF
             
-            COMMENT: === CloudSave.setData results ===
-            IF objectName equals "CloudSave.setData" THEN
+            COMMENT: === CloudSave.loadSlot / setData / clearSlot results ===
+            IF objectName equals "CloudSave.loadSlot" OR
+               objectName equals "CloudSave.setData" OR
+               objectName equals "CloudSave.clearSlot" THEN
                 COMMENT: Only update if saveSlots have been loaded
                 IF this.saveSlots is not null THEN
                     FOR EACH saveSlot IN this.saveSlots
@@ -595,6 +596,16 @@ CLASS AppState
             
             COMMENT: Also remove the saved session from persistent storage
             COMMENT: So next time they open the app, they won't be auto-logged-in
+            CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
+    END FUNCTION
+
+    FUNCTION invalidateSession()
+
+        PURPOSE: Discard an invalid or expired session from memory and storage
+        WHY: Re-using a dead session id causes repeated EXPIRED_SESSION failures
+
+        BEHAVIOR:
+            CALL onSessionCleared()
             CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
     END FUNCTION
 

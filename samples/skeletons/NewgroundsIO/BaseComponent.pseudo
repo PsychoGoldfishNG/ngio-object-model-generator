@@ -18,7 +18,7 @@ CLASS BaseComponent
     
     COMPONENT HIERARCHY:
     - BaseComponent is the foundation
-    - All specific components (Medal.unlock, Score.postScore, etc.) extend BaseComponent
+    - All specific components (Medal.unlock, ScoreBoard.postScore, etc.) extend BaseComponent
     - Each component defines its own properties and requirements
     
     ====================
@@ -31,8 +31,8 @@ CLASS BaseComponent
         to prevent hackers from cheating
         ENCRYPTION PROCESS: When true, the component is encrypted using the app's
         encryption key before being sent to the server
-        WHEN TRUE: Medal.unlock, Score.postScore, Scoreboard operations
-        WHEN FALSE: Read-only operations like Medal.getList, Scoreboard.getBoards
+        WHEN TRUE: Medal.unlock, ScoreBoard.postScore, ScoreBoard operations
+        WHEN FALSE: Read-only operations like Medal.getList, ScoreBoard.getBoards
     
     requiresSession: boolean = false
         PURPOSE: Whether the user must be logged in to execute this component
@@ -45,17 +45,20 @@ CLASS BaseComponent
     
     redirect: boolean = false
         PURPOSE: Whether this component opens a browser window
-        WHY: Login (Passport) and the Loader components send the player to a URL
+        WHY: Loader components may send the player to a URL
         rather than exchanging JSON
         REDIRECT PROCESS: When true, instead of making AJAX request with JSON,
         the browser is redirected to the gateway with component data in URL
         EXAMPLES:
-            - Passport login opens a window for authentication
+            - Loader.openOfficialUrl opens a browser destination
             - Once complete, window closes and session is updated
-        WHEN TRUE: Passport.login and every Loader.* component
+        WHEN TRUE: Loader.* components
         NAMING: this property is `redirect`, NOT `isRedirect`. It is read by name
         from outside the model - the request pipeline branches on
         `componentModel.redirect` - so the name is part of the contract
+        NOTE: For Loader components this same property is also a real server
+        parameter. Keep it in propertyNames for those components so `redirect:false`
+        reaches the gateway when requesting URL data instead of a browser redirect.
 
     browserTarget: string | null = null
         PURPOSE: The window/frame to open redirect in (if redirect=true)
@@ -258,7 +261,7 @@ CLASS BaseComponent
     COMMENT:   Example: Medal unlock rewards must be encrypted or hacker could fake it
     COMMENT:
     COMMENT: Redirects:
-    COMMENT:   Some components (Passport login, the Loader family) use redirect=true
+    COMMENT:   Some components (the Loader family) use redirect=true
     COMMENT:   These don't get responses back to the app
     COMMENT:   Instead, the browser is redirected to complete the action
     COMMENT:   After redirect completes, session is updated server-side

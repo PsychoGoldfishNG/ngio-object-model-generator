@@ -153,7 +153,7 @@ module.exports = {
          *  - componentMethod: The method of the component
          */
         results: (config, componentScope, componentMethod) => {
-            return `${config.models_dir}/results/${componentScope}/${componentMethod}${config.output_file_extension}`;
+            return `${config.models_dir}/results/${componentScope}/${componentMethod}Result${config.output_file_extension}`;
         },
 
 		/**

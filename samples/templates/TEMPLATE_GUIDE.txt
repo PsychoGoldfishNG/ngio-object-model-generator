@@ -61,7 +61,7 @@ Examples:
 3. AVAILABLE VARIABLES
 ================================================================================
 
-All templates receive these variables:
+Most templates receive these variables:
 
   model
     - The object/component/result model being generated
@@ -101,6 +101,14 @@ Result-specific variables (result.ejs):
   - model.component     // Parent component namespace
   - model.method        // Parent method name
   - model.properties    // Properties this result returns
+
+Object-factory variables (object_factory.ejs):
+  - models             // { objects, components, results }
+  - helpers
+  - partial
+  - config
+
+Note: object_factory.ejs receives `models` (plural), not `model`.
 
 
 ================================================================================

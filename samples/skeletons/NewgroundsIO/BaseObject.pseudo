@@ -513,8 +513,8 @@ CLASS BaseObject
     COMMENT: Everything that needs a class from a name goes through the factory:
     COMMENT:
     COMMENT:    ObjectFactory.CreateObject(name, data, core)     - "Medal", "Session"
-    COMMENT:    ObjectFactory.CreateComponent(name, data, core)  - "Medal.unlock"
-    COMMENT:    ObjectFactory.CreateResult(name, data, core)     - "Medal.unlock"
+    COMMENT:    ObjectFactory.CreateComponent(component, method, data, core)  - "Medal", "unlock"
+    COMMENT:    ObjectFactory.CreateResult(component, method, data, core)     - "Medal", "unlock"
     COMMENT:
     COMMENT: castToExpectedType calls CreateObject for its object and array-of-object
     COMMENT: casts, so nested models are built by the same single lookup.

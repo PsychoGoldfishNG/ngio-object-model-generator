@@ -12,7 +12,7 @@ for your target programming language.
 WHAT WAS CREATED?
 ================================================================================
 
-Two files were created in your project directory:
+These files were created in your project directory:
 
   config.js
     - Configuration file that controls how models are generated
@@ -23,6 +23,12 @@ Two files were created in your project directory:
     - Utility functions used by templates and config
     - Handles name transformations, type conversions, etc.
     - MEANT TO BE EDITED - add/update language-specific logic here
+
+  package.json
+    - Local module-format marker for the codegen folder
+    - Sets { "type": "commonjs" } so config.js/helpers.js load correctly
+    - Usually should be left as-is
+    - Created only if one does not already exist in that folder
 
 
 ================================================================================
