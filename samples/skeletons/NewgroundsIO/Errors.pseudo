@@ -162,7 +162,18 @@ CLASS Errors
             COMMENT: the emitted class is usually renamed to avoid colliding with the
             COMMENT: language's own Error type (NgioError in the ActionScript ports), and
             COMMENT: the factory is what owns that mapping.
-            CREATE errorModel AS ObjectFactory.CreateObject("Error")
+            COMMENT:
+            COMMENT: NOTE THE ONE ARGUMENT. The factory signature is
+            COMMENT: CreateObject(name, data, core), and the general rule is that every
+            COMMENT: caller passes core - because importFromObject needs it to build
+            COMMENT: nested models. Errors is the deliberate exception: it is a STATIC
+            COMMENT: class with no instance and no way to obtain a core, and an Error
+            COMMENT: model has no nested objects, so it never needs one.
+            COMMENT:
+            COMMENT: In a language with required parameters, declare `data` and `core`
+            COMMENT: optional with a null default rather than threading a core into a
+            COMMENT: static class.
+            CREATE errorModel AS ObjectFactory.CreateObject("Error", null, null)
             
             COMMENT: Set the error code
             SET errorModel.code TO errorCode

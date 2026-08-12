@@ -174,9 +174,15 @@ CLASS BaseResult
     COMMENT:                 updateScoreDisplay(result.medal_score)
     COMMENT:             END IF
     COMMENT:         ELSE
-    COMMENT:             COMMENT: Component failed
-    COMMENT:             COMMENT: result.error explains why
-    COMMENT:             showError("Failed: " + result.error.message)
+    COMMENT:             COMMENT: Component failed. `error` is OPTIONAL DETAIL, not a
+    COMMENT:             COMMENT: guarantee - a false `success` is the failure signal, and
+    COMMENT:             COMMENT: error can still be null if the server sent no details.
+    COMMENT:             COMMENT: Never reach through it without checking first.
+    COMMENT:             IF result.error is not null THEN
+    COMMENT:                 showError("Failed: " + result.error.message)
+    COMMENT:             ELSE
+    COMMENT:                 showError("Failed, with no error details")
+    COMMENT:             END IF
     COMMENT:         END IF
     COMMENT:     END FOR
     COMMENT: })

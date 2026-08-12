@@ -397,44 +397,12 @@ CLASS NGIO
             COMMENT: Update timestamp now to prevent multiple requests from racing
             SET lastCheckSessionTime TO GET_CURRENT_TIME()
             
-            COMMENT: If we don't have any session yet, we need to create one on the server
+            COMMENT: If we don't have any session yet, we need to create one on the server.
+            COMMENT: This is ONE of the two paths that start a session - the other is the
+            COMMENT: EXPIRED_SESSION branch below. Both call the same sub-procedure so they
+            COMMENT: report identical statuses for identical server responses.
             IF hasSession() is false THEN
-                CREATE startSessionComponent AS CALL ObjectFactory.CreateComponent("App", "startSession", null, core)
-                IF startSessionComponent is null THEN
-                    THROW error "Could not create App.startSession component"
-                END IF
-                CALL core.executeComponent(startSessionComponent, 
-                    FUNCTION onComplete(response)
-                        COMMENT: Check if the outer response succeeded first
-                        IF response is not null AND response.success is true THEN
-                            SET result TO CALL response.getResult()
-
-                            COMMENT: Then check component success
-                            IF result is not null AND result.success is true THEN
-                                COMMENT: Session created successfully (user will not be logged in yet)
-                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
-                            ELSE IF result is not null AND result.error is not null THEN
-                                COMMENT: Something went wrong creating the session
-                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
-                                SET sessionStatus.error TO result.error
-                            ELSE
-                                COMMENT: Got an error but no details - create a generic one
-                                SET sessionStatus.error TO NewgroundsIO.Errors.getError()
-                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
-                            END IF
-                        ELSE IF response is not null AND response.error is not null THEN
-                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
-                            SET sessionStatus.error TO response.error
-                        ELSE
-                            COMMENT: Got an error but no details - create a generic one
-                            SET sessionStatus.error TO NewgroundsIO.Errors.getError()
-                            SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
-                        END IF
-                        
-                        COMMENT: Call the callback to report the result
-                        CALL callback WITH context thisArg PASSING sessionStatus
-                    END FUNCTION
-                )
+                CALL startNewSession(sessionStatus, callback, thisArg)
                 RETURN
             END IF
             
@@ -468,13 +436,29 @@ CLASS NGIO
                         COMMENT: the component failed, lets see why
                         ELSE IF result is not null AND result.error is not null THEN
 
-                            COMMENT: session id is invalid/expired, discard it before reporting
+                            COMMENT: The server has REJECTED this session id. Do not report
+                            COMMENT: this as an error - it is a lifecycle event. Throw the
+                            COMMENT: dead session away and transparently start a fresh one,
+                            COMMENT: so the player is simply treated as a new user.
+                            COMMENT:
+                            COMMENT: invalidateSession() clears the id from memory AND from
+                            COMMENT: persistent storage. Both matter: if the saved id
+                            COMMENT: survives, the next app launch restores the same dead id
+                            COMMENT: and fails identically, which turns a recoverable
+                            COMMENT: condition into a permanent lockout with no in-app way
+                            COMMENT: for the player to get past it.
+                            COMMENT:
+                            COMMENT: Note the RETURN - startNewSession fires the callback
+                            COMMENT: itself, so falling through would fire it twice.
                             IF result.error.code equals NewgroundsIO.Errors.EXPIRED_SESSION THEN
                                 CALL core.appState.invalidateSession()
-                                SET sessionStatus.status TO NewgroundsIO.SessionStatus.EXPIRED
-                                SET sessionStatus.error TO result.error
-                            
-                            COMMENT: looks like the user cancelled the login
+                                CALL startNewSession(sessionStatus, callback, thisArg)
+                                RETURN
+
+                            COMMENT: The user cancelled the login. Also dead server-side, so
+                            COMMENT: discard it too - that is what lets the next checkSession()
+                            COMMENT: recover. But the cancellation is meaningful to the caller,
+                            COMMENT: so report it rather than silently starting over.
                             ELSE IF result.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
                                 CALL core.appState.invalidateSession()
                                 SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
@@ -510,7 +494,70 @@ CLASS NGIO
                 END FUNCTION
             )
     END FUNCTION
-    
+
+    FUNCTION startNewSession(sessionStatus: NewgroundsIO.SessionStatus, callback: function|null, thisArg: any = null)
+
+        PURPOSE: Obtain a brand new session from the server and report the outcome.
+        WHY: Used by TWO paths in checkSession() - when no valid session exists, and
+        when the server rejects the one we have with EXPIRED_SESSION. Both must report
+        identical statuses for identical server responses, so this is implemented once
+        and called from both. Inlining it in one path is how the two drift apart.
+
+        PARAMETERS:
+            sessionStatus: The SessionStatus object the caller is filling in
+            callback: The caller's callback - this procedure fires it
+            thisArg: Context for the callback
+
+        COMMENT: This sub-procedure deliberately BYPASSES the lastCheckSessionTime
+        COMMENT: throttle. It only ever runs as a single follow-up to a call that already
+        COMMENT: cleared the throttle, so it cannot loop - and if the startSession itself
+        COMMENT: fails, report ERROR rather than retrying.
+
+        BEHAVIOR:
+            CREATE startSessionComponent AS CALL ObjectFactory.CreateComponent("App", "startSession", null, core)
+            IF startSessionComponent is null THEN
+                THROW error "Could not create App.startSession component"
+            END IF
+
+            CALL core.executeComponent(startSessionComponent,
+                FUNCTION onComplete(response)
+
+                    COMMENT: Check the OUTER response first. The parameter is a Response,
+                    COMMENT: not a result - naming it `result` here is how this branch
+                    COMMENT: used to end up checking the wrong level entirely.
+                    IF response is null OR response.success is not true THEN
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        IF response is not null AND response.error is not null THEN
+                            SET sessionStatus.error TO response.error
+                        ELSE
+                            SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                        END IF
+                        CALL callback WITH context thisArg PASSING sessionStatus
+                        RETURN
+                    END IF
+
+                    COMMENT: Then check the component's own outcome. A rejected component
+                    COMMENT: arrives inside a SUCCESSFUL response, so the outer flag alone
+                    COMMENT: would report every rejection as a success.
+                    SET result TO CALL response.getResult()
+
+                    IF result is not null AND result.success is true THEN
+                        COMMENT: Session created (the user will not be logged in yet)
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+                    ELSE IF result is not null AND result.error is not null THEN
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                        SET sessionStatus.error TO result.error
+                    ELSE
+                        COMMENT: Got a failure but no details - create a generic error
+                        SET sessionStatus.error TO NewgroundsIO.Errors.getError()
+                        SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
+                    END IF
+
+                    CALL callback WITH context thisArg PASSING sessionStatus
+                END FUNCTION
+            )
+    END FUNCTION
+
     FUNCTION endSession(callback: function|null = null, thisArg: any = null)
         
         PURPOSE: Log the user out and end the session.

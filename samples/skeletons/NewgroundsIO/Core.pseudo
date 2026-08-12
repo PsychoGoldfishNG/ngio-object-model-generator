@@ -18,7 +18,14 @@ CLASS Core
     GATEWAY_URL = "https://www.newgrounds.io/gateway_v3.php"
         PURPOSE: The server endpoint where all API calls are sent.
         WHY: All requests go to this single URL on the Newgrounds servers.
-    
+
+    LIBRARY_VERSION = "1.0.0"
+        PURPOSE: The version of THIS library - your port, not the gateway and not the app.
+        WHY: Several Newgrounds.io libraries exist, of differing vintage. When someone
+        reports a bug against "the Newgrounds.io library", this is what identifies which
+        one and which revision they actually have. Bump it when you release a change, and
+        log it at init alongside the app id and build version.
+
     MAX_QUEUE_SIZE = 10
         PURPOSE: Maximum number of components that can be bundled in a single request.
         WHY: The server has limits to prevent abuse. If we send too many at once, the server rejects it.
@@ -280,14 +287,18 @@ CLASS Core
                 RETURN
             END IF
             
-            COMMENT: Create array to hold Execute wrappers that will be sent
+            COMMENT: ==================== STEP 1: PARTITION ====================
+            COMMENT: Sort the queue into redirects and batchable wrappers. Do NOT send
+            COMMENT: anything yet, and do NOT clear the queue yet. Partition, then clear,
+            COMMENT: then act - dispatching network work while still walking a queue you
+            COMMENT: are about to clear is how this method breaks.
+            CREATE redirectComponents AS new array
             CREATE toExecute AS new array
-            
-            COMMENT: Process each queued Execute object (queue already contains wrapped Execute objects)
+
             FOR EACH executeWrapper IN componentQueue
                 COMMENT: Get the component model inside the Execute wrapper
                 CREATE componentModel AS executeWrapper.componentModel
-                
+
                 COMMENT: Check if the wrapped component is a redirect loader
                 COMMENT: These open external windows instead of returning JSON responses
                 COMMENT: The flag is named `redirect` on BaseComponent, so every component
@@ -300,20 +311,40 @@ CLASS Core
                 END IF
 
                 IF isRedirect equals true THEN
-                    COMMENT: Execute this loader separately (these don't batch with regular components)
-                    CALL executeComponent(componentModel, callback, thisArg)
+                    APPEND componentModel TO redirectComponents
                     CONTINUE TO NEXT COMPONENT
                 END IF
-                
+
                 COMMENT: Add the already-wrapped Execute object to the batch
                 COMMENT: It's already been processed by queueComponent() and has the component set
                 SET executeWrapper.core TO this
                 APPEND executeWrapper TO toExecute
             END FOR
-            
+
+            COMMENT: ==================== STEP 2: CLEAR ====================
             COMMENT: Queue has been processed - clear it for next batch
             CLEAR componentQueue
-            
+
+            COMMENT: ==================== STEP 3: ACT ====================
+            COMMENT: Send each redirect on its own, WITHOUT the caller's callback.
+            COMMENT:
+            COMMENT: This is the part that is easy to get wrong. The callback is in scope
+            COMMENT: and passing it looks helpful, but a redirect exchanges no JSON - it
+            COMMENT: fires its callback with null. Pass the caller's callback here and a
+            COMMENT: queue holding one redirect plus one normal component invokes that
+            COMMENT: callback TWICE: once with null from the redirect, then once with the
+            COMMENT: real Response from the batch.
+            COMMENT:
+            COMMENT: Callers cannot defend against that, because the empty-queue case above
+            COMMENT: legitimately calls back with null too - so a careful caller reads the
+            COMMENT: first invocation as "nothing to do" and discards the real response.
+            COMMENT:
+            COMMENT: executeQueue invokes the caller's callback EXACTLY ONCE, with either
+            COMMENT: null or a Response. The redirects are fire-and-forget.
+            FOR EACH redirectComponent IN redirectComponents
+                CALL executeComponent(redirectComponent)
+            END FOR
+
             COMMENT: If we ended up with no components to send, we're done
             IF toExecute.length equals 0 THEN
                 IF callback is not null THEN
@@ -321,7 +352,7 @@ CLASS Core
                 END IF
                 RETURN
             END IF
-            
+
             COMMENT: Send all the components to the server
             CALL sendRequest(toExecute, false, callback, thisArg)
     END FUNCTION
@@ -485,8 +516,13 @@ CLASS Core
                 END IF
             END IF
             
-            COMMENT: Convert to API format using prepareForJson (handles encryption, formatting)
-            CREATE plainObject AS CALL requestModel.prepareForJson()
+            COMMENT: Convert the Request/Execute container models to gateway wire format.
+            COMMENT:
+            COMMENT: This is NOT requestModel.prepareForJson(). Building the payload is
+            COMMENT: serialization, not model behavior, and the gateway's rules are not a
+            COMMENT: straight property dump - see buildGatewayRequestObject() below. Request
+            COMMENT: and Execute have NO prepareForJson() or importFromObject() overrides.
+            CREATE plainObject AS CALL HttpRequestHelper.buildGatewayRequestObject(requestModel)
             COMMENT: Encode as JSON string for transmission
             CREATE requestString AS JSON_ENCODE(plainObject)
             
@@ -630,11 +666,16 @@ CLASS Core
                     SET jsonObject TO null
                 END TRY
 
-                COMMENT: Import the JSON into the Response model
-                COMMENT: This also automatically updates appState
+                COMMENT: Import the JSON into the Response model.
+                COMMENT:
+                COMMENT: This is NOT responseModel.importFromObject(jsonObject). Turning a
+                COMMENT: raw server response into a populated Response is a distinct job with
+                COMMENT: a required order of operations - see importResponseObject() below.
+                COMMENT: Two of its four steps cannot be expressed as an importFromObject
+                COMMENT: override at all, which is why the whole job lives in a helper.
                 IF jsonObject is not null THEN
                     TRY
-                        CALL responseModel.importFromObject(jsonObject)
+                        CALL HttpResponseHelper.importResponseObject(responseModel, jsonObject)
                     CATCH importError
                         COMMENT: Importing JSON into model failed
                         LOG_ERROR("IMPORT ERROR: Error importing into Response model with object: "+ JSON_ENCODE(jsonObject)+ " :: " + importError.message)
@@ -651,6 +692,272 @@ CLASS Core
             IF callback is not null THEN
                 CALL callback WITH context thisArg PASSING responseModel
             END IF
+    END FUNCTION
+
+END CLASS
+
+
+COMMENT: ============================================================================
+COMMENT: SERIALIZATION HELPERS
+COMMENT: ============================================================================
+COMMENT:
+COMMENT: These two procedures are the request and response halves of gateway
+COMMENT: serialization. They are shown here as static helpers because that is where
+COMMENT: they belong: they are transport concerns, not model behavior.
+COMMENT:
+COMMENT: Put them wherever your language makes static helpers natural - a separate
+COMMENT: file, a module, private methods on Core. What matters is that they are NOT
+COMMENT: prepareForJson()/importFromObject() overrides on Request, Execute or Response.
+COMMENT: Those three models have no serialization overrides at all.
+COMMENT:
+COMMENT: The reference libraries name them HttpRequestHelper.buildGatewayRequestObject()
+COMMENT: and HttpResponseHelper.importResponseObject().
+
+CLASS HttpRequestHelper
+
+    FUNCTION buildGatewayRequestObject(requestModel: NewgroundsIO.models.objects.Request): object
+
+        PURPOSE: Convert a Request model into the plain object the gateway expects.
+        WHY: The gateway distinguishes an ABSENT key from a key holding null or false,
+        so the payload is not a dump of the model's properties.
+
+        RETURNS: A plain object ready to be JSON encoded
+
+        BEHAVIOR:
+            CREATE requestObject AS new empty object
+
+            COMMENT: === Field inclusion rules ===
+            COMMENT: app_id      always
+            COMMENT: session_id  only when not null
+            COMMENT: debug       ONLY WHEN TRUE - omit entirely when false
+            COMMENT: echo        only when not null
+            COMMENT: execute     always; single object or array, matching what was attached
+
+            SET requestObject.app_id TO requestModel.app_id
+
+            IF requestModel.session_id is not null THEN
+                SET requestObject.session_id TO requestModel.session_id
+            END IF
+
+            COMMENT: Note the test is "equals true", not "is not null". Sending
+            COMMENT: debug:false is NOT the same as omitting the key - a debug-flagged
+            COMMENT: request is validated differently by the server, so emitting it
+            COMMENT: unconditionally changes behavior for every release build. This is
+            COMMENT: invisible from the client: nothing errors and the request succeeds.
+            IF requestModel.debug equals true THEN
+                SET requestObject.debug TO true
+            END IF
+
+            IF requestModel.echo is not null THEN
+                SET requestObject.echo TO requestModel.echo
+            END IF
+
+            COMMENT: === Attach the execute payload ===
+            COMMENT: Request holds EITHER execute OR executeList, never both - the
+            COMMENT: setters clear each other. Serialize whichever one is set.
+            COMMENT:
+            COMMENT: NOTE THE NAME: this is executeIsArray(), while the matching test on
+            COMMENT: Response is resultIsList(). The two genuinely differ. Match them
+            COMMENT: rather than regularizing - shared code that probes for one by name
+            COMMENT: will miss the other.
+            IF CALL requestModel.executeIsArray() THEN
+                CREATE executeList AS new array
+                FOR EACH executeModel IN CALL requestModel.getExecuteList()
+                    APPEND CALL buildExecuteObject(executeModel) TO executeList
+                END FOR
+                SET requestObject.execute TO executeList
+            ELSE IF CALL requestModel.getExecute() is not null THEN
+                SET requestObject.execute TO CALL buildExecuteObject(CALL requestModel.getExecute())
+            ELSE
+                SET requestObject.execute TO null
+            END IF
+
+            RETURN requestObject
+    END FUNCTION
+
+    FUNCTION buildExecuteObject(executeModel: NewgroundsIO.models.objects.Execute): object
+
+        PURPOSE: Convert one Execute wrapper into wire format, encrypting if required.
+        WHY: Encryption applies to the whole execute object, not to individual fields,
+        and it happens at serialization time - not when the component was created.
+
+        RETURNS: Either a plain execute object, or { secure: "<encrypted string>" }
+
+        BEHAVIOR:
+            CREATE componentModel AS executeModel.componentModel
+
+            COMMENT: Build the plain form first. Both fields were already populated by
+            COMMENT: Execute.setComponent(): `component` is the full dotted path
+            COMMENT: ("Medal.unlock") taken from componentModel.objectName, and
+            COMMENT: `parameters` is the component's own serialized output - its
+            COMMENT: propertyNames only, never the transport flags.
+            CREATE plainExecute AS new empty object
+            SET plainExecute.component TO executeModel.component
+            SET plainExecute.parameters TO executeModel.parameters
+
+            COMMENT: Secure components get the ENTIRE execute object encrypted and
+            COMMENT: wrapped, so the component name and its parameters are both hidden.
+            COMMENT: Encrypt at this point - not earlier - because the plain object has
+            COMMENT: to be fully built before it can be serialized and enciphered.
+            IF componentModel is not null AND componentModel.isSecure equals true THEN
+                IF executeModel.core is null THEN
+                    THROW error "Core is required for encrypting secure components."
+                END IF
+
+                CREATE encryptedString AS CALL executeModel.core.encryptObject(plainExecute)
+
+                COMMENT: The encrypted form carries ONLY `secure` - no component name,
+                COMMENT: no parameters. That is the whole point of the wrapper.
+                CREATE secureExecute AS new empty object
+                SET secureExecute.secure TO encryptedString
+                RETURN secureExecute
+            END IF
+
+            RETURN plainExecute
+    END FUNCTION
+
+END CLASS
+
+
+CLASS HttpResponseHelper
+
+    FUNCTION importResponseObject(responseModel: NewgroundsIO.models.objects.Response, jsonObject: object)
+
+        PURPOSE: Populate a Response model from the gateway's decoded reply.
+        WHY: This is more than one importFromObject() call, and THE ORDER IS LOAD-BEARING.
+
+        COMMENT: Why this cannot be an importFromObject() override on Response:
+        COMMENT: step 1 has to happen BEFORE the base import runs, and step 4 has to
+        COMMENT: happen AFTER it. An override only gives you one place to stand.
+
+        BEHAVIOR:
+            COMMENT: ===== STEP 1: Take `result` out BEFORE the base import =====
+            COMMENT: The base import walks declared properties and casts them by type.
+            COMMENT: Handed a raw result payload it has no cast type for, it will try to
+            COMMENT: cast data it cannot type. Remove it first, deal with it separately.
+            CREATE rawResult AS null
+            IF jsonObject has key "result" THEN
+                SET rawResult TO jsonObject.result
+                REMOVE key "result" FROM jsonObject
+            END IF
+
+            COMMENT: ===== STEP 2: Run the base import =====
+            COMMENT: This populates the Response's own properties: success, error,
+            COMMENT: app_id, debug, api_version and so on - and casts `error` into a
+            COMMENT: real Error model, which step 4 depends on.
+            CALL responseModel.importFromObject(jsonObject)
+
+            COMMENT: ===== STEP 3: Build the typed result models =====
+            COMMENT: The gateway returns either one result object or an array of them,
+            COMMENT: mirroring whether the request carried one execute or a list.
+            IF rawResult is not null THEN
+
+                IF rawResult is array THEN
+                    CREATE resultList AS new array
+                    FOR EACH rawEntry IN rawResult
+                        CREATE resultModel AS CALL buildResultModel(rawEntry, responseModel.core)
+                        COMMENT: An unrecognized component name yields null from the
+                        COMMENT: factory. Skip that entry rather than failing the whole
+                        COMMENT: response - a gateway that gained a component your build
+                        COMMENT: predates should not break every other result in the batch.
+                        IF resultModel is not null THEN
+                            APPEND resultModel TO resultList
+                        END IF
+                    END FOR
+                    CALL responseModel.setResultList(resultList)
+                ELSE
+                    CREATE resultModel AS CALL buildResultModel(rawResult, responseModel.core)
+                    IF resultModel is not null THEN
+                        CALL responseModel.setResult(resultModel)
+                    END IF
+                END IF
+            END IF
+
+            COMMENT: ===== STEP 4: Propagate a response-level error down =====
+            COMMENT: MUST run after step 2, so what gets copied is the TYPED Error model
+            COMMENT: built by the base import - not the raw dictionary it was decoded from.
+            COMMENT:
+            COMMENT: Why this exists: a transport-level failure produces an error on the
+            COMMENT: response and results with empty error slots. Callers check the RESULT
+            COMMENT: - that is where component outcomes live - so without this they see no
+            COMMENT: error at all and treat the call as having quietly returned nothing.
+            IF responseModel.error is not null THEN
+                FOR EACH resultModel IN CALL getAllResults(responseModel)
+                    IF resultModel.error is null THEN
+                        SET resultModel.error TO responseModel.error
+                    END IF
+                END FOR
+            END IF
+    END FUNCTION
+
+    FUNCTION buildResultModel(rawEntry: object, core: NewgroundsIO.Core): NewgroundsIO.BaseResult | null
+
+        PURPOSE: Turn one raw result entry into its typed result model.
+        WHY: Results are typed per component, so the component name selects the class.
+
+        RETURNS: The populated result model, or null if the component is unrecognized
+
+        BEHAVIOR:
+            COMMENT: A usable entry names its component and carries a data payload.
+            COMMENT: Anything else is not something this build knows how to type.
+            IF rawEntry is null OR rawEntry has no key "component" OR rawEntry has no key "data" THEN
+                RETURN null
+            END IF
+
+            COMMENT: The entry names its own component as a dotted path, e.g. "Medal.unlock"
+            CREATE componentPath AS rawEntry.component
+
+            COMMENT: Split on the dot - the factory takes scope and method separately.
+            COMMENT: Reject a path with no dot, or with nothing on either side of it,
+            COMMENT: rather than handing the factory an empty scope or method name.
+            CREATE dotPosition AS the index of the first "." in componentPath
+            IF dotPosition is not found
+               OR dotPosition equals 0
+               OR dotPosition equals (componentPath.length - 1) THEN
+                RETURN null
+            END IF
+
+            CREATE componentScope AS componentPath from 0 up to dotPosition
+            CREATE componentMethod AS componentPath from (dotPosition + 1) to the end
+
+            CREATE resultModel AS ObjectFactory.CreateResult(
+                componentScope, componentMethod, rawEntry.data, core
+            )
+            IF resultModel is null THEN
+                RETURN null
+            END IF
+
+            COMMENT: Feed the cache. THIS is the "automatic updates" mechanism - state
+            COMMENT: refreshes because the response helper pushes every typed result
+            COMMENT: through here, not because any model overrides importFromObject.
+            COMMENT: Skip it and cached medals, scoreboards and save slots silently
+            COMMENT: never refresh: every call succeeds, every cached value goes stale.
+            IF core is not null AND core.appState is not null THEN
+                CALL core.appState.setValueFromResult(resultModel)
+            END IF
+
+            RETURN resultModel
+    END FUNCTION
+
+    FUNCTION getAllResults(responseModel: NewgroundsIO.models.objects.Response): array
+
+        PURPOSE: Return every result on a response as a flat list, however it is stored.
+        WHY: Step 4 has to walk them all, and Response holds either one or a list.
+
+        BEHAVIOR:
+            IF CALL responseModel.resultIsList() THEN
+                CREATE resultList AS CALL responseModel.getResultList()
+                IF resultList is null THEN
+                    RETURN new empty array
+                END IF
+                RETURN resultList
+            END IF
+
+            CREATE singleResult AS CALL responseModel.getResult()
+            IF singleResult is null THEN
+                RETURN new empty array
+            END IF
+            RETURN [singleResult]
     END FUNCTION
 
 END CLASS

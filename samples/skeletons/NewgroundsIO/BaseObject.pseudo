@@ -53,13 +53,23 @@ CLASS BaseObject
         PURPOSE: Specifies how to cast (convert) each property value to the correct type
         WHY: Server returns everything as JSON strings. We need to convert to integers, booleans, 
              nested objects, arrays, etc.
-        EXAMPLE: { id: 'number', name: 'string', unlocked: 'boolean', metadata: User }
+        EXAMPLE: { id: 'number', name: 'string', unlocked: 'boolean', metadata: 'User' }
+        IMPORTANT: every value in this map is a STRING, including the model names.
+        The lookup is a string comparison - against the "array-of-" prefix and then
+        against factory names - so a bare class reference (metadata: User) does not
+        work. In a strict language that is a different type entirely.
         CAST TYPE VALUES:
             - 'string': Keep as text
-            - 'number': Convert to integer
+            - 'number': Convert to your language's WIDEST numeric type. Do NOT truncate
+                        to an integer here - see castToExpectedType() below for why the
+                        cast path stays wide even though the current schema is all ints.
             - 'boolean': Convert to true/false
-            - ClassName: Create an instance of ClassName and recursively import
+            - 'ClassName': Create an instance of ClassName and recursively import
             - 'array-of-ClassName': Create array of instances
+            - 'Array': Pass the array through UNCAST. Emitted for properties that are
+                       arrays with no declared element type - Execute.parameters and
+                       Result.data both hit this. "Array" is NOT a model name, so it
+                       must never reach the object factory.
     
     ====================
     PUBLIC PROPERTIES
@@ -227,10 +237,20 @@ CLASS BaseObject
             IF castType equals 'string' THEN
                 RETURN TO_STRING(value)
             ELSE IF castType equals 'number' THEN
-                COMMENT: TO_NUMBER, not TO_INTEGER. 'number' covers both int and float
-                COMMENT: properties, and truncating would corrupt every float the API
-                COMMENT: returns - score values, medal point values, unix timestamps.
-                COMMENT: If your language distinguishes them, use its widest numeric type.
+                COMMENT: TO_NUMBER, not TO_INTEGER - use your language's widest numeric
+                COMMENT: type if it distinguishes them.
+                COMMENT:
+                COMMENT: To be accurate about why: every numeric property in the CURRENT
+                COMMENT: schema is declared `int` - there is no `float` anywhere in it,
+                COMMENT: including Score.value, Medal.value and SaveSlot.timestamp. So
+                COMMENT: truncating would not corrupt anything today.
+                COMMENT:
+                COMMENT: The cast path stays wide anyway because 'number' is a single
+                COMMENT: cast type covering whatever the schema declares, and widening
+                COMMENT: costs nothing while narrowing silently loses data the day a
+                COMMENT: float appears. Do not widen your MODEL property types on the
+                COMMENT: strength of this - generate those from the schema's own int/float
+                COMMENT: distinction, so an id stays an integer in your public API.
                 RETURN TO_NUMBER(value)
             ELSE IF castType equals 'boolean' THEN
                 IF value is string THEN

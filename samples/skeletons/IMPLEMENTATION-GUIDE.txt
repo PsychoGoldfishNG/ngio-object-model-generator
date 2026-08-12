@@ -652,7 +652,7 @@ COMMON ISSUES:
     - Newgrounds passes authenticated session_id in URL on hosted games
     - CRITICAL: Must call App.checkSession() and wait for callback before using session.user
     - Common mistake: Trying to unlock medals on title screen before session validates
-   - Always ensure session.verified is true and session.user is not null
+    - Always ensure session.verified is true and session.user is not null
 
 3. "Session expired" errors
     - Session IDs expire after 1 hour (or 30 days if remembered)

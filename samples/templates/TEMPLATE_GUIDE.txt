@@ -102,6 +102,12 @@ Result-specific variables (result.ejs):
   - model.method        // Parent method name
   - model.properties    // Properties this result returns
 
+Note: result models have NO model.description. The result model is built fresh with
+exactly the three keys above, so the doc-comment idiom the object and component
+examples use - <%- model.description %> - emits the literal string "undefined" here
+rather than failing. Build result doc comments from model.component and
+model.method instead.
+
 Object-factory variables (object_factory.ejs):
   - models             // { objects, components, results }
   - helpers
@@ -281,7 +287,15 @@ To adapt templates to your target language:
    Boolean     →  boolean     →  bool      →  bool
    Array       →  Array       →  List<T>   →  list
 
-NOTE: API numeric values are integers. Treat "Number" as integer in model types.
+NOTE: every numeric property in the current schema is declared "int" - there is no
+"float" anywhere in it. So mapping Number to your language's integer type for MODEL
+PROPERTIES is correct, and gives an API where Medal.id is an integer rather than a
+float. helpers.getDataType() keeps a "float" branch for the day one appears.
+
+This is only about model property types. The 'number' CAST TYPE in
+castToExpectedType() is a separate thing and deliberately stays wide - see
+skeletons/NewgroundsIO/BaseObject.pseudo. Widening a cast costs nothing; narrowing
+it silently loses data if the schema ever gains a float.
 
 3. NAMING CONVENTIONS
    Use helper functions to transform names:

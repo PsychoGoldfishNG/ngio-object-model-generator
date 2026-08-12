@@ -1,4 +1,4 @@
-CLASS AppState
+﻿CLASS AppState
     DESCRIPTION: Stores and manages application state loaded from the server
     NAMESPACE: NewgroundsIO
     
@@ -305,9 +305,20 @@ CLASS AppState
             END IF
             
             COMMENT: === Check for session errors ===
+            COMMENT: The server signals a dead session TWO ways: the `expired` flag above,
+            COMMENT: and a component failing with EXPIRED_SESSION here. Handling only the
+            COMMENT: first leaves EXPIRED nearly unreachable in practice, because a
+            COMMENT: rejected id never sets the flag - it returns this error instead.
             IF session.error is not null THEN
                 COMMENT: Session encountered an error
-                IF session.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
+                IF session.error.code equals NewgroundsIO.Errors.EXPIRED_SESSION THEN
+                    COMMENT: The server rejected this session id. Report EXPIRED rather
+                    COMMENT: than a generic ERROR, so callers can tell "start over" apart
+                    COMMENT: from "something broke", and clear the session-scoped data
+                    COMMENT: that is no longer valid.
+                    CALL onSessionCleared()
+                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.EXPIRED
+                ELSE IF session.error.code equals NewgroundsIO.Errors.CANCELLED_SESSION THEN
                     COMMENT: User specifically cancelled the session
                     CALL onSessionCleared()
                     SET sessionStatus.status TO NewgroundsIO.SessionStatus.LOGIN_CANCELLED
@@ -373,7 +384,7 @@ CLASS AppState
             COMMENT: === Gateway.getVersion results ===
             IF objectName equals "Gateway.getVersion" THEN
                 SET this.gatewayVersion TO resultObject.version
-                CALL setLoaded('gatewayVersion')
+                CALL markLoaded('gatewayVersion')
             END IF
             
             COMMENT: === App.checkSession and App.startSession results ===
@@ -399,13 +410,13 @@ CLASS AppState
             IF objectName equals "App.getCurrentVersion" THEN
                 SET this.currentVersion TO resultObject.current_version
                 SET this.clientDeprecated TO resultObject.client_deprecated
-                CALL setLoaded('currentVersion')
+                CALL markLoaded('currentVersion')
             END IF
             
             COMMENT: === App.getHostLicense results ===
             IF objectName equals "App.getHostLicense" THEN
                 SET this.hostApproved TO resultObject.host_approved
-                CALL setLoaded('hostApproved')
+                CALL markLoaded('hostApproved')
             END IF
             
             COMMENT: === CloudSave.loadSlots results ===
@@ -413,7 +424,7 @@ CLASS AppState
                 IF this.saveSlots is null THEN
                     COMMENT: First time loading save slots
                     SET this.saveSlots TO resultObject.slots
-                    CALL setLoaded('saveSlots')
+                    CALL markLoaded('saveSlots')
                 ELSE
                     COMMENT: Update existing save slots with new data
                     FOR EACH newSlot IN resultObject.slots
@@ -447,7 +458,7 @@ CLASS AppState
                 IF this.medals is null THEN
                     COMMENT: First time loading medals
                     SET this.medals TO resultObject.medals
-                    CALL setLoaded('medals')
+                    CALL markLoaded('medals')
                 ELSE
                     COMMENT: Update existing medals with new data
                     FOR EACH newMedal IN resultObject.medals
@@ -464,13 +475,13 @@ CLASS AppState
             COMMENT: === Medal.getMedalScore results ===
             IF objectName equals "Medal.getMedalScore" THEN
                 SET this.medalScore TO resultObject.medal_score
-                CALL setLoaded('medalScore')
+                CALL markLoaded('medalScore')
             END IF
             
             COMMENT: === Medal.unlock results ===
             IF objectName equals "Medal.unlock" THEN
                 SET this.medalScore TO resultObject.medal_score
-                CALL setLoaded('medalScore')
+                CALL markLoaded('medalScore')
                 COMMENT: Update the unlocked medal in our medals list if available
                 IF this.medals is not null THEN
                     FOR EACH medal IN this.medals
@@ -487,7 +498,7 @@ CLASS AppState
                 IF this.scoreBoards is null THEN
                     COMMENT: First time loading scoreboards
                     SET this.scoreBoards TO resultObject.scoreboards
-                    CALL setLoaded('scoreBoards')
+                    CALL markLoaded('scoreBoards')
                 ELSE
                     COMMENT: Update existing scoreboards with new data
                     FOR EACH newBoard IN resultObject.scoreboards
@@ -532,7 +543,7 @@ CLASS AppState
     PRIVATE METHODS
     ====================
     
-    FUNCTION setLoaded(propertyName: string)
+    FUNCTION markLoaded(propertyName: string)
         
         PURPOSE: Records that a property has been loaded from the server
         WHY: Used internally to track which data properties have been loaded
