@@ -400,6 +400,24 @@ SUPPORTED CIPHERS:
    - Stream cipher, 128-bit key
    - Simpler to implement on some platforms
 
+THE EXACT BYTE LAYOUT AND A TEST VECTOR ARE IN THE DEVELOPER GUIDE, under
+Core.encryptData(). Go read it before you write any cipher code. Every wrong
+choice below returns server error 201 (INVALID_ENCRYPTION), and so does a wrong
+key - so the failures are indistinguishable and you cannot debug by guessing.
+
+The short version:
+- The key is BASE64. Decode it to bytes first; for AES-128 that is 16 bytes.
+  Using the ASCII bytes of the key string is the obvious wrong turn.
+- AES: random 16-byte IV per call, CBC mode, PKCS#7 padding, then IV bytes
+  FOLLOWED BY ciphertext bytes, and Base64 the concatenation AS ONE UNIT.
+- RC4: no IV, no padding. Decode the key, encrypt, Base64 the result.
+- Encrypt the UTF-8 BYTES of the plaintext. If your language's "characters" are
+  UTF-16 code units, convert explicitly - otherwise non-ASCII user data in
+  CloudSave payloads and scoreboard tags silently encrypts wrong.
+
+The guide's test vector lets you verify all of that OFFLINE. Without it the only
+oracle is the live gateway answering yes or no.
+
 ENCODING:
 - Encryption produces binary data
 - Must be encoded to string for transmission
@@ -415,8 +433,7 @@ If your platform lacks native encryption:
 
 KEYS:
 - Encryption key provided by Newgrounds (from app settings)
-- Key format depends on cipher and encoding choices
-- May need to decode key from Base64/Hex before use
+- Always Base64. Decode to bytes before use.
 
 Pick whichever supported cipher/encoding pair is practical for your platform.
 Be clear about your chosen cipher and encoder, or if encryption is not implemented.
