@@ -98,7 +98,18 @@ CLASS BaseObject
         WHY: Allows objects to carry error state from server responses
         USAGE: Set automatically if server response contains error data
         EXAMPLE: If server returns { error: { message: "Invalid ID" } }, error is populated
-    
+
+    objectId: number = -1
+        PURPOSE: A unique id assigned at construction, from a class-level counter
+        WHY: DEBUGGING ONLY. Lets you confirm whether you are looking at the same
+        instance or a replacement - which is what the reference-stability contract in
+        importFromObject() turns on. If a cached Medal your UI holds suddenly has a
+        different objectId, something replaced the object instead of updating it.
+        USAGE: Increment the class-level counter in the constructor and assign it
+        EXAMPLE: firstMedal.objectId = 0, secondMedal.objectId = 1
+        NEVER: send it to the server, or use it for identity in application logic.
+        It is per-run and means nothing across sessions.
+
     ====================
     PUBLIC METHODS
     ====================
