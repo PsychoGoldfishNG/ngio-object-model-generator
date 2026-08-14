@@ -26,8 +26,14 @@
             thisArg: Context to use when calling the callback
         
         WHY: Users may want to delete their save data or start over
-        
+
         BEHAVIOR:
+            COMMENT: Refuse this outright on a slot loaded from another app. Slot ids
+            COMMENT: are per-app SLOT NUMBERS, so an unguarded call here erases THIS
+            COMMENT: app's slot of the same number - it succeeds, and the player loses
+            COMMENT: their save. See BaseObject.assertNotForeign.
+            CALL this.assertNotForeign("clearData()", "Slot numbers are per-app, so this would erase THIS app's slot " + this.id + " instead.")
+
             COMMENT: Call CloudSave.clearSlot via the core wrapper
             IF this.core is not null THEN
                 CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, callback, thisArg)
@@ -36,7 +42,13 @@
 
     COMMENT: Loads the raw string data from the URL stored on this save slot.
     METHOD loadDataRaw(callback: Function, thisArg: Object)
-        
+
+        DO NOT ADD A FOREIGN-OBJECT GUARD HERE. This reads the absolute URL the server
+        returned with the slot, so it needs no app context and works on another app's
+        data unchanged - which is the entire point of being able to load another app's
+        slots. Guarding it would break the read half of cross-app access. Only the
+        WRITE methods on this class take assertNotForeign.
+
         PURPOSE: Retrieves unprocessed data from the cloud storage URL linked to this save slot
         
         PARAMETERS:
@@ -140,8 +152,12 @@
             thisArg: Context to use when calling the callback
         
         WHY: Allows saving pre-formatted data without JSON encoding
-        
+
         BEHAVIOR:
+            COMMENT: Same guard as clearData, and for the same reason - this is the
+            COMMENT: call that would silently overwrite the player's own save.
+            CALL this.assertNotForeign("saveDataRaw()", "Slot numbers are per-app, so this would overwrite THIS app's slot " + this.id + " instead.")
+
             COMMENT: Call CloudSave.setData via the core wrapper
             IF this.core is not null THEN
                 CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, callback, thisArg)
@@ -159,8 +175,13 @@
             thisArg: Context to use when calling the callback
         
         WHY: Simplifies saving - handles JSON encoding automatically
-        
+
         BEHAVIOR:
+            COMMENT: Guarded here as well as in saveDataRaw, so the error names the
+            COMMENT: method the caller actually used and a large object is not encoded
+            COMMENT: before failing. The duplication is deliberate.
+            CALL this.assertNotForeign("saveData()", "Slot numbers are per-app, so this would overwrite THIS app's slot " + this.id + " instead.")
+
             CREATE jsonString AS JSON_ENCODE(data)
             CALL this.saveDataRaw WITH jsonString, callback, thisArg
     END METHOD

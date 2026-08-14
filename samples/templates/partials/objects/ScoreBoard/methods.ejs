@@ -61,7 +61,10 @@
             SET componentParams.skip TO filters.skip
             
             COMMENT: Handle social filter (friends only)
-            IF this.core is not null AND this.core.hasSession() AND filters.social is true THEN
+            COMMENT: Skipped entirely for a foreign board - 'social' filters to the
+            COMMENT: current user's friends who have played THIS app, which says nothing
+            COMMENT: about who has played the app the board belongs to.
+            IF this.core is not null AND this.core.hasSession() AND filters.social is true AND NOT this.isForeign() THEN
                 SET componentParams.social TO true
             END IF
             
@@ -95,7 +98,17 @@
             
             COMMENT: Add this scoreboard's ID
             SET componentParams.id TO this.id
-            
+
+            COMMENT: A board loaded from another app keeps reading from that app. Without
+            COMMENT: forwarding the app_id the board came with, the gateway looks this id
+            COMMENT: up against THIS app and rejects it. Reading is the one thing
+            COMMENT: cross-app access allows, so make it work rather than refusing it -
+            COMMENT: this is a READ, and gets no assertNotForeign guard.
+            IF this.isForeign() THEN
+                SET componentParams.app_id TO this.foreignAppId
+            END IF
+
+
             COMMENT: Execute the component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("ScoreBoard.getScores", componentParams, FUNCTION onComplete(response)
@@ -175,6 +188,11 @@
             author to follow, not a rule for the library to impose.)
 
         BEHAVIOR:
+            COMMENT: Refuse this on a board loaded from another app. ScoreBoard.postScore
+            COMMENT: takes no app_id, so it would send this board's id against YOUR app
+            COMMENT: and come back as error 203. See BaseObject.assertNotForeign.
+            CALL this.assertNotForeign("postScore()", "The gateway would reject this scoreboard id against this app.")
+
             COMMENT: Build the component properties
             CREATE componentParams WITH {
                 id: this.id,

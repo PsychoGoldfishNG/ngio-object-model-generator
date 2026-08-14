@@ -15,6 +15,12 @@
             thisArg: Context to use when calling the callback
 
         BEHAVIOR:
+            COMMENT: Refuse this on a medal loaded from another app. Medal.unlock takes
+            COMMENT: no app_id, so it would send this medal's id against YOUR app and
+            COMMENT: come back as error 202 - a confusing failure with no obvious cause.
+            COMMENT: See BaseObject.assertNotForeign.
+            CALL this.assertNotForeign("unlock()", "The gateway would reject this medal id against this app.")
+
             COMMENT: Call the Medal.unlock component via core
             IF this.core is not null THEN
                 CALL this.core.callComponent("Medal.unlock", { id: this.id }, FUNCTION onComplete(response)

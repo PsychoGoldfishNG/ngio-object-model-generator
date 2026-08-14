@@ -999,6 +999,202 @@ CLASS NGIO
             RETURN null
     END FUNCTION
     
+    COMMENT: ==================== EXTERNAL (CROSS-APP) DATA ====================
+    COMMENT: Read-only access to ANOTHER app's medals, scores and cloud saves.
+    COMMENT:
+    COMMENT: Four components accept an app_id parameter: Medal.getList,
+    COMMENT: ScoreBoard.getScores, CloudSave.loadSlot and CloudSave.loadSlots. The other
+    COMMENT: app's owner must grant access in their Newgrounds project settings first.
+    COMMENT:
+    COMMENT: These results are passed to the caller and NEVER cached in AppState.
+    COMMENT: AppState models exactly one app - the one this client is running as - and
+    COMMENT: its session, medal score, host approval and version fields have no foreign
+    COMMENT: equivalent. Caching another app's medals there would replace the local list
+    COMMENT: wholesale and mark it loaded, so getMedals() would return the wrong app's
+    COMMENT: medals. AppState.setValueFromResult rejects foreign results for that
+    COMMENT: reason; these methods are the supported way to reach them.
+    COMMENT:
+    COMMENT: Do NOT solve this by adding an app_id parameter to loadMedals(),
+    COMMENT: loadSaveSlots() and friends. Those exist to populate the caches, so a
+    COMMENT: foreign variant would need a second cache keyed by app id, and every
+    COMMENT: reader (getMedals, getMedal, getSaveSlot, hasLoaded) would grow an app id
+    COMMENT: argument that is empty for almost every caller. A separate, clearly named,
+    COMMENT: uncached surface keeps the common path simple.
+
+    FUNCTION loadExternalMedals(appId: string, callback: function|null = null, thisArg: any = null)
+
+        PURPOSE: Load the medal list belonging to another app.
+
+        PARAMETERS:
+            appId: The other app's ID, which must have granted access
+            callback: Called with (medals, error)
+            thisArg: Scope for the callback
+
+        BEHAVIOR:
+            CALL validateExternalAppId(appId)
+            CALL executeExternalRead("Medal.getList", { app_id: appId }, "medals", appId, callback, thisArg)
+
+    END FUNCTION
+
+    FUNCTION loadExternalScores(appId: string, boardId: number, filters: object|null = null,
+                                callback: function|null = null, thisArg: any = null)
+
+        PURPOSE: Load scores from a scoreboard belonging to another app.
+
+        NOTE: the caller must already know the board id. ScoreBoard.getBoards does not
+        accept an app_id, so another app's boards cannot be discovered at runtime.
+
+        PARAMETERS:
+            appId: The other app's ID, which must have granted access
+            boardId: The scoreboard ID, which must belong to that app
+            filters: Optional period/limit/skip/tag/user filters, validated exactly as
+                     ScoreBoard.getScores validates them
+            callback: Called with (scores, error)
+            thisArg: Scope for the callback
+
+        BEHAVIOR:
+            CALL validateExternalAppId(appId)
+
+            CREATE params AS the normalized filters
+            SET params.app_id TO appId
+            SET params.id TO boardId
+
+            COMMENT: 'social' is deliberately not supported here. It filters to the
+            COMMENT: current user's friends who have played THIS app, which is
+            COMMENT: meaningless when the scores belong to a different one.
+
+            CALL executeExternalRead("ScoreBoard.getScores", params, "scores", appId, callback, thisArg)
+
+    END FUNCTION
+
+    FUNCTION loadExternalSaveSlots(appId: string, callback: function|null = null, thisArg: any = null)
+
+        PURPOSE: Load the cloud save slot list belonging to another app.
+
+        PARAMETERS:
+            appId: The other app's ID, which must have granted access
+            callback: Called with (saveSlots, error)
+            thisArg: Scope for the callback
+
+        BEHAVIOR:
+            CALL validateExternalAppId(appId)
+            CALL executeExternalRead("CloudSave.loadSlots", { app_id: appId }, "slots", appId, callback, thisArg)
+
+    END FUNCTION
+
+    FUNCTION loadExternalSaveSlot(appId: string, slotId: number, callback: function|null = null, thisArg: any = null)
+
+        PURPOSE: Load a single cloud save slot belonging to another app.
+
+        PARAMETERS:
+            appId: The other app's ID, which must have granted access
+            slotId: The slot number
+            callback: Called with (saveSlot, error)
+            thisArg: Scope for the callback
+
+        BEHAVIOR:
+            CALL validateExternalAppId(appId)
+            CALL executeExternalRead("CloudSave.loadSlot", { app_id: appId, id: slotId }, "slot", appId, callback, thisArg)
+
+    END FUNCTION
+
+    FUNCTION validateExternalAppId(appId: string)
+
+        PURPOSE: Reject the two mistakes that would otherwise fail confusingly.
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW error "Core not initialized"
+            END IF
+
+            IF appId is null OR appId is empty THEN
+                THROW error "An external App ID is required"
+            END IF
+
+            COMMENT: Passing our own id is a programming error, not a cross-app read. It
+            COMMENT: would quietly behave like the ordinary load - except uncached -
+            COMMENT: which is a confusing thing to debug later.
+            IF appId equals core.appId THEN
+                THROW error "That is this app's own ID. Use the ordinary load method instead."
+            END IF
+
+    END FUNCTION
+
+    FUNCTION executeExternalRead(componentPath: string, params: object, resultProperty: string,
+                                 appId: string, callback: function|null, thisArg: any)
+
+        PURPOSE: Shared request/unwrap path for all four cross-app reads.
+
+        PARAMETERS:
+            resultProperty: The property on the result model holding the payload
+
+        BEHAVIOR:
+            CALL core.callComponent(componentPath, params, FUNCTION(response)
+
+                IF callback is null THEN
+                    RETURN
+                END IF
+
+                CREATE error AS null
+                CREATE payload AS null
+
+                COMMENT: A cross-app read can be refused at either level: the request may
+                COMMENT: fail outright, or succeed while the component reports that access
+                COMMENT: was not granted. Check both so the caller gets one clear answer.
+                IF response is null OR response.success is not true THEN
+                    SET error TO response.error IF PRESENT OTHERWISE Errors.getError()
+                ELSE
+                    CREATE result AS response.getResult()
+
+                    IF result is null THEN
+                        SET error TO Errors.getError(Errors.INVALID_RESPONSE)
+                    ELSE IF result.success is not true THEN
+                        SET error TO result.error IF PRESENT OTHERWISE Errors.getError()
+                    ELSE
+                        SET payload TO result[resultProperty]
+                        CALL stampForeign(payload, appId)
+                    END IF
+                END IF
+
+                CALL callback WITH context thisArg PASSING payload, error
+
+            END FUNCTION)
+
+    END FUNCTION
+
+    FUNCTION stampForeign(value: any, appId: string)
+
+        PURPOSE: Mark a returned model, and everything nested inside it, as belonging to
+        another app, by setting BaseObject.foreignAppId.
+
+        WHY: Recursive because the interesting objects are often nested - a score list
+        carries a User per Score, and a getScores result carries the ScoreBoard. A caller
+        holding any of those should be able to tell where it came from.
+
+        BEHAVIOR:
+            IF value is null THEN
+                RETURN
+            END IF
+
+            IF value is an array THEN
+                FOR EACH item IN value
+                    CALL stampForeign(item, appId)
+                END FOR
+                RETURN
+            END IF
+
+            IF value is not a BaseObject THEN
+                RETURN
+            END IF
+
+            SET value.foreignAppId TO appId
+
+            FOR EACH propertyName IN value.propertyNames
+                CALL stampForeign(value[propertyName], appId)
+            END FOR
+
+    END FUNCTION
+
     COMMENT: ==================== SERVER UTILITIES & EVENTS ====================
     COMMENT: Methods for server time synchronization, connectivity testing, and custom event tracking.
     COMMENT: These are utility functions for advanced features.

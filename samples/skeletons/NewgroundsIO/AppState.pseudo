@@ -381,137 +381,186 @@
             COMMENT: so the naming rule in BaseResult.pseudo is what makes this work.
             CREATE objectName AS resultObject.objectName
             
-            COMMENT: === Gateway.getVersion results ===
-            IF objectName equals "Gateway.getVersion" THEN
-                SET this.gatewayVersion TO resultObject.version
-                CALL markLoaded('gatewayVersion')
-            END IF
-            
-            COMMENT: === App.checkSession and App.startSession results ===
-            IF objectName equals "App.checkSession" OR objectName equals "App.startSession" THEN
-                COMMENT: Create session for first time OR update existing session
-                IF this.session is null THEN
-                    SET this.session TO resultObject.session
-                ELSE
-                    COMMENT: Update existing session object with new data (observer pattern)
-                    CALL this.session.importFromObject(resultObject.session)
+            COMMENT: === Reject data that belongs to a DIFFERENT app ===
+            COMMENT: Four components accept an app_id parameter, letting an approved app
+            COMMENT: read another app's data: Medal.getList, ScoreBoard.getScores,
+            COMMENT: CloudSave.loadSlot and CloudSave.loadSlots. Their results echo that
+            COMMENT: id back, and leave it empty for ordinary local calls - so the server
+            COMMENT: tells us directly and no request-to-response correlation is needed.
+            COMMENT:
+            COMMENT: This object models ONE app: the one the client is running as. Merging
+            COMMENT: a foreign medal list here would replace the local list wholesale and
+            COMMENT: mark it loaded, so getMedals() would hand the game somebody else's
+            COMMENT: medals as though they were its own. The same applies to save slots.
+            COMMENT:
+            COMMENT: The caller still receives the foreign result normally - it is only
+            COMMENT: barred from the caches.
+            IF isForeignAppResult(resultObject) is false THEN
+                COMMENT: === Gateway.getVersion results ===
+                IF objectName equals "Gateway.getVersion" THEN
+                    SET this.gatewayVersion TO resultObject.version
+                    CALL markLoaded('gatewayVersion')
                 END IF
+            
+                COMMENT: === App.checkSession and App.startSession results ===
+                IF objectName equals "App.checkSession" OR objectName equals "App.startSession" THEN
+                    COMMENT: Create session for first time OR update existing session
+                    IF this.session is null THEN
+                        SET this.session TO resultObject.session
+                    ELSE
+                        COMMENT: Update existing session object with new data (observer pattern)
+                        CALL this.session.importFromObject(resultObject.session)
+                    END IF
                 
-                COMMENT: if we got any errors, copy them to the session for handling
-                SET this.session.error TO resultObject.error
+                    COMMENT: if we got any errors, copy them to the session for handling
+                    SET this.session.error TO resultObject.error
                 
-                COMMENT: Mark session as verified if it's valid (not expired, no error)
-                IF this.session.expired is false AND this.session.error is null THEN
-                    SET this.session.verified TO true
+                    COMMENT: Mark session as verified if it's valid (not expired, no error)
+                    IF this.session.expired is false AND this.session.error is null THEN
+                        SET this.session.verified TO true
+                    END IF
                 END IF
-            END IF
             
-            COMMENT: === App.getCurrentVersion results ===
-            IF objectName equals "App.getCurrentVersion" THEN
-                SET this.currentVersion TO resultObject.current_version
-                SET this.clientDeprecated TO resultObject.client_deprecated
-                CALL markLoaded('currentVersion')
-            END IF
+                COMMENT: === App.getCurrentVersion results ===
+                IF objectName equals "App.getCurrentVersion" THEN
+                    SET this.currentVersion TO resultObject.current_version
+                    SET this.clientDeprecated TO resultObject.client_deprecated
+                    CALL markLoaded('currentVersion')
+                END IF
             
-            COMMENT: === App.getHostLicense results ===
-            IF objectName equals "App.getHostLicense" THEN
-                SET this.hostApproved TO resultObject.host_approved
-                CALL markLoaded('hostApproved')
-            END IF
+                COMMENT: === App.getHostLicense results ===
+                IF objectName equals "App.getHostLicense" THEN
+                    SET this.hostApproved TO resultObject.host_approved
+                    CALL markLoaded('hostApproved')
+                END IF
             
-            COMMENT: === CloudSave.loadSlots results ===
-            IF objectName equals "CloudSave.loadSlots" THEN
-                IF this.saveSlots is null THEN
-                    COMMENT: First time loading save slots
-                    SET this.saveSlots TO resultObject.slots
-                    CALL markLoaded('saveSlots')
-                ELSE
-                    COMMENT: Update existing save slots with new data
-                    FOR EACH newSlot IN resultObject.slots
-                        FOR EACH existingSlot IN this.saveSlots
+                COMMENT: A component that FAILED still reaches this function - it produces
+                COMMENT: a result model carrying an error and no payload. Every branch below
+                COMMENT: therefore checks its payload before caching or merging it. Skipping
+                COMMENT: that check is not a style matter: it crashed the AS3 library with a
+                COMMENT: null dereference on a rejected Medal.unlock, and the throw aborted
+                COMMENT: this function partway, so nothing after it was applied.
+
+                COMMENT: === CloudSave.loadSlots results ===
+                IF objectName equals "CloudSave.loadSlots" THEN
+                    COMMENT: No payload means the call failed. Caching null and marking the
+                    COMMENT: property loaded would make hasLoaded('saveSlots') answer true for
+                    COMMENT: data that never arrived.
+                    IF resultObject.slots is null THEN
+                        RETURN
+                    END IF
+
+                    IF this.saveSlots is null THEN
+                        COMMENT: First time loading save slots
+                        SET this.saveSlots TO resultObject.slots
+                        CALL markLoaded('saveSlots')
+                    ELSE
+                        COMMENT: Update existing save slots with new data
+                        FOR EACH newSlot IN resultObject.slots
+                            FOR EACH existingSlot IN this.saveSlots
+                                COMMENT: Find matching slot by ID and update it
+                                IF existingSlot.id equals newSlot.id THEN
+                                    CALL existingSlot.importFromObject(newSlot)
+                                END IF
+                            END FOR
+                        END FOR
+                    END IF
+                END IF
+            
+                COMMENT: === CloudSave.loadSlot / setData / clearSlot results ===
+                IF objectName equals "CloudSave.loadSlot" OR
+                   objectName equals "CloudSave.setData" OR
+                   objectName equals "CloudSave.clearSlot" THEN
+                    COMMENT: Only update if saveSlots have been loaded
+                    IF this.saveSlots is not null AND resultObject.slot is not null THEN
+                        FOR EACH saveSlot IN this.saveSlots
                             COMMENT: Find matching slot by ID and update it
-                            IF existingSlot.id equals newSlot.id THEN
-                                CALL existingSlot.importFromObject(newSlot)
+                            IF saveSlot.id equals resultObject.slot.id THEN
+                                CALL saveSlot.importFromObject(resultObject.slot)
                             END IF
                         END FOR
-                    END FOR
+                    END IF
                 END IF
-            END IF
             
-            COMMENT: === CloudSave.loadSlot / setData / clearSlot results ===
-            IF objectName equals "CloudSave.loadSlot" OR
-               objectName equals "CloudSave.setData" OR
-               objectName equals "CloudSave.clearSlot" THEN
-                COMMENT: Only update if saveSlots have been loaded
-                IF this.saveSlots is not null THEN
-                    FOR EACH saveSlot IN this.saveSlots
-                        COMMENT: Find matching slot by ID and update it
-                        IF saveSlot.id equals resultObject.slot.id THEN
-                            CALL saveSlot.importFromObject(resultObject.slot)
+                COMMENT: === Medal.getList results ===
+                IF objectName equals "Medal.getList" THEN
+                    COMMENT: No payload means the call failed - see the note above
+                    IF resultObject.medals is null THEN
+                        RETURN
+                    END IF
+
+                    IF this.medals is null THEN
+                        COMMENT: First time loading medals
+                        SET this.medals TO resultObject.medals
+                        CALL markLoaded('medals')
+                    ELSE
+                        COMMENT: Update existing medals with new data
+                        FOR EACH newMedal IN resultObject.medals
+                            FOR EACH existingMedal IN this.medals
+                                COMMENT: Find matching medal by ID and update it
+                                IF existingMedal.id equals newMedal.id THEN
+                                    CALL existingMedal.importFromObject(newMedal)
+                                END IF
+                            END FOR
+                        END FOR
+                    END IF
+                END IF
+            
+                COMMENT: === Medal.getMedalScore results ===
+                IF objectName equals "Medal.getMedalScore" THEN
+                    SET this.medalScore TO resultObject.medal_score
+                    CALL markLoaded('medalScore')
+                END IF
+            
+                COMMENT: === Medal.unlock results ===
+                IF objectName equals "Medal.unlock" THEN
+                    COMMENT: Only trust this result when the unlock actually succeeded.
+                    COMMENT: A rejected unlock (unknown medal id, no session) carries no
+                    COMMENT: medal, and reports medal_score as its 0 default - applying that
+                    COMMENT: would wipe the cached total. Reading resultObject.medal.id
+                    COMMENT: without this guard is the null dereference described above.
+                    IF resultObject.medal is not null THEN
+                        SET this.medalScore TO resultObject.medal_score
+                        CALL markLoaded('medalScore')
+
+                        COMMENT: Update the unlocked medal in our medals list if available
+                        IF this.medals is not null THEN
+                            FOR EACH medal IN this.medals
+                                COMMENT: Find matching medal by ID and update it
+                                IF medal.id equals resultObject.medal.id THEN
+                                    CALL medal.importFromObject(resultObject.medal)
+                                END IF
+                            END FOR
                         END IF
-                    END FOR
+                    END IF
                 END IF
-            END IF
             
-            COMMENT: === Medal.getList results ===
-            IF objectName equals "Medal.getList" THEN
-                IF this.medals is null THEN
-                    COMMENT: First time loading medals
-                    SET this.medals TO resultObject.medals
-                    CALL markLoaded('medals')
-                ELSE
-                    COMMENT: Update existing medals with new data
-                    FOR EACH newMedal IN resultObject.medals
-                        FOR EACH existingMedal IN this.medals
-                            COMMENT: Find matching medal by ID and update it
-                            IF existingMedal.id equals newMedal.id THEN
-                                CALL existingMedal.importFromObject(newMedal)
-                            END IF
+                COMMENT: === ScoreBoard.getBoards results ===
+                IF objectName equals "ScoreBoard.getBoards" THEN
+                    COMMENT: No payload means the call failed - see the note above
+                    IF resultObject.scoreboards is null THEN
+                        RETURN
+                    END IF
+
+                    IF this.scoreBoards is null THEN
+                        COMMENT: First time loading scoreboards
+                        SET this.scoreBoards TO resultObject.scoreboards
+                        CALL markLoaded('scoreBoards')
+                    ELSE
+                        COMMENT: Update existing scoreboards with new data
+                        FOR EACH newBoard IN resultObject.scoreboards
+                            FOR EACH existingBoard IN this.scoreBoards
+                                COMMENT: Find matching board by ID and update it
+                                IF existingBoard.id equals newBoard.id THEN
+                                    CALL existingBoard.importFromObject(newBoard)
+                                END IF
+                            END FOR
                         END FOR
-                    END FOR
+                    END IF
                 END IF
-            END IF
             
-            COMMENT: === Medal.getMedalScore results ===
-            IF objectName equals "Medal.getMedalScore" THEN
-                SET this.medalScore TO resultObject.medal_score
-                CALL markLoaded('medalScore')
             END IF
-            
-            COMMENT: === Medal.unlock results ===
-            IF objectName equals "Medal.unlock" THEN
-                SET this.medalScore TO resultObject.medal_score
-                CALL markLoaded('medalScore')
-                COMMENT: Update the unlocked medal in our medals list if available
-                IF this.medals is not null THEN
-                    FOR EACH medal IN this.medals
-                        COMMENT: Find matching medal by ID and update it
-                        IF medal.id equals resultObject.medal.id THEN
-                            CALL medal.importFromObject(resultObject.medal)
-                        END IF
-                    END FOR
-                END IF
-            END IF
-            
-            COMMENT: === ScoreBoard.getBoards results ===
-            IF objectName equals "ScoreBoard.getBoards" THEN
-                IF this.scoreBoards is null THEN
-                    COMMENT: First time loading scoreboards
-                    SET this.scoreBoards TO resultObject.scoreboards
-                    CALL markLoaded('scoreBoards')
-                ELSE
-                    COMMENT: Update existing scoreboards with new data
-                    FOR EACH newBoard IN resultObject.scoreboards
-                        FOR EACH existingBoard IN this.scoreBoards
-                            COMMENT: Find matching board by ID and update it
-                            IF existingBoard.id equals newBoard.id THEN
-                                CALL existingBoard.importFromObject(newBoard)
-                            END IF
-                        END FOR
-                    END FOR
-                END IF
-            END IF
-            
+
             COMMENT: === Always check session remember flag and passport status ===
             IF this.session is not null AND this.session.remember is true THEN
                 COMMENT: Save session ID for next app start
@@ -521,23 +570,63 @@
             
             COMMENT: Check if passport login is still in progress
             IF this.passportIsOpen is true THEN
-                COMMENT: Determine if passport is still open based on session state
+                COMMENT: Determine if passport is still open based on session state.
+                COMMENT: These must be a single chain, not three independent checks: the
+                COMMENT: first branch is reached precisely when there is no session to
+                COMMENT: interrogate, so falling through to this.session.expired reads a
+                COMMENT: property off null. That happens exactly when a login is
+                COMMENT: cancelled while Passport is open.
                 IF this.session is null OR this.session.id is empty THEN
                     COMMENT: Session was reset/cleared
                     SET this.passportIsOpen TO false
-                END IF
-                
-                IF this.session.expired is true THEN
+                ELSE IF this.session.expired is true THEN
                     COMMENT: Session expired while waiting
                     SET this.passportIsOpen TO false
-                END IF
-                
-                IF this.session.user is not null THEN
+                ELSE IF this.session.user is not null THEN
                     COMMENT: User has successfully logged in
                     SET this.passportIsOpen TO false
                 END IF
             END IF
     END FUNCTION
+
+    FUNCTION isForeignAppResult(resultObject: NewgroundsIO.BaseResult): boolean
+
+        PURPOSE: Report whether a result carries data loaded from another app.
+
+        WHY: setValueFromResult() caches results into properties that describe the
+        app this client is running as. A cross-app lookup returns somebody else's
+        medals or save slots, which must not overwrite them.
+
+        PARAMETERS:
+            resultObject: The result model to inspect
+
+        RETURNS: true if the result belongs to a different app
+
+        BEHAVIOR:
+            COMMENT: Only the four cross-app-capable results declare app_id at all
+            IF resultObject is null OR resultObject has no app_id property THEN
+                RETURN false
+            END IF
+
+            CREATE sourceAppId AS resultObject.app_id
+
+            COMMENT: Empty means "this is our own data" - the common case
+            IF sourceAppId is null OR sourceAppId is empty THEN
+                RETURN false
+            END IF
+
+            COMMENT: The gateway only sets this for external lookups, but compare
+            COMMENT: against our own id anyway. A server that echoed the local id on
+            COMMENT: every call would otherwise make every result look foreign and
+            COMMENT: silently switch off all caching.
+            IF resultObject.core is not null AND sourceAppId equals resultObject.core.appId THEN
+                RETURN false
+            END IF
+
+            RETURN true
+
+    END FUNCTION
+
     
     ====================
     PRIVATE METHODS

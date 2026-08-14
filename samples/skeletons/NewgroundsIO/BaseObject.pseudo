@@ -99,6 +99,17 @@ CLASS BaseObject
         USAGE: Set automatically if server response contains error data
         EXAMPLE: If server returns { error: { message: "Invalid ID" } }, error is populated
 
+    foreignAppId: string | null = null
+        PURPOSE: The App ID this object's data was loaded from, when it came from a
+        DIFFERENT app than the one this client is running as. Null for ordinary local
+        data, which is the overwhelmingly common case.
+        WHY: A model returned by a cross-app read is otherwise indistinguishable from a
+        local one, while behaving very differently. Cross-app access is READ-ONLY: no
+        component that writes accepts an app_id, so calling one on a foreign object
+        sends that object's id against YOUR app.
+        USAGE: Set by NGIO's loadExternal* methods, on the returned model and everything
+        nested inside it. Every write method must check it via assertNotForeign().
+
     objectId: number = -1
         PURPOSE: A unique id assigned at construction, from a class-level counter
         WHY: DEBUGGING ONLY. Lets you confirm whether you are looking at the same
@@ -113,7 +124,62 @@ CLASS BaseObject
     ====================
     PUBLIC METHODS
     ====================
-    
+
+    FUNCTION isForeign(): boolean
+
+        PURPOSE: True if this object's data was loaded from another app
+        WHY: Callers should not test foreignAppId directly. This treats an empty string
+        the same as null, so a stamp that never took cannot read as a foreign object -
+        which would block ordinary LOCAL writes and break the game.
+
+        BEHAVIOR:
+            RETURN true IF foreignAppId is not null AND foreignAppId is not empty
+
+    FUNCTION assertNotForeign(action: string, consequence: string)
+
+        PURPOSE: Refuse a write on an object that was loaded from another app
+        WHY: Cross-app access is read-only. Calling a write on a foreign object sends
+        that object's id against YOUR app, and what happens next depends on the object -
+        see the CloudSave note below.
+
+        PARAMETERS:
+            action: (required) Name of the refused method, e.g. "unlock()"
+            consequence: (required) One sentence on what would have happened
+
+        CALL IT FROM: Medal.unlock, ScoreBoard.postScore, SaveSlot.saveData,
+        SaveSlot.saveDataRaw and SaveSlot.clearData - at the TOP of each, before any
+        work is done and before anything is sent, so a mistake surfaces at the call site
+        instead of as a puzzling gateway error later.
+
+        DO NOT call it from reads. SaveSlot.loadDataRaw fetches the absolute URL the
+        server returned with the slot, so it needs no app context and works cross-app
+        unchanged. ScoreBoard.getScores forwards the app_id instead - see that method.
+
+        THROW, DO NOT REPORT VIA CALLBACK: this is a programming error, not a runtime
+        condition the caller can recover from. Every write method takes an OPTIONAL
+        callback, so an error delivered that way is silently discarded by exactly the
+        callers most likely to make the mistake.
+
+        WHY THIS MATTERS MOST FOR CloudSave: medal and scoreboard ids are globally
+        unique, so a misdirected write is rejected by the gateway - confusing, but
+        harmless. SaveSlot.id is a per-app SLOT NUMBER, and every app has a slot 1.
+        Writing through a foreign slot therefore SUCCEEDS, silently overwriting the
+        player's own save data. This check is the only thing standing between a
+        cross-app read and real data loss. Do not omit it as a nicety.
+
+        BEHAVIOR:
+            IF NOT this.isForeign() THEN
+                RETURN
+            END IF
+
+            COMMENT: Name the object, the app it came from, the method refused and the
+            COMMENT: consequence - a porter's users will read this message, not this file.
+            THROW an error with the message:
+                this.toString() + " was loaded from app " + this.foreignAppId +
+                ", not this one, and " + action + " writes through this app's session. " +
+                consequence + " Cross-app access is read-only - see the " +
+                "NGIO.loadExternal* methods."
+
     FUNCTION importFromObject(importObject: object)
         
         PURPOSE: Import data from a plain object (usually JSON parsed from server)

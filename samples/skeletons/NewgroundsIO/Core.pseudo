@@ -55,6 +55,15 @@ CLASS Core
         WHY: Helps debug network issues by logging all request/response data.
         USAGE: Set to true during development to see what's being sent to the server.
     
+    networkObserver: function|null = null
+        PURPOSE: Optional callback receiving raw gateway traffic, as
+        function(direction: string, detail: string).
+        WHY: debugNetworkCalls only writes to the console, which cannot be captured.
+        An observer hands the same packets to the host application, so they can be
+        attached to a log entry, shown in-game, or held against a failing test.
+        USAGE: Independent of debugNetworkCalls - either, both or neither may be set.
+        'direction' is one of "request", "response" or "error".
+    
     useDebugMode: boolean = false
         PURPOSE: If true, API calls don't actually save to the server.
         WHY: Useful for testing - you can unlock medals, post scores, etc. without affecting
@@ -457,7 +466,35 @@ CLASS Core
             
             RETURN encryptedBase64
     END FUNCTION
-    
+
+    FUNCTION reportNetworkActivity(direction: string, detail: string)
+
+        PURPOSE: Hand a raw gateway packet to networkObserver, if one is attached.
+        WHY: debugNetworkCalls can only write to a console. Games and test harnesses
+        need the same packets as data - to attach to a bug report, surface in a
+        debug overlay, or hold against a failing test. This is the one place that
+        decision is made, so every transport path reports identically.
+
+        PARAMETERS:
+            direction: "request", "response" or "error"
+            detail: The raw payload, or a description of the error
+
+        BEHAVIOR:
+            IF this.networkObserver is null THEN
+                RETURN
+            END IF
+
+            COMMENT: A broken observer must never take a live request down with it.
+            COMMENT: This is host-supplied code running inside our transport callbacks;
+            COMMENT: letting it throw would abort the request or response mid-flight.
+            TRY
+                CALL this.networkObserver PASSING direction, detail
+            CATCH error
+                COMMENT: Deliberately ignored
+            END TRY
+
+    END FUNCTION
+
     ====================
     PRIVATE METHODS
     ====================
@@ -554,6 +591,7 @@ CLASS Core
                         LOG_INFO("NETWORK: Opening external window to " + GATEWAY_URL + " with target " + browserTarget)
                         LOG_INFO("         Request Data: " + requestString)
                     END IF
+                    CALL reportNetworkActivity("request", requestString)
 
                     OPEN_URL(browserRequest, browserTarget)
 
@@ -561,6 +599,7 @@ CLASS Core
                     IF this.debugNetworkCalls equals true THEN
                         LOG_ERROR("NETWORK: Error opening external window - " + error.message)
                     END IF
+                    CALL reportNetworkActivity("error", "Error opening external window - " + error.message)
                 END TRY
                 
                 COMMENT: Call callback with null (external windows don't return JSON responses)
@@ -589,6 +628,7 @@ CLASS Core
                     LOG_INFO("NETWORK: Received response from server")
                     LOG_INFO("         Response Data: " + event.responseText)
                 END IF
+                CALL reportNetworkActivity("response", event.responseText)
                 CALL onHTTPResponse(200, event.responseText, callback, thisArg)
             END FUNCTION
             
@@ -596,6 +636,7 @@ CLASS Core
                 IF this.debugNetworkCalls equals true THEN
                     LOG_ERROR("NETWORK: IOError occurred - " + event.text)
                 END IF
+                CALL reportNetworkActivity("error", "IOError - " + event.text)
                 COMMENT: Network error occurred
                 CALL onHTTPResponse(500, null, callback, thisArg)
             END FUNCTION
@@ -604,6 +645,7 @@ CLASS Core
                 IF this.debugNetworkCalls equals true THEN
                     LOG_ERROR("NETWORK: SecurityError occurred - " + event.text)
                 END IF
+                CALL reportNetworkActivity("error", "SecurityError - " + event.text)
                 COMMENT: Security error occurred
                 CALL onHTTPResponse(403, null, callback, thisArg)
             END FUNCTION
@@ -614,11 +656,13 @@ CLASS Core
                     LOG_INFO("NETWORK: Sending request to " + GATEWAY_URL)
                     LOG_INFO("         Request Data: " + requestString)
                 END IF
+                CALL reportNetworkActivity("request", requestString)
                 SEND_HTTP_REQUEST(request, onSuccess, onIOError, onSecurityError)
             CATCH error
                 IF this.debugNetworkCalls equals true THEN
                     LOG_ERROR("NETWORK: Error sending request - " + error.message)
                 END IF
+                CALL reportNetworkActivity("error", "Error sending request - " + error.message)
                 COMMENT: Network error occurred
                 CALL onHTTPResponse(500, null, callback, thisArg)
             END TRY
