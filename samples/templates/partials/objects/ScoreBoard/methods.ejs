@@ -17,7 +17,7 @@
                 - limit: Max scores to return (1-100, default: 10)
                 - skip: Scores to skip (for pagination, default: 0)
                 - social: Get only friends' scores (requires logged-in user)
-                - tag: Filter by score tag
+                - tag: Filter by score tag - pass through BYTE-FOR-BYTE, see postScore
             callback: Function to call when the load completes, as callback(scores, error)
                       where error is null on success and scores is null on failure
             thisArg: Context to use when calling the callback
@@ -151,9 +151,29 @@
             callback: Function to call when posting completes, as callback(score, error)
                       where error is null on success and score is null on failure
             thisArg: Context to use when calling the callback
-        
+
         WHY: This is how users submit their scores to leaderboards
-        
+
+        TAG HANDLING - PASS IT THROUGH UNTOUCHED:
+            A tag is a LOOKUP KEY, not a display string. It is attached here and later
+            handed back to getScores to filter on, so the two must be the same bytes.
+
+            Do NOT validate, reject, normalize, case-fold, trim or transform it. Send
+            exactly the string the developer supplied. Games published over many years
+            already use whatever they use, and a library that "cleaned up" a tag would
+            stop those games from matching their own existing scores. Nothing else in
+            the stack enforces a format either, so a port that added validation would be
+            silently incompatible with every other port.
+
+            The complete rule is the one below: omit the parameter when the string is
+            empty. Nothing more.
+
+            (Developer-facing guidance - keep tags to [A-Za-z0-9_.:-] - belongs in your
+            port's DOCUMENTATION, never in its code. Matching is case-insensitive, and
+            outside ASCII it depends on Unicode normalization and storage collation, so
+            non-ASCII tags can silently fail to match. That is advice for the game
+            author to follow, not a rule for the library to impose.)
+
         BEHAVIOR:
             COMMENT: Build the component properties
             CREATE componentParams WITH {
