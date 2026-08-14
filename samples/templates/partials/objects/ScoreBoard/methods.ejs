@@ -61,10 +61,10 @@
             SET componentParams.skip TO filters.skip
             
             COMMENT: Handle social filter (friends only)
-            COMMENT: Skipped entirely for a foreign board - 'social' filters to the
-            COMMENT: current user's friends who have played THIS app, which says nothing
-            COMMENT: about who has played the app the board belongs to.
-            IF this.core is not null AND this.core.hasSession() AND filters.social is true AND NOT this.isForeign() THEN
+            COMMENT: This applies to FOREIGN boards too. The friends list is a site-wide
+            COMMENT: relation, not a per-app one, so "me and my friends" means the same
+            COMMENT: thing on another app's board. Do not gate it on isForeign().
+            IF this.core is not null AND this.core.hasSession() AND filters.social is true THEN
                 SET componentParams.social TO true
             END IF
             
@@ -103,11 +103,11 @@
             COMMENT: forwarding the app_id the board came with, the gateway looks this id
             COMMENT: up against THIS app and rejects it. Reading is the one thing
             COMMENT: cross-app access allows, so make it work rather than refusing it -
-            COMMENT: this is a READ, and gets no assertNotForeign guard.
+            COMMENT: this is a READ, and gets no assertNotForeign guard. Every filter
+            COMMENT: above still applies, including 'social'.
             IF this.isForeign() THEN
                 SET componentParams.app_id TO this.foreignAppId
             END IF
-
 
             COMMENT: Execute the component via core
             IF this.core is not null THEN

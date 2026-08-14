@@ -1047,8 +1047,8 @@ CLASS NGIO
         PARAMETERS:
             appId: The other app's ID, which must have granted access
             boardId: The scoreboard ID, which must belong to that app
-            filters: Optional period/limit/skip/tag/user filters, validated exactly as
-                     ScoreBoard.getScores validates them
+            filters: Optional period/limit/skip/tag/social/user filters, validated
+                     exactly as ScoreBoard.getScores validates them
             callback: Called with (scores, error)
             thisArg: Scope for the callback
 
@@ -1059,9 +1059,12 @@ CLASS NGIO
             SET params.app_id TO appId
             SET params.id TO boardId
 
-            COMMENT: 'social' is deliberately not supported here. It filters to the
-            COMMENT: current user's friends who have played THIS app, which is
-            COMMENT: meaningless when the scores belong to a different one.
+            COMMENT: 'social' IS supported here, and is one of the better reasons to
+            COMMENT: use this method. The friends list is a site-wide relation rather
+            COMMENT: than a per-app one, so "me and my friends" means the same thing on
+            COMMENT: another app's board - which is what a shared leaderboard across a
+            COMMENT: series of games needs. Gate it on a session, as the local path
+            COMMENT: does: the gateway ignores 'social' when it cannot tell who you are.
 
             CALL executeExternalRead("ScoreBoard.getScores", params, "scores", appId, callback, thisArg)
 
