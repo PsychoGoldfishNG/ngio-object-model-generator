@@ -259,7 +259,13 @@ CLASS BaseObject
                 
                 COMMENT: === STANDARD CAST AND ASSIGN ===
                 CREATE castValue AS CALL castToExpectedType(propertyName, propertyValue)
-                SET this[propertyName] TO castValue		
+                SET this[propertyName] TO castValue
+
+                COMMENT: Record where the nested model landed, so getObjectPath()
+                COMMENT: can name it. Done HERE rather than inside
+                COMMENT: castToExpectedType so a subclass overriding the cast
+                COMMENT: still gets the links, and so arrays are handled once.
+                CALL stampChildPosition(castValue, propertyName)
             END FOR
 
             COMMENT: ==================== CHECK FOR ERROR PROPERTY ====================
@@ -393,54 +399,171 @@ CLASS BaseObject
         RETURNS: Qualified name like "object.User" or "component.Medal.unlock"
         
         BEHAVIOR:
-            COMMENT: Start with objectType and objectName
-            CREATE fullName AS objectType + "." + objectName
-            
-            COMMENT: If this object is nested inside another, include parent
-            COMMENT: parent would be set if this was created as part of importFromObject
-            IF this.parent exists AND this.parentPropertyName exists THEN
-                SET fullName TO this.parent.getFullObjectName() + "." + this.parentPropertyName
-            END IF
-            
-            RETURN fullName
+            COMMENT: TYPE identity, not location. The same class reports the same
+            COMMENT: name wherever it sits, which is what makes this usable as the
+            COMMENT: type check in importFromObject(): a Session is a Session
+            COMMENT: whether it arrived standalone or nested in a checkSession
+            COMMENT: result.
+            RETURN objectType + "." + objectName
     END FUNCTION
-    
+
+    COMMENT: A WARNING FROM THE REFERENCE LIBRARIES, because this looked like the
+    COMMENT: obvious design and is a trap:
+    COMMENT:
+    COMMENT: This function used to fold parent/parentPropertyName in, so a nested
+    COMMENT: model reported its PATH ("result.App.checkSession.session") rather
+    COMMENT: than its type. Nothing ever assigned parent, so the branch never ran
+    COMMENT: and the contradiction stayed hidden for years.
+    COMMENT:
+    COMMENT: The moment parent WAS assigned, importFromObject broke: the libraries
+    COMMENT: import a nested result.session INTO the standalone appState.session,
+    COMMENT: and a positional comparison rejects that as a type mismatch. Session
+    COMMENT: handling stops working entirely.
+    COMMENT:
+    COMMENT: Keep the two ideas apart. Type identity answers "may I import this?";
+    COMMENT: the path answers "where did this come from?". One function each.
+
+    FUNCTION getObjectPath(): string
+
+        PURPOSE: Where this object sits in the model tree. FOR DEBUGGING ONLY.
+        WHY: "A Score failed to import" is not an answer when a scoreboard
+        returned a hundred of them. This says WHICH one.
+
+        RETURNS: The path from the root model down to this one, for example
+        "result.Medal.unlock.medal" or "result.ScoreBoard.getScores.scores[3]"
+
+        BEHAVIOR:
+            COMMENT: Walk UPWARD rather than recursing. Nothing should ever build
+            COMMENT: a cycle, but a debugging aid that crashes while you are
+            COMMENT: debugging is worse than useless - and on some runtimes a
+            COMMENT: runaway recursion takes the whole application down, not just
+            COMMENT: this call.
+            CREATE segments AS empty array
+            CREATE node AS this
+            CREATE guard AS 0
+
+            WHILE node is not null AND guard < 64
+                IF node.parent is not null AND node.parentPropertyName is not null THEN
+                    INSERT node.parentPropertyName AT THE FRONT OF segments
+                    SET node TO node.parent
+                ELSE
+                    COMMENT: Reached the root - its own type name starts the path.
+                    INSERT node.getFullObjectName() AT THE FRONT OF segments
+                    SET node TO null
+                END IF
+                INCREMENT guard
+            END WHILE
+
+            RETURN segments joined with "."
+    END FUNCTION
+
+    FUNCTION stampChildPosition(value: any, propertyName: string)
+
+        PURPOSE: Record where a nested model landed, so getObjectPath() can report
+        it later.
+        WHY: Called from importFromObject() for every property it assigns. Array
+        members get an INDEX, since that is the part a developer actually needs.
+
+        BEHAVIOR:
+            IF value is a BaseObject THEN
+                SET value.parent TO this
+                SET value.parentPropertyName TO propertyName
+                RETURN
+            END IF
+
+            IF value is an array THEN
+                FOR EACH item AT INDEX i IN value
+                    IF item is a BaseObject THEN
+                        SET item.parent TO this
+                        SET item.parentPropertyName TO propertyName + "[" + i + "]"
+                    END IF
+                END FOR
+            END IF
+
+            COMMENT: Scalars have no position to record.
+    END FUNCTION
+
+
     FUNCTION hasValidProperties(): boolean
         
         PURPOSE: Check if this object has all required properties
         WHY: Objects from the server might be incomplete. We validate before using them.
         
         RETURNS: true if all required properties are present, false if any are missing
-        
+
+        BEHAVIOR:
+            COMMENT: One implementation, two questions. This answers "is it
+            COMMENT: valid?"; getPreflightError() answers "why not?". Deriving one
+            COMMENT: from the other is what stops them drifting apart.
+            RETURN CALL getPreflightError() is null
+    END FUNCTION
+
+    FUNCTION getPreflightError(): NewgroundsIO.models.objects.Error | null
+
+        PURPOSE: The reason this object would be rejected, or null if it is valid.
+        WHY: Core consults this BEFORE SENDING, so a component that cannot
+        possibly succeed is refused without spending a network round trip.
+
+        A boolean is not enough for that job. When the refusal arrives INSTEAD OF
+        a server response, the caller needs the same thing the server would have
+        given it: a real error object, with a code it can branch on.
+
+        NOT the same as getValidationErrors() below, despite the names. That one
+        lists every missing required property as a plain string, for a developer
+        reading a report. This one returns the FIRST problem as a real Error
+        model, carrying the code the gateway would have used, for a caller
+        reading it as a refusal. If those names are too close in your language,
+        rename this one - but keep both behaviors.
+
+        RETURNS: An Error describing the first problem found, or null
+
         BEHAVIOR:
             COMMENT: Check each required property
             FOR EACH requiredProperty IN requiredProperties
                 IF this[requiredProperty] is null OR this[requiredProperty] is undefined THEN
                     COMMENT: Missing a required property!
-                    RETURN false
+                    RETURN missingPropertyError(requiredProperty, "is missing")
                 END IF
-                
+
                 COMMENT: Check for empty strings
                 IF this[requiredProperty] is a string THEN
                     IF this[requiredProperty].length equals 0 THEN
-                        RETURN false
+                        RETURN missingPropertyError(requiredProperty, "is an empty string")
                     END IF
                 END IF
-                
+
                 COMMENT: Check for empty arrays
                 IF this[requiredProperty] is an array THEN
                     IF this[requiredProperty].length equals 0 THEN
-                        RETURN false
+                        RETURN missingPropertyError(requiredProperty, "is an empty array")
                     END IF
                 END IF
-                
+
                 COMMENT: Note: The integer 0 and boolean false are considered valid values
             END FOR
             
             COMMENT: All required properties are present and valid
-            RETURN true
+            RETURN null
     END FUNCTION
-    
+
+    FUNCTION missingPropertyError(propertyName: string, problem: string): NewgroundsIO.models.objects.Error
+
+        PURPOSE: Build the error for a required property that is absent or empty.
+        WHY: MISSING_PARAMETER (102) is what the gateway returns for the same
+        condition, so a locally-refused call is indistinguishable from a
+        server-refused one. Match it deliberately - see the contract note in
+        Core.pseudo under executeComponent.
+
+        BEHAVIOR:
+            COMMENT: NAME THE OBJECT AND THE PROPERTY. "Missing a required
+            COMMENT: parameter" on its own sends a developer reading their whole
+            COMMENT: call site rather than the one line that is wrong.
+            RETURN Errors.getError(
+                Errors.MISSING_PARAMETER,
+                getFullObjectName() + " requires '" + propertyName + "', which " + problem + "."
+            )
+    END FUNCTION
+
     FUNCTION getValidationErrors(): array
         
         PURPOSE: Get a list of all validation errors

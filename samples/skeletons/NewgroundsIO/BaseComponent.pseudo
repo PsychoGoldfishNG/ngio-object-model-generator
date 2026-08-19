@@ -12,7 +12,7 @@ CLASS BaseComponent
     
     WHY SEPARATE CLASS: Components have special requirements that regular models don't:
     - Some must be encrypted before transmission
-    - Some require the user to be logged in
+    - Some require a session id; some additionally require a validated login
     - Some open browser windows (redirects)
     - Some need special validation (can't execute without a valid session)
     
@@ -35,13 +35,32 @@ CLASS BaseComponent
         WHEN FALSE: Read-only operations like Medal.getList, ScoreBoard.getBoards
     
     requiresSession: boolean = false
-        PURPOSE: Whether the user must be logged in to execute this component
-        WHY: Some actions are only available to authenticated users
-        EXAMPLES: 
-            - requiresSession=true: Post a score to scoreboard (user must be logged in)
-            - requiresSession=false: Get list of all medals (anyone can view)
-        VALIDATION: If requiresSession=true and user is not logged in,
-        hasValidProperties() will fail with an error
+        PURPOSE: Whether a session ID must be present in the request envelope
+        WHY: The gateway rejects these with 102 when no session id is sent
+        SCHEMA: model.require_session
+        VALIDATION: If requiresSession=true and there is no session ID,
+        getPreflightError() refuses the component before it is sent.
+        NOTE: this flag means LITERALLY "a session id must be sent", and nothing
+        more. Whether anyone is signed in is requiresLogin's question.
+
+    requiresLogin: boolean = false
+        PURPOSE: Whether a VALIDATED LOGIN is required, not merely a session id
+        WHY: A guest session has a real id belonging to nobody. It satisfies
+        require_session, and the gateway still refuses these with 110.
+        SCHEMA: model.require_login
+        EXAMPLES:
+            - requiresLogin=true: Medal.unlock, ScoreBoard.postScore, CloudSave.*
+            - requiresLogin=false: App.checkSession - its whole job is to find
+              out whether anyone has signed in yet, so requiring a login would
+              make signing in impossible
+        VALIDATION: If requiresLogin=true and the session carries no user,
+        getPreflightError() refuses the component with LOGIN_REQUIRED (110).
+        NOT A PARAMETER: this does not mean "pass a user object". The flag is
+        named require_login rather than require_user for exactly that reason -
+        the latter read like an argument the caller had to supply.
+        ABSENT MEANS FALSE. Schemas published before this flag existed do not
+        carry it, so a component is only gated once the gateway says so.
+        NEVER DERIVE THIS FROM require_session. See getPreflightError() below.
     
     redirect: boolean = false
         PURPOSE: Whether this component opens a browser window
@@ -88,6 +107,7 @@ CLASS BaseComponent
             COMMENT: Set component-specific defaults
             SET this.isSecure TO false
             SET this.requiresSession TO false
+            SET this.requiresLogin TO false
             SET this.redirect TO false
             SET this.browserTarget TO null
     END CONSTRUCTOR
@@ -96,75 +116,147 @@ CLASS BaseComponent
     OVERRIDDEN METHODS
     ====================
     
-    FUNCTION hasValidProperties(): boolean
-        
-        PURPOSE: Enhanced validation that includes session requirements
-        WHY: Components have special validation - they might require a logged-in user
-        
-        RETURNS: true if valid, false if any validation fails
-        
+    FUNCTION getPreflightError(): NewgroundsIO.models.objects.Error | null
+
+        PURPOSE: Enhanced validation that includes the session requirement
+        WHY: Core calls this BEFORE SENDING, so a component that cannot possibly
+        succeed is refused without spending a network round trip.
+
+        Return the code the GATEWAY would have returned for the same condition -
+        MISSING_PARAMETER (102) for no session id, LOGIN_REQUIRED (110) for a
+        session with no validated login - so callers cannot tell a local refusal
+        from a server one except by how fast it arrives. See the contract note in
+        Core.pseudo.
+
+        ====================================================================
+        TWO FLAGS, AND THEY ARE NOT THE SAME QUESTION
+        ====================================================================
+
+        require_session -> requiresSession
+            A SESSION ID MUST BE SENT. Literally that, and nothing more.
+            Refused with MISSING_PARAMETER (102).
+
+        require_login   -> requiresLogin
+            A VALIDATED LOGIN IS REQUIRED. A guest session - a real id belonging
+            to nobody - satisfies require_session and fails this.
+            Refused with LOGIN_REQUIRED (110).
+
+        WHY THERE ARE TWO, and the history is worth keeping because the
+        single-flag version looked perfectly reasonable:
+
+        The gateway has always checked these two things separately and
+        correctly. THE SCHEMA was what conflated them. A single require_session
+        flag was used where require_login is used now, so one flag carried both
+        meanings and nothing downstream could tell them apart.
+
+        A library reading that flag as "needs a logged-in user" was matching
+        what it then meant - but App.checkSession was marked with it despite
+        needing no login at all, so enforcing it before sending WOULD HAVE MADE
+        SIGN-IN IMPOSSIBLE: the call whose job is to discover whether anyone has
+        signed in would be refused for the absence of exactly that.
+
+        The lesson for your port is not "the old libraries were careless". It is
+        that A FLAG WITH TWO MEANINGS CANNOT BE ENFORCED, and that the bug stayed
+        invisible for as long as nothing acted on it. Enforcement is what made
+        the ambiguity a real problem, and therefore what got it fixed.
+
+        ABSENT MEANS FALSE: a schema without require_login gates nothing, and the
+        server keeps making that call. NEVER re-derive requiresLogin from
+        requiresSession.
+
+        RETURNS: An Error describing the first problem found, or null
+
         EXPLANATION:
-            This method enhances BaseObject.hasValidProperties() with extra checks:
+            This method enhances BaseObject.getPreflightError() with extra checks:
             1. First runs the parent validation (check required properties)
             2. Then checks component-specific requirements (session validation)
-        
+
         BEHAVIOR:
             COMMENT: ==================== RUN PARENT VALIDATION ====================
             COMMENT: Check all the basic required properties first
-            CREATE parentIsValid AS CALL super.hasValidProperties()
-            IF parentIsValid is false THEN
+            CREATE parentError AS CALL super.getPreflightError()
+            IF parentError is not null THEN
                 COMMENT: Parent validation failed - this component is incomplete
-                RETURN false
+                RETURN parentError
             END IF
-            
+
             COMMENT: ==================== CHECK SESSION REQUIREMENT ====================
             IF this.requiresSession is true THEN
-                COMMENT: This component requires the user to be logged in
-                COMMENT: Check if we have a valid authenticated session
-                
+                COMMENT: This component needs a session id in the envelope.
+                COMMENT: Everything below means there is no id to send, so the
+                COMMENT: gateway would answer 102 - and that answer needs no
+                COMMENT: request to obtain.
+
                 COMMENT: First check if core is available
                 IF this.core is null THEN
                     COMMENT: No core reference - can't check session
-                    RETURN false
+                    RETURN sessionError(Errors.MISSING_PARAMETER, "has no Core to read a session from")
                 END IF
-                
+
                 COMMENT: Check if appState is available
                 IF this.core.appState is null THEN
                     COMMENT: No app state - can't check session
-                    RETURN false
+                    RETURN sessionError(Errors.MISSING_PARAMETER, "has no app state to read a session from")
                 END IF
-                
+
                 COMMENT: Get the current session from app state
                 CREATE session AS this.core.appState.session
-                
+
                 COMMENT: Validate the session exists
                 IF session is null THEN
                     COMMENT: No session at all - can't execute
-                    RETURN false
+                    RETURN sessionError(Errors.MISSING_PARAMETER, "requires a session, and there is none")
                 END IF
-                
-                COMMENT: Validate that session has an ID
+
+                COMMENT: Validate that session has an ID.
+                COMMENT:
+                COMMENT: A session id with no user attached is a GUEST session,
+                COMMENT: which satisfies require_session. Whether it is ENOUGH is
+                COMMENT: require_login's question, handled in the next block. Do
+                COMMENT: NOT add a session.user check here - collapsing the two
+                COMMENT: flags back together is what makes sign-in impossible.
                 IF session.id is null OR session.id is empty THEN
                     COMMENT: No session token - can't execute
-                    RETURN false
-                END IF
-                
-                COMMENT: Validate that a user is logged in
-                IF session.user is null THEN
-                    COMMENT: Session exists but no user logged in - can't execute
-                    RETURN false
-                END IF
-                
-                COMMENT: Validate that user has an ID
-                IF session.user.id is null OR session.user.id is empty THEN
-                    COMMENT: User exists but has no ID - invalid state
-                    RETURN false
+                    RETURN sessionError(Errors.MISSING_PARAMETER, "requires a session id, and the session has none")
                 END IF
             END IF
-            
+
+            COMMENT: ==================== CHECK LOGIN REQUIREMENT ====================
+            COMMENT: Deliberately INDEPENDENT of the block above rather than
+            COMMENT: nested inside it. A component needing a login needs a session
+            COMMENT: id by definition, but reading that dependency out of the
+            COMMENT: schema is the gateway's job, not an inference to make here -
+            COMMENT: and if a component ever carries require_login without
+            COMMENT: require_session, the honest answer is still "not logged in".
+            IF this.requiresLogin is true THEN
+                IF this.core is null OR this.core.appState is null THEN
+                    RETURN sessionError(Errors.LOGIN_REQUIRED, "requires a logged-in user, and there is no app state to read a session from")
+                END IF
+
+                CREATE loginSession AS this.core.appState.session
+
+                IF loginSession is null OR loginSession.user is null THEN
+                    COMMENT: Either no session at all, or a GUEST session - the id
+                    COMMENT: is real and belongs to nobody. The gateway says 110.
+                    RETURN sessionError(Errors.LOGIN_REQUIRED, "requires a logged-in user, and this session has none")
+                END IF
+
+                IF loginSession.user.id is null OR loginSession.user.id is empty THEN
+                    RETURN sessionError(Errors.LOGIN_REQUIRED, "requires a logged-in user, and this session's user has no id")
+                END IF
+            END IF
+
             COMMENT: ==================== ALL VALIDATION PASSED ====================
             COMMENT: Component is properly formatted and can be executed
-            RETURN true
+            RETURN null
+    END FUNCTION
+
+    FUNCTION sessionError(code: integer, problem: string): NewgroundsIO.models.objects.Error
+
+        PURPOSE: Build a session-requirement error naming this component.
+
+        BEHAVIOR:
+            RETURN Errors.getError(code, getFullObjectName() + " " + problem + ".")
     END FUNCTION
     
     ====================
@@ -250,10 +342,12 @@ CLASS BaseComponent
     ====================
     
     COMMENT: Session Validation Timing:
-    COMMENT:   The requiresSession check happens in hasValidProperties()
-    COMMENT:   This is called BEFORE sending to the server
-    COMMENT:   So if user logs out, component validation will fail locally
-    COMMENT:   (no network request wasted on impossible operation)
+    COMMENT:   The requiresSession check happens in getPreflightError()
+    COMMENT:   Core calls it BEFORE sending to the server, so a component with
+    COMMENT:   no session id to send is refused locally and no network request
+    COMMENT:   is wasted on an impossible operation.
+    COMMENT:   A GUEST session (id present, nobody signed in) is refused here too
+    COMMENT:   when the component sets requiresLogin, with LOGIN_REQUIRED (110).
     COMMENT:
     COMMENT: Encryption:
     COMMENT:   If isSecure=true, the component is encrypted by Core.encryptData()
@@ -268,11 +362,12 @@ CLASS BaseComponent
     COMMENT:   App detects the change on next checkSession() call
     COMMENT:
     COMMENT: Server-Side Validation:
-    COMMENT:   Just because a component passes hasValidProperties() locally doesn't mean
+    COMMENT:   Just because a component passes getPreflightError() locally doesn't mean
     COMMENT:   the server will accept it. The server does additional validation:
     COMMENT:   - Are values in valid range?
     COMMENT:   - Does the medal/scoreboard exist?
-    COMMENT:   - Does the user have permission?
+    COMMENT:   - Does the user have permission? (INCLUDING "is this guest session
+    COMMENT:     enough?", which the preflight check deliberately does not judge)
     COMMENT:   If server rejects it, the result.error will contain the reason
 
 END CLASS

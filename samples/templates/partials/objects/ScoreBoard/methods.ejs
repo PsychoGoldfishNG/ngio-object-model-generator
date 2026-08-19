@@ -159,7 +159,7 @@
         PURPOSE: Submits a score to this scoreboard for the current user
         
         PARAMETERS:
-            value: The score value to post
+            value: The score value to post - see SCORE VALUES below
             tag: Optional tag to associate with the score (e.g., level name, difficulty)
             callback: Function to call when posting completes, as callback(score, error)
                       where error is null on success and score is null on failure
@@ -188,6 +188,31 @@
             author to follow, not a rule for the library to impose.)
 
         BEHAVIOR:
+            COMMENT: ==================== SCORE VALUES ====================
+            COMMENT: THE SERVER STORES A 32-BIT INTEGER, and reshapes anything else
+            COMMENT: SILENTLY rather than rejecting it:
+            COMMENT:
+            COMMENT:   - fractional values are TRUNCATED TOWARD ZERO. 1.9 posts as 1
+            COMMENT:     and -1.9 posts as -1; it does not round, and it does not floor
+            COMMENT:   - values outside -2147483648..2147483647 are CLAMPED to the
+            COMMENT:     nearest limit
+            COMMENT:
+            COMMENT: Either way the post SUCCEEDS and the result carries the adjusted
+            COMMENT: value, so nothing surfaces as an error. A game scoring in
+            COMMENT: milliseconds, or accumulating a running total, can pass that
+            COMMENT: ceiling and then find every subsequent score identical.
+            COMMENT:
+            COMMENT: DO NOT ROUND OR RANGE-CHECK ON THE CALLER'S BEHALF. Document it
+            COMMENT: instead. The server is the authority on what it stores, and a port
+            COMMENT: that invents its own limits disagrees with every other port and
+            COMMENT: with the scores games have already posted. Same reasoning as the
+            COMMENT: tag rule in getScores: pass the developer's value through.
+            COMMENT:
+            COMMENT: If your language HAS an integer type, taking this parameter as a
+            COMMENT: float anyway is the honest signature - the truncation is the
+            COMMENT: server's, and hiding it behind a cast moves the surprise earlier
+            COMMENT: without removing it.
+
             COMMENT: Refuse this on a board loaded from another app. ScoreBoard.postScore
             COMMENT: takes no app_id, so it would send this board's id against YOUR app
             COMMENT: and come back as error 203. See BaseObject.assertNotForeign.

@@ -94,7 +94,12 @@ Component-specific variables (component.ejs):
   - model.method        // "unlock", "checkSession", "getScores", etc.
   - model.properties    // Parameters this component accepts
   - model.secure        // Boolean - must be encrypted?
-  - model.require_session // Boolean - requires logged-in user?
+  - model.require_session // Boolean - must a session id be sent?
+  - model.require_login   // Boolean - must the session be a validated login?
+                          // Not the same question: a guest session satisfies
+                          // require_session and fails this. Absent in schemas
+                          // published before the flag existed - render it false,
+                          // and never infer it from require_session.
   - model.redirect      // Boolean - opens in new tab?
 
 Result-specific variables (result.ejs):

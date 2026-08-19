@@ -29,7 +29,14 @@ CLASS Core
     MAX_QUEUE_SIZE = 10
         PURPOSE: Maximum number of components that can be bundled in a single request.
         WHY: The server has limits to prevent abuse. If we send too many at once, the server rejects it.
-    
+
+    UNKNOWN_STATUS = 0
+        PURPOSE: Stands in for "the platform reported no HTTP status".
+        WHY: 0 is not a real status, so it cannot collide with one. Treat it as UNKNOWN,
+        never as an error in itself - and never substitute a plausible-looking status
+        such as 500 for it. See onHTTPResponse for why that distinction matters to the
+        message a player ends up reading.
+
     ====================
     READONLY PROPERTIES
     ====================
@@ -303,6 +310,7 @@ CLASS Core
             COMMENT: are about to clear is how this method breaks.
             CREATE redirectComponents AS new array
             CREATE toExecute AS new array
+            CREATE refusedComponents AS new array
 
             FOR EACH executeWrapper IN componentQueue
                 COMMENT: Get the component model inside the Execute wrapper
@@ -322,6 +330,25 @@ CLASS Core
                 IF isRedirect equals true THEN
                     APPEND componentModel TO redirectComponents
                     CONTINUE TO NEXT COMPONENT
+                END IF
+
+                COMMENT: Refuse what cannot succeed, but KEEP IT IN THE REPORT.
+                COMMENT: The caller asked for this component and is owed an answer
+                COMMENT: about it, in the same shape the server would have used.
+                COMMENT:
+                COMMENT: A batch is partial by nature - the gateway refuses
+                COMMENT: individual components while running their siblings, which
+                COMMENT: is why loadData can ask for medals and saveSlots together
+                COMMENT: and get one of them. Refusing the WHOLE batch because one
+                COMMENT: component lacks a session would lose the medals a
+                COMMENT: signed-out title screen legitimately wanted.
+                IF componentModel is not null THEN
+                    CREATE preflightError AS CALL componentModel.getPreflightError()
+
+                    IF preflightError is not null THEN
+                        APPEND {component: componentModel, error: preflightError} TO refusedComponents
+                        CONTINUE TO NEXT COMPONENT
+                    END IF
                 END IF
 
                 COMMENT: Add the already-wrapped Execute object to the batch
@@ -356,9 +383,37 @@ CLASS Core
 
             COMMENT: If we ended up with no components to send, we're done
             IF toExecute.length equals 0 THEN
+                COMMENT: ...unless everything was refused locally, in which case
+                COMMENT: the caller is owed a report saying so. Answering null here
+                COMMENT: would mean "nothing to do", which is the one thing that
+                COMMENT: did not happen.
+                IF refusedComponents.length > 0 THEN
+                    IF callback is not null THEN
+                        CALL callback WITH context thisArg
+                            PASSING buildRefusalResponseList(refusedComponents)
+                    END IF
+                    RETURN
+                END IF
+
                 IF callback is not null THEN
                     CALL callback WITH context thisArg PASSING null
                 END IF
+                RETURN
+            END IF
+
+            COMMENT: Some were refused but others are going out. Send the valid
+            COMMENT: ones, then fold the refusals into the response so the caller
+            COMMENT: gets ONE report covering everything it queued - which is how
+            COMMENT: the gateway would have answered had it done the refusing.
+            IF refusedComponents.length > 0 THEN
+                CALL sendRequest(toExecute, false,
+                    FUNCTION onComplete(response)
+                        IF callback is not null THEN
+                            CALL callback WITH context thisArg
+                                PASSING mergeRefusalsIntoResponse(response, refusedComponents)
+                        END IF
+                    END FUNCTION,
+                    null)
                 RETURN
             END IF
 
@@ -383,7 +438,49 @@ CLASS Core
             IF componentModel is not null AND componentModel.core is null THEN
                 SET componentModel.core TO this
             END IF
-            
+
+            COMMENT: ==================== PREFLIGHT ====================
+            COMMENT: Refuse a component that cannot possibly succeed, WITHOUT
+            COMMENT: spending a request on it. See getPreflightError() in
+            COMMENT: BaseComponent.pseudo for what is and is not decidable here.
+            COMMENT:
+            COMMENT: WHY THIS MATTERS MORE THAN "SAVING A REQUEST": the gateway
+            COMMENT: limits requests per time window. A game calling
+            COMMENT: medal.unlock() on every scoring event while the player has no
+            COMMENT: session spends that budget on calls whose outcome was
+            COMMENT: knowable before they left the machine - and then a call that
+            COMMENT: COULD have succeeded gets a 429.
+            COMMENT:
+            COMMENT: THE CONTRACT, and the rule that makes this safe to add:
+            COMMENT: DO NOT INVENT A NEW FAILURE SHAPE. A locally-refused call
+            COMMENT: must be indistinguishable from a server-refused one except by
+            COMMENT: how fast it arrives - same Response shape, same result shape,
+            COMMENT: same error codes. Then nothing downstream needs a special
+            COMMENT: case, and the three-layer check in AppState.loadData and the
+            COMMENT: NGIO wrappers reads a synthesized refusal exactly as it reads
+            COMMENT: a real one. A local error that arrived differently would mean
+            COMMENT: every caller needs two code paths for one condition.
+            COMMENT:
+            COMMENT: REDIRECTS ARE EXEMPT: they navigate the browser rather than
+            COMMENT: exchanging JSON, so there is no response to shape - and the
+            COMMENT: one that matters (App.startSession -> Passport) is how a
+            COMMENT: session gets established in the first place.
+            CREATE isRedirect AS componentModel.redirect
+
+            IF isRedirect is not true THEN
+                CREATE preflightError AS CALL componentModel.getPreflightError()
+
+                IF preflightError is not null THEN
+                    CALL reportNetworkActivity("error", "Refused before sending - " + preflightError.message)
+
+                    IF callback is not null THEN
+                        CALL callback WITH context thisArg
+                            PASSING buildRefusalResponse(componentModel, preflightError)
+                    END IF
+                    RETURN
+                END IF
+            END IF
+
             COMMENT: Wrap the component for transmission
             CREATE executeModel AS ObjectFactory.CreateObject("Execute", null, this)
             
@@ -622,6 +719,17 @@ CLASS Core
             CREATE formData AS "request=" + URL_ENCODE(requestString)
             SET request.data TO formData
             
+            COMMENT: Track the HTTP status separately from the outcome handlers.
+            COMMENT: Many platforms report the status on its own event or property, which
+            COMMENT: may fire BEFORE the success/error handler and is frequently absent
+            COMMENT: entirely. Start it at UNKNOWN_STATUS and overwrite it if a real
+            COMMENT: status ever arrives; never invent one.
+            CREATE httpStatus AS UNKNOWN_STATUS
+
+            CREATE onHttpStatus AS FUNCTION(event)
+                SET httpStatus TO event.status
+            END FUNCTION
+
             COMMENT: Set up event handlers
             CREATE onSuccess AS FUNCTION(event)
                 IF this.debugNetworkCalls equals true THEN
@@ -637,8 +745,16 @@ CLASS Core
                     LOG_ERROR("NETWORK: IOError occurred - " + event.text)
                 END IF
                 CALL reportNetworkActivity("error", "IOError - " + event.text)
-                COMMENT: Network error occurred
-                CALL onHTTPResponse(500, null, callback, thisArg)
+
+                COMMENT: Forward what the platform ACTUALLY reported, and UNKNOWN_STATUS
+                COMMENT: (0) when it reported nothing. Do NOT substitute 500 here.
+                COMMENT: See "no status is not a server error" under onHTTPResponse.
+                COMMENT:
+                COMMENT: If your platform exposes the status on a separate event that
+                COMMENT: fires BEFORE this one, capture it there and read it here. If it
+                COMMENT: exposes no status at all, pass UNKNOWN_STATUS every time - that
+                COMMENT: is an honest answer, and 500 is not.
+                CALL onHTTPResponse(httpStatus, null, callback, thisArg)
             END FUNCTION
             
             CREATE onSecurityError AS FUNCTION(event)
@@ -663,8 +779,10 @@ CLASS Core
                     LOG_ERROR("NETWORK: Error sending request - " + error.message)
                 END IF
                 CALL reportNetworkActivity("error", "Error sending request - " + error.message)
-                COMMENT: Network error occurred
-                CALL onHTTPResponse(500, null, callback, thisArg)
+
+                COMMENT: The send call threw, so the request never left the machine.
+                COMMENT: There is no server to blame for a failure that happened here.
+                CALL onHTTPResponse(UNKNOWN_STATUS, null, callback, thisArg)
             END TRY
         
     END FUNCTION
@@ -675,11 +793,46 @@ CLASS Core
         WHY: Centralizes response processing, error handling, and callback management.
         
         PARAMETERS:
-            statusCode: HTTP status code (200 = success, 4xx/5xx = error)
+            statusCode: HTTP status code, or UNKNOWN_STATUS (0) when none was reported
             responseText: Response body from server
             callback: Developer's callback function
             thisArg: Context for the callback
-        
+
+        COMMENT: ---------------------------------------------------------------
+        COMMENT: TURNING A STATUS INTO AN ERROR
+        COMMENT: ---------------------------------------------------------------
+        COMMENT:
+        COMMENT: The Errors constants were chosen to mirror HTTP - 400, 403, 404, 429,
+        COMMENT: 500, 503, 504 - so the common codes map straight across. Two cases need
+        COMMENT: deciding: a status with no matching constant, and NO STATUS AT ALL.
+        COMMENT:
+        COMMENT: Map unrecognised codes BY CLASS, not to a generic error, so a 502 still
+        COMMENT: reads as a server problem and a 418 still reads as a bad request:
+        COMMENT:
+        COMMENT:   400, 403, 404, 429, 500, 503, 504  the matching Errors constant
+        COMMENT:   any other 5xx                      SERVER_ERROR
+        COMMENT:   any other 4xx                      BAD_REQUEST
+        COMMENT:   UNKNOWN_STATUS (0), or a 2xx here  INVALID_RESPONSE
+        COMMENT:
+        COMMENT: A MISSING STATUS IS NOT A SERVER ERROR. Many platforms report no status
+        COMMENT: for a failed request - a Flash movie in a browser plugin almost never
+        COMMENT: gets one - and substituting 500 maps it to SERVER_ERROR, whose message
+        COMMENT: tells the player an unexpected error occurred on the server and to
+        COMMENT: contact support. But no status usually means NO REPLY ARRIVED AT ALL:
+        COMMENT: offline, DNS failure, a blocked domain, a request that never left the
+        COMMENT: machine. Telling a player to contact support because their wifi dropped
+        COMMENT: is worse than admitting you do not know.
+        COMMENT:
+        COMMENT: INVALID_RESPONSE (505) claims only what is actually known. Games
+        COMMENT: branching on error.code will see 505 rather than 500 here, and that is
+        COMMENT: the intended reading: 500 means THE SERVER SAID IT FAILED, 505 means NO
+        COMMENT: USABLE REPLY WAS OBTAINED.
+        COMMENT:
+        COMMENT: A STATUS IS NOT ENOUGH ON ITS OWN, either. A 200 carrying an HTML error
+        COMMENT: page, a proxy interstitial or a captive-portal login is a perfectly good
+        COMMENT: HTTP response. Only inspecting the BODY catches those - which is why the
+        COMMENT: decode below must be strict. See DECODING REQUIREMENTS.
+
         BEHAVIOR:
             IF this.debugNetworkCalls equals true THEN
                 LOG_INFO("NETWORK: HTTP Response received with status " + statusCode)
@@ -690,10 +843,16 @@ CLASS Core
             CREATE responseModel AS ObjectFactory.CreateObject("Response", null, this)
 
             COMMENT: Check HTTP status code
-            COMMENT: 200-299 = success, anything else = error
+            COMMENT: 200-299 = success, anything else (including UNKNOWN_STATUS) = error
             IF statusCode < 200 OR statusCode > 299 THEN
-                COMMENT: HTTP error - create error model
-                SET responseModel.error TO Errors.getError(statusCode)
+                COMMENT: Map the status onto an Errors constant using the table above.
+                COMMENT: Do NOT assume the status code IS an error code - most are not,
+                COMMENT: and Errors.getError() handed an unmapped number produces a
+                COMMENT: nameless error with no message.
+                SET responseModel.error TO Errors.getError(
+                    errorCodeForHttpStatus(statusCode),
+                    describeHttpStatus(statusCode)
+                )
             ELSE
                 COMMENT: HTTP succeeded - parse the response JSON
                 TRY
@@ -738,7 +897,211 @@ CLASS Core
             END IF
     END FUNCTION
 
+    FUNCTION buildRefusalResponse(component: NewgroundsIO.BaseComponent, preflightError): NewgroundsIO.models.objects.Response
+
+        PURPOSE: Build the Response the gateway WOULD have returned, had it
+        refused this component itself.
+        WHY: So a locally-refused call reaches the caller through exactly the same
+        path as a server-refused one. See the contract note in executeComponent.
+
+        BEHAVIOR:
+            CREATE response AS ObjectFactory.CreateObject("Response", null, this)
+            SET response.core TO this
+            SET response.app_id TO this.appId
+
+            COMMENT: ENVELOPE SUCCESS IS TRUE, and this is the important part.
+            COMMENT: The REQUEST was fine - the component is what failed. That is
+            COMMENT: exactly how the server reports "you are not logged in", and
+            COMMENT: it puts the error at the layer callers already check.
+            COMMENT: Reporting envelope failure instead would claim the whole
+            COMMENT: batch was rejected, which is a different and worse claim.
+            SET response.success TO true
+
+            CALL response.setResult(buildRefusalResult(component, preflightError))
+
+            RETURN response
+    END FUNCTION
+
+    FUNCTION buildRefusalResult(component: NewgroundsIO.BaseComponent, preflightError): NewgroundsIO.BaseResult
+
+        PURPOSE: Build the single failed result for a refused component.
+
+        BEHAVIOR:
+            COMMENT: A component's objectName is "Component.method" - the same
+            COMMENT: string the result factory keys on, split back into halves.
+            CREATE splitAt AS the position of "." in component.objectName
+
+            IF there is no "." in component.objectName THEN
+                RETURN null
+            END IF
+
+            CREATE result AS ObjectFactory.CreateResult(
+                the part of component.objectName before splitAt,
+                the part of component.objectName after splitAt,
+                null, this
+            )
+
+            COMMENT: An unrecognised component name yields null from the factory.
+            IF result is null THEN
+                RETURN null
+            END IF
+
+            SET result.core TO this
+            SET result.success TO false
+            SET result.error TO preflightError
+
+            RETURN result
+    END FUNCTION
+
+    FUNCTION buildRefusalResponseList(refusedComponents: array): NewgroundsIO.models.objects.Response
+
+        PURPOSE: Build a Response holding several refused components' results,
+        for when EVERY component in a queue was refused and no request is sent.
+
+        BEHAVIOR:
+            CREATE response AS ObjectFactory.CreateObject("Response", null, this)
+            SET response.core TO this
+            SET response.app_id TO this.appId
+            SET response.success TO true
+
+            CREATE results AS new array
+            FOR EACH refusal IN refusedComponents
+                CREATE result AS buildRefusalResult(refusal.component, refusal.error)
+                IF result is not null THEN
+                    APPEND result TO results
+                END IF
+            END FOR
+
+            CALL response.setResultList(results)
+
+            RETURN response
+    END FUNCTION
+
+    FUNCTION mergeRefusalsIntoResponse(response, refusedComponents: array): NewgroundsIO.models.objects.Response
+
+        PURPOSE: Add refused components' results to a response that DID come back
+        from the server, so the caller sees one report covering everything it
+        queued.
+
+        BEHAVIOR:
+            IF refusedComponents is empty THEN
+                RETURN response
+            END IF
+
+            COMMENT: A transport failure means nothing came back to merge into.
+            COMMENT: The refusals are still true, but reporting them on a response
+            COMMENT: that does not exist would dress up a dead network as a
+            COMMENT: partial success - so let the transport failure speak for
+            COMMENT: itself.
+            IF response is null THEN
+                RETURN null
+            END IF
+
+            CREATE merged AS new array
+
+            IF response.resultIsList() THEN
+                APPEND every item in response.getResultList() TO merged
+            ELSE IF response.getResult() is not null THEN
+                APPEND response.getResult() TO merged
+            END IF
+
+            FOR EACH refusal IN refusedComponents
+                CREATE result AS buildRefusalResult(refusal.component, refusal.error)
+                IF result is not null THEN
+                    APPEND result TO merged
+                END IF
+            END FOR
+
+            COMMENT: ORDER IS NOT PRESERVED against the original queue - the
+            COMMENT: server's results come first, then the refusals. Nothing reads
+            COMMENT: results positionally (they are matched by component name),
+            COMMENT: and promising an interleaving the two halves cannot actually
+            COMMENT: guarantee would be worse than being plain about it.
+            CALL response.setResultList(merged)
+
+            RETURN response
+    END FUNCTION
+
+    FUNCTION errorCodeForHttpStatus(status: integer): integer
+
+        PURPOSE: Map an HTTP status onto the closest Errors constant.
+        WHY: So a failed load says "the server is down" or "that file is gone" rather
+        than surfacing a raw platform error string the player cannot act on.
+
+        BEHAVIOR:
+            SWITCH status
+                CASE 400: RETURN Errors.BAD_REQUEST
+                CASE 403: RETURN Errors.USER_FORBIDDEN
+                CASE 404: RETURN Errors.NOT_FOUND
+                CASE 429: RETURN Errors.TOO_MANY_REQUESTS
+                CASE 500: RETURN Errors.SERVER_ERROR
+                CASE 503: RETURN Errors.SERVER_UNAVAILABLE
+                CASE 504: RETURN Errors.GATEWAY_TIMEOUT
+            END SWITCH
+
+            COMMENT: Fall back BY CLASS rather than to a generic error.
+            IF status is between 500 and 599 THEN
+                RETURN Errors.SERVER_ERROR
+            END IF
+
+            IF status is between 400 and 499 THEN
+                RETURN Errors.BAD_REQUEST
+            END IF
+
+            COMMENT: Covers UNKNOWN_STATUS (0) and any 2xx that reached here - the latter
+            COMMENT: meaning the request succeeded and the BODY was the problem.
+            RETURN Errors.INVALID_RESPONSE
+    END FUNCTION
+
+    FUNCTION describeHttpStatus(status: integer): string
+
+        PURPOSE: A sentence naming what failed and what the server said, if anything.
+        WHY: The code tells a program what happened; this tells a person.
+
+        BEHAVIOR:
+            IF status equals UNKNOWN_STATUS THEN
+                COMMENT: Not a fault - the platform simply did not hand us a code.
+                RETURN "The request failed, and no HTTP status was reported"
+            END IF
+
+            IF status is between 200 and 299 THEN
+                RETURN "The server returned HTTP " + status + " but the body was not valid JSON"
+            END IF
+
+            RETURN "The request failed with HTTP " + status
+    END FUNCTION
+
 END CLASS
+
+COMMENT: ============================================================================
+COMMENT: DECODING REQUIREMENTS
+COMMENT: ============================================================================
+COMMENT:
+COMMENT: Your JSON decoder sits on both ends of this library, and two of its properties
+COMMENT: are load-bearing. Both were real defects in a shipped library.
+COMMENT:
+COMMENT: 1. REJECT TRAILING CONTENT.
+COMMENT:
+COMMENT:    {"a":1}<html>...  must FAIL, not parse as {"a":1}.
+COMMENT:
+COMMENT:    A lenient scanner that stops at the end of the first value turns a
+COMMENT:    captive-portal page, a proxy interstitial, or a server warning printed
+COMMENT:    ahead of a real response into a plausible-looking success. A decoder that
+COMMENT:    returns the NUMBER 0 for a page of HTML is the same bug wearing a more
+COMMENT:    confusing hat: the leading '<' is garbage, but the scanner produced a value
+COMMENT:    anyway. Parse a value, skip whitespace, and require end-of-input.
+COMMENT:
+COMMENT: 2. ACCEPT EXPONENT NOTATION, BECAUSE YOUR OWN ENCODER EMITS IT.
+COMMENT:
+COMMENT:    Any language whose number-to-string conversion switches to exponent form for
+COMMENT:    very small or very large values will write 1e-7 into a cloud save. If the
+COMMENT:    decoder's number scanner does not handle 'e'/'E' with an optional sign, THE
+COMMENT:    LIBRARY CANNOT READ BACK WHAT IT JUST WROTE - and the failure only shows up
+COMMENT:    on the player's next launch, in data that is already saved.
+COMMENT:
+COMMENT:    Do not assume: round-trip the extremes of your platform's number range
+COMMENT:    through encode -> decode and compare. This one went unnoticed for years
+COMMENT:    because the encoder and decoder were only ever tested apart.
 
 
 COMMENT: ============================================================================

@@ -59,11 +59,26 @@ CLASS Errors
     SERVER_ERROR = 500
     SERVER_UNAVAILABLE = 503
     GATEWAY_TIMEOUT = 504
-    INVALID_RESPONSE = 505
         PURPOSE: Server-side problems
         WHY: Newgrounds servers are down, experiencing issues, or unreachable
-        NOTE: INVALID_RESPONSE indicates server returned malformed JSON
-    
+
+    INVALID_RESPONSE = 505
+        PURPOSE: No usable response was obtained.
+        WHY: Covers TWO cases - the reply could not be turned into a response (malformed
+        JSON, a payload missing its result, an import that failed partway), OR no reply
+        arrived at all and the platform reported no HTTP status to explain why.
+
+        NOTE: This is the one code in this list YOUR CLIENT raises rather than the
+        server. Use it wherever response parsing gives up, so callers get a real error
+        object instead of a null or a half-built model. Without it, a mangled response is
+        indistinguishable from a component that legitimately returned nothing.
+
+        NOTE: PREFER THIS OVER INVENTING A SERVER_ERROR (500) when a request fails with
+        no status reported. A missing status usually means the request never reached a
+        server - offline, DNS, a blocked domain - so reporting it as a server fault tells
+        the player to contact support about their own network. Report a real status when
+        the platform gives you one, and this when it does not.
+
     ====================
     STATIC READONLY PROPERTIES
     ====================

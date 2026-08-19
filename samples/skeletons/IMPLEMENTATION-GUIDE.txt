@@ -370,15 +370,81 @@ Your code must:
 2. Parse response text as JSON
 3. Check response.success property
 4. Handle response.error if present
-5. Process response.result data
+5. Check EACH result's own success property - see below
+6. Process response.result data
+
+THE THREE FAILURE LAYERS
+------------------------
+This is the single most common defect in ports of this library, and every instance
+of it fails the same way: A FAILED CALL IS REPORTED AS A SUCCESSFUL EMPTY ONE.
+
+A request can fail at three INDEPENDENT levels. Checking one and assuming it covers
+the others is the mistake:
+
+  1. TRANSPORT   No response object at all.
+                 Nothing reached the gateway, or nothing came back.
+
+  2. ENVELOPE    response.success is not true.
+                 The request as a whole was rejected. No component ran.
+
+  3. COMPONENT   result.success is not true.
+                 THIS component failed; siblings in the same request may have
+                 succeeded.
+
+Layer 3 is the one that gets missed, and it is not an edge case - it is the ordinary
+shape of "you are not logged in". A request for cloud saves without a session comes
+back like this:
+
+  {"success":true,"result":[{"component":"CloudSave.loadSlots",
+    "data":{"success":false,
+            "error":{"code":110,"message":"User is not logged in."}}}]}
+
+Envelope success, component refusal. Report only the envelope and a signed-out game
+reads the silence as "this user has no saves" rather than "this user is not signed
+in".
+
+Layer 3 exists because ONE REQUEST CAN CARRY SEVERAL COMPONENTS, so "did it work?"
+is a question per component, and the answer has to say WHICH one failed.
+
+TWO RULES THAT FOLLOW, both easy to get wrong and both silent when you do:
+
+  - TEST result.success, NOT result.error. A refused component is not obliged to
+    carry an error object. Testing only `error` lets that case through as a success.
+    Substitute an INVALID_RESPONSE error when a result reports failure without
+    supplying one.
+
+  - A NULL RESPONSE IS NOT A SUCCESS. Handing a caller (null, null) - no value and
+    no reason - says the gateway answered with nothing, when in fact nothing
+    answered.
+
+And the rule that falls out of both: WHENEVER `error` IS NOT NULL, THE VALUE HANDED
+BACK BESIDE IT MUST BE NULL. Returning both invites callers to use a value the
+server never confirmed.
+
+See NGIO.pseudo, "RESOLVING THE ERROR: THREE FAILURE LAYERS", for the exact
+resolution every method uses, and AppState.pseudo for the batch version.
 
 ERROR HANDLING:
 - Network errors: No response received (timeout, no connection)
 - HTTP errors: Bad status code (400, 500, etc.)
-- API errors: success=false with error object
+- API errors: success=false with error object, at EITHER the response or result level
 - Parse errors: Invalid JSON in response
 
 Handle all four types gracefully.
+
+TWO THINGS NOT TO INVENT:
+
+  - Do not substitute a status code the platform never reported. If a request fails
+    with no HTTP status, report INVALID_RESPONSE (505), not SERVER_ERROR (500) - a
+    missing status usually means the request never reached a server at all, and
+    blaming the server tells the player to contact support about their own network.
+    Core.pseudo has the full status mapping.
+
+  - Do not assume a 2xx means the body is yours. A 200 carrying an HTML error page
+    or a captive-portal login is a perfectly good HTTP response, so your JSON
+    decoder has to be strict enough to reject it. See DECODING REQUIREMENTS at the
+    end of Core.pseudo - including the round-trip trap where a library could not
+    decode numbers its own encoder had written.
 
 
 ================================================================================
@@ -629,7 +695,7 @@ Each one constructs with NO arguments, assigns core, then imports the data - in
 that order. The order is load-bearing: importFromObject casts nested values by
 calling back into the factory, which needs core already set to build them.
 
-Two rules that are easy to get wrong:
+Three rules that are easy to get wrong:
 
 1. Look types up by their SCHEMA name, not the emitted class name. Where a schema
    name collides with a language built-in the generator renames the class, but the
@@ -638,6 +704,21 @@ Two rules that are easy to get wrong:
 
 2. Match case-insensitively. Callers pass "getDateTime" for a component whose
    class is getDatetime, and both must resolve.
+
+3. All three return the BASE type - BaseObject, BaseComponent, BaseResult - not
+   the concrete class, because the concrete class is only known at runtime from a
+   string. In a statically typed language that means the result does not assign to
+   a specifically typed variable on its own, and how you bridge that gap is the
+   port's business:
+
+       AS3     var response:Response = ObjectFactory.CreateObject(...) as Response;
+       AS2     var response = ObjectFactory.CreateObject(...);
+
+   AS2 has no `as` operator and no implicit downcast, so it leaves the variable
+   untyped and lets AVM1 resolve the members at runtime. Neither form is more
+   correct; write whichever one your language will actually compile. What you must
+   NOT do is skip the factory to get a concretely typed value out of a constructor
+   - see WHY THERE IS NO CHOICE HERE above.
 
 IF YOU ARE TRANSLATING WITHOUT A GENERATED FACTORY
 

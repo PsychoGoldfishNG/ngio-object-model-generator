@@ -19,7 +19,9 @@
  * - model.description: Human-readable description of what this method does
  * - model.properties: Object containing all parameters this method accepts
  * - model.secure: Boolean - if true, this must be encrypted to prevent cheating
- * - model.require_session: Boolean - if true, requires a logged-in user
+ * - model.require_session: Boolean - if true, a session id must be sent
+ * - model.require_login: Boolean - if true, a validated login is required (not
+ *   merely a session id). Absent in older schemas; treat absent as false.
  * - model.redirect: Boolean - if true, opens in new tab and redirects
  * - helpers: Your custom helper methods (from helpers.js)
  * - partial: Methods to include partial templates (partial.get, partial.getIfExists)
@@ -100,16 +102,27 @@ CLASS <%- model.method %>
             COMMENT: Call the parent BaseComponent constructor
             CALL super()
 
-            COMMENT: These three flags are inherited from BaseComponent and are assigned
+            COMMENT: These four flags are inherited from BaseComponent and are assigned
             COMMENT: here rather than declared as new fields. Re-declaring them would
             COMMENT: shadow the inherited members that Core and the request helper read.
             COMMENT:
             COMMENT: isSecure        - request must be encrypted before sending
-            COMMENT: requiresSession - the gateway rejects this without a valid session
+            COMMENT: requiresSession - a session id must be sent. Literally that, and
+            COMMENT:                   nothing more
+            COMMENT: requiresLogin   - a VALIDATED LOGIN is required. A guest session
+            COMMENT:                   satisfies requiresSession and fails this one
             COMMENT: redirect        - open in a browser window instead of sending in the
             COMMENT:                   background; the response is never returned
+            COMMENT:
+            COMMENT: require_login is absent from schemas published before it existed,
+            COMMENT: in which case it renders false and the server keeps making that call.
+            COMMENT: NEVER derive requiresLogin from require_session: earlier schemas used
+            COMMENT: ONE flag for both meanings, and enforcing that conflation would refuse
+            COMMENT: App.checkSession - the call whose job is to find out whether anyone
+            COMMENT: has signed in - and make signing in impossible.
             SET this.isSecure TO <%= model.secure ? "true" : "false" %>
             SET this.requiresSession TO <%= model.require_session ? "true" : "false" %>
+            SET this.requiresLogin TO <%= model.require_login ? "true" : "false" %>
             SET this.redirect TO <%= model.redirect ? "true" : "false" %>
 <%- partial.getIfExists(`components/${model.component}/${model.method}/constructor`) -%>
     END CONSTRUCTOR
