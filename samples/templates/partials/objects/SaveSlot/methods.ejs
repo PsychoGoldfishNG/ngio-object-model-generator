@@ -78,8 +78,17 @@
                 SET loadUrl TO "https:" + loadUrl
             END IF
             
+            COMMENT: Track the HTTP status separately from the outcome handlers, exactly as
+            COMMENT: Core.sendRequest does - see Core.pseudo's onHTTPResponse for the full
+            COMMENT: rationale. Start at UNKNOWN_STATUS and only overwrite it if your
+            COMMENT: platform's URL loader genuinely reports one; never invent a status
+            COMMENT: (a bare 500) for a load that may never have left the machine.
+            CREATE httpStatus AS UNKNOWN_STATUS
+
             COMMENT: Load the data from the URL (implementation-specific)
-            COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific URL loading patterns
+            COMMENT: See IMPLEMENTATION-GUIDE.txt for platform-specific URL loading patterns.
+            COMMENT: If your loader exposes the status on a separate event/callback that
+            COMMENT: fires before completion or failure, capture it into httpStatus there.
             TRY
                 CALL LOAD_URL_ASYNC(loadUrl, FUNCTION onLoadComplete(data: String)
                     COMMENT: Load succeeded - clear any previous error
@@ -87,15 +96,24 @@
                     CALL callback WITH context thisArg
                         PASSING data
                 END FUNCTION, FUNCTION onLoadError(error)
-                    COMMENT: Load failed - set error property and log
-                    SET this.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE, "Failed to load SaveSlot data from URL: " + error.message)
+                    COMMENT: Load failed. Reuse Core's status-to-error mapping instead of a
+                    COMMENT: hardcoded INVALID_RESPONSE, so a 404, a 503, a rate limit and a
+                    COMMENT: dead connection are told apart rather than reported identically.
+                    SET this.error TO NewgroundsIO.Errors.getError(
+                        Core.errorCodeForHttpStatus(httpStatus),
+                        Core.describeHttpStatus(httpStatus) + " (" + error.message + ")"
+                    )
                     LOG_ERROR(this.error.message)
                     CALL callback WITH context thisArg
                         PASSING null
                 END FUNCTION)
             CATCH loadError
-                COMMENT: URL loading setup failed - set error property
-                SET this.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE, "Failed to load SaveSlot data from URL: " + loadError.message)
+                COMMENT: URL loading setup failed before any request went out - no status
+                COMMENT: was ever possible, so this is always UNKNOWN_STATUS.
+                SET this.error TO NewgroundsIO.Errors.getError(
+                    Core.errorCodeForHttpStatus(UNKNOWN_STATUS),
+                    Core.describeHttpStatus(UNKNOWN_STATUS) + " (" + loadError.message + ")"
+                )
                 LOG_ERROR(this.error.message)
                 CALL callback WITH context thisArg
                     PASSING null
