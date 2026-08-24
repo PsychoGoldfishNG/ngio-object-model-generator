@@ -236,22 +236,50 @@ CLASS BaseObject
             COMMENT: Build one throwaway instance of this same type to read defaults from.
             COMMENT: Reading them off a fresh instance rather than hardcoding them keeps
             COMMENT: this in sync with whatever the subclass declares.
-            CREATE defaultObject AS ObjectFactory.CreateObject(this.objectName, null, this.core)
+            COMMENT:
+            COMMENT: Dispatch on objectType rather than calling CreateObject(this.objectName)
+            COMMENT: directly - a result's objectName is a DOTTED component path
+            COMMENT: ("Medal.unlock") that CreateObject has no case for, so a plain lookup
+            COMMENT: silently returns null and declared defaults never apply to that model.
+            COMMENT: Returns null for components by design - see the branch below, which
+            COMMENT: does not consult this at all for objectType "component".
+            CREATE defaultObject AS CALL buildDefaultInstance()
 
             FOR EACH propertyName IN propertyNames
                 COMMENT: Check if property exists in the import object.
                 COMMENT: Test for MISSING specifically - an explicit null in the payload is
                 COMMENT: a real value the server sent and must be imported as null.
                 IF propertyName NOT in importObject THEN
-                    IF defaultObject is not null THEN
+                    IF this.objectType equals "component" THEN
+                        COMMENT: A component is built from a developer-supplied PARTIAL
+                        COMMENT: parameter set (see ObjectFactory.CreateComponent), not a
+                        COMMENT: complete snapshot. Absent means "not sent" - null it
+                        COMMENT: explicitly, UNCONDITIONALLY, regardless of what
+                        COMMENT: defaultObject or the constructor say, so it drops out of
+                        COMMENT: toObject()'s excludeNulls pass instead of reappearing on
+                        COMMENT: the wire as its type's zero value (false, 0). A component's
+                        COMMENT: own field initializer for an optional Boolean/Number IS that
+                        COMMENT: zero value - "leave the constructor value" would produce the
+                        COMMENT: same wrong result "copy the default instance" would have.
+                        COMMENT:
+                        COMMENT: PLATFORM NOTE: this only fully works where a strictly-typed
+                        COMMENT: primitive can genuinely hold null at runtime. Some languages
+                        COMMENT: coerce an assigned null back to the type's zero value for a
+                        COMMENT: non-nullable primitive field - in that case this branch is a
+                        COMMENT: correctness no-op for primitive-typed properties (harmless),
+                        COMMENT: though it still works for String/object-typed ones. Achieving
+                        COMMENT: a true wire-drop there needs a nullable/boxed property type,
+                        COMMENT: which is a larger change than this function covers. Implement
+                        COMMENT: the branch anyway for cross-port consistency.
+                        SET this[propertyName] TO null
+                    ELSE IF defaultObject is not null THEN
                         SET this[propertyName] TO defaultObject[propertyName]
                     END IF
-                    COMMENT: If the factory could not build a default instance, keep the
-                    COMMENT: value the constructor/field initializer set. This happens for
-                    COMMENT: result models, whose objectName is a dotted component path
-                    COMMENT: ("Medal.unlock") that CreateObject does not resolve. Do NOT
-                    COMMENT: skip the null check and index into it - on strict platforms
-                    COMMENT: that is a null-reference crash on every result import.
+                    COMMENT: If buildDefaultInstance() could not build one (unresolvable
+                    COMMENT: name) and this is not a component, keep the value the
+                    COMMENT: constructor/field initializer set. Do NOT skip the null check
+                    COMMENT: and index into it anyway - on strict platforms that is a
+                    COMMENT: null-reference crash.
                     CONTINUE TO NEXT PROPERTY
                 END IF
 
@@ -279,9 +307,63 @@ CLASS BaseObject
                 COMMENT: wrong side of it.
                 SET this.error TO ObjectFactory.CreateObject("Error", importObject.error, this.core)
             END IF
-            
+
     END FUNCTION
-    
+
+    FUNCTION buildDefaultInstance(): BaseObject | null
+
+        PURPOSE: Build a throwaway instance of this same model type, to read declared
+        defaults from for properties absent from an import.
+
+        WHY DISPATCH ON objectType FOR RESULTS: the natural approach -
+        ObjectFactory.CreateObject(this.objectName, ...) - works for object models
+        ("Medal", "Session"), but a result's objectName is a DOTTED component path
+        ("Medal.unlock") that CreateObject has no case for. Routing through
+        CreateResult instead, which understands the scope/method split, is what makes
+        declared defaults actually apply to results, not just plain objects. Results
+        are complete server snapshots, so applying the declared default to an absent
+        property is exactly the right move - see "Why absent properties reset" above
+        buildDefaultInstance's caller.
+
+        WHY objectType == "component" IS DELIBERATELY EXCLUDED: a component is not a
+        snapshot. It is built from a developer-supplied PARTIAL parameter set, most
+        often via ObjectFactory.CreateComponent(scope, method, props, core) where
+        props only contains what the caller actually set. An omitted optional
+        parameter needs to stay absent so it drops off the wire in toObject()'s
+        excludeNulls pass - not reappear as its declared type default (false for an
+        unset boolean, 0 for an unset number). Dispatching to CreateComponent here
+        would resolve successfully and then do exactly the wrong thing: copy the
+        fresh instance's own field default onto the property, so an omitted
+        `social: boolean` on ScoreBoard.getScores would start being SENT as
+        `social: false` instead of dropped. Returning null for components routes to
+        the caller's "leave it at the constructor value" fallback, which for a
+        component is the correct behavior, not a compromise.
+
+        BEHAVIOR:
+            IF this.objectType equals "object" THEN
+                RETURN ObjectFactory.CreateObject(this.objectName, null, this.core)
+            END IF
+
+            IF this.objectType NOT equals "result" THEN
+                COMMENT: Covers "component" (see WHY above) and anything else -
+                COMMENT: no default instance, caller falls back to the constructor value.
+                RETURN null
+            END IF
+
+            COMMENT: Split "Medal.unlock" into scope="Medal", method="unlock"
+            CREATE dotIndex AS this.objectName.indexOf(".")
+            IF dotIndex equals -1 THEN
+                COMMENT: Shouldn't happen for a real result objectName, but the
+                COMMENT: factory can't split what isn't there - fall through to null and
+                COMMENT: let the caller's "leave it at the constructor value" branch handle it.
+                RETURN null
+            END IF
+            CREATE scope AS this.objectName.substring(0, dotIndex)
+            CREATE method AS this.objectName.substring(dotIndex + 1)
+
+            RETURN ObjectFactory.CreateResult(scope, method, null, this.core)
+    END FUNCTION
+
     FUNCTION castToExpectedType(propertyName: string, value: any): any
         
         PURPOSE: Convert a property value to its correct type

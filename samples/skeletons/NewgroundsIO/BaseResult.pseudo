@@ -138,10 +138,15 @@ CLASS BaseResult
         BEHAVIOR:
             COMMENT: Call parent method to handle all standard BaseObject import logic
             CALL super.importFromObject(importObject)
-            
-            COMMENT: Import success property if it exists
+
+            COMMENT: Import success property if it exists, otherwise RESET it to false.
+            COMMENT: importFromObject is a full replace, not a patch (see BaseObject.pseudo) -
+            COMMENT: an absent property must not leave a stale value from a prior import on
+            COMMENT: a reused instance.
             IF importObject has property "success" THEN
                 SET this.success TO TO_BOOLEAN(importObject.success)
+            ELSE
+                SET this.success TO false
             END IF
     END FUNCTION
     
