@@ -29,40 +29,40 @@
                 SET this.parameters TO null
             END IF
             
-            COMMENT: Note: Encryption for secure components is handled in prepareForJson()
+            COMMENT: Note: parameters is always this component's plain, unencrypted form.
+            COMMENT: Whether the request ends up sending {component, parameters} or a
+            COMMENT: {secure: ...} wrapper is decided at serialize time, below.
     END METHOD
-    
-    COMMENT: Converts this Execute object to a JSON-compatible format.
-    COMMENT: Handles encryption for secure components.
-    COMMENT: Overrides BaseObject.prepareForJson()
-    METHOD prepareForJson(): Object
-        
-        PURPOSE: Serializes this Execute object for sending to the API
-        
-        RETURNS: A plain object that can be converted to JSON
-        
-        WHY: The API needs Execute objects in a specific format. Secure components
-             (like medal unlocks) must be encrypted to prevent cheating.
-        
-        BEHAVIOR:
-            COMMENT: Build the basic execute object structure
-            CREATE requestObject WITH {
-                component: this.component,
-                parameters: this.parameters
-            }
-            
-            COMMENT: If this component requires encryption, wrap it in a secure object
-            IF this.componentModel is not null AND this.componentModel.isSecure is true THEN
-                IF this.core is null THEN
-                    THROW error "Core is required for encrypting secure components"
-                END IF
-                CREATE encryptedObject AS this.core.encryptObject(requestObject)
-                RETURN {
-                    secure: encryptedObject
-                }
-            END IF
-            
-            COMMENT: Not secure, return as-is
-            RETURN requestObject
-    END METHOD
-    
+
+    COMMENT: ====================================================================================
+    COMMENT: Where serialization and encryption actually live
+    COMMENT: ====================================================================================
+    COMMENT:
+    COMMENT: Execute deliberately has NO prepareForJson()/toObject() override here. Model-
+    COMMENT: Generation.md's "Where serialization lives" section is explicit that Execute,
+    COMMENT: Request and Response carry only genuine model methods -- no serialization
+    COMMENT: overrides -- because the encryption call this class would otherwise need to
+    COMMENT: make (core.encryptObject(), for secure components) can be asynchronous on some
+    COMMENT: platforms (e.g. WebCrypto), while prepareForJson()/toObject() are specified as
+    COMMENT: synchronous. Putting the encryption call here would silently break on any
+    COMMENT: platform where it can't be awaited from inside a sync method.
+    COMMENT:
+    COMMENT: Instead, this shape selection belongs in the request helper that builds the
+    COMMENT: outgoing payload (the reference libraries call it HttpRequestHelper), as a
+    COMMENT: function shaped roughly like this pseudocode -- NOT a method on this class:
+    COMMENT:
+    COMMENT:   FUNCTION serializeExecute(executeModel: Execute): Object
+    COMMENT:       CREATE requestObject WITH {
+    COMMENT:           component: executeModel.component,
+    COMMENT:           parameters: executeModel.parameters
+    COMMENT:       }
+    COMMENT:       IF executeModel.componentModel is not null AND
+    COMMENT:          executeModel.componentModel.isSecure is true THEN
+    COMMENT:           IF executeModel.core is null THEN
+    COMMENT:               THROW error "Core is required for encrypting secure components"
+    COMMENT:           END IF
+    COMMENT:           CREATE encryptedObject AS executeModel.core.encryptObject(requestObject)
+    COMMENT:           RETURN { secure: encryptedObject }
+    COMMENT:       END IF
+    COMMENT:       RETURN requestObject
+    COMMENT:   END FUNCTION

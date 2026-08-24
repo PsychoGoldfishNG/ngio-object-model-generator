@@ -7,12 +7,14 @@ const fsExtra = require('fs-extra');
 
 // We expect one argument: the path to the config file
 if (process.argv.length < 3) {
-    console.error("Usage: npx ngio-scaffold <path-to-config-file>\n\nThis will create template and skeleton files based on your config.\nRun 'npx ngio-init <project-destination-path>' to create a config file first.");
+    console.error("Usage: npx ngio-scaffold <path-to-config-file> [--force] [--skip-templates] [--skip-core-files]\n\nThis will create template and skeleton files based on your config.\nRun 'npx ngio-init <project-destination-path>' to create a config file first.\n\n--force            Overwrite an existing template_dir / core files.\n--skip-templates    Scaffold only core/skeleton files, leaving an existing template_dir untouched.\n--skip-core-files   Scaffold only templates, skipping core/skeleton files.");
     process.exit(1);
 }
 
 let config_file = process.argv[2];
 const forceScaffold = process.argv.includes('--force');
+const skipTemplates = process.argv.includes('--skip-templates');
+const skipCoreFiles = process.argv.includes('--skip-core-files');
 
 // if config file isn't being loaded with an absolute path, we assume it's relative to the current working directory
 if (!path.isAbsolute(config_file)) {
@@ -46,30 +48,37 @@ const configDir = path.dirname(config_file);
 // get the directory path containing THIS file (the ngio-scaffold.js script)
 const thisFileDir = path.dirname(__filename);
 
-console.log("\n=== Scaffolding Templates ===\n");
-
-// Copy template files from samples/templates to the user's template directory
-const sampleTemplatesDir = path.join(thisFileDir, 'samples/templates');
 const targetTemplateDir = config.template_dir;
 
-if (!forceScaffold && fs.existsSync(targetTemplateDir)) {
-    console.error(`Error: Template directory already exists: ${targetTemplateDir}`);
-    console.error(`Use --force to overwrite existing files.`);
-    process.exit(1);
+if (skipTemplates) {
+    console.log("\n=== Skipping Templates (--skip-templates) ===\n");
+} else {
+    console.log("\n=== Scaffolding Templates ===\n");
+
+    // Copy template files from samples/templates to the user's template directory
+    const sampleTemplatesDir = path.join(thisFileDir, 'samples/templates');
+
+    if (!forceScaffold && fs.existsSync(targetTemplateDir)) {
+        console.error(`Error: Template directory already exists: ${targetTemplateDir}`);
+        console.error(`Use --force to overwrite existing files, or --skip-templates to scaffold only core/skeleton files.`);
+        process.exit(1);
+    }
+
+    // Ensure the target template directory exists
+    fsExtra.ensureDirSync(targetTemplateDir);
+
+    // Copy all template files
+    console.log(`Copying template files to: ${targetTemplateDir}`);
+    fsExtra.copySync(sampleTemplatesDir, targetTemplateDir);
+    console.log("✓ Templates copied successfully");
 }
-
-// Ensure the target template directory exists
-fsExtra.ensureDirSync(targetTemplateDir);
-
-// Copy all template files
-console.log(`Copying template files to: ${targetTemplateDir}`);
-fsExtra.copySync(sampleTemplatesDir, targetTemplateDir);
-console.log("✓ Templates copied successfully");
 
 console.log("\n=== Scaffolding Core/Skeleton Files ===\n");
 
 // Check if core file generation is enabled
-if (!config.core_files || !config.core_files.enabled) {
+if (skipCoreFiles) {
+    console.log("Skipping core/skeleton files (--skip-core-files).");
+} else if (!config.core_files || !config.core_files.enabled) {
     console.log("Core file generation is disabled in config. Skipping skeleton files.");
 } else {
     // Map of skeleton file names in samples/skeletons to config keys

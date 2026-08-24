@@ -17,12 +17,14 @@
     COMMENT:     path - this is the string the gateway routes on)
     
     COMMENT: parameters: Object
-    COMMENT:     The parameters to execute the component with
-    COMMENT:     Derived from: componentModel.prepareForJson()
-    COMMENT:     Only set when componentModel.isSecure is false
-    
+    COMMENT:     The component's plain, unencrypted parameters
+    COMMENT:     Derived from: componentModel.toObject() -- set once, in setComponent(),
+    COMMENT:     regardless of whether the component is secure
+
     COMMENT: secure: String
-    COMMENT:     Encrypted/encoded string containing the component and parameters
-    COMMENT:     Derived from: Encrypting the formatted component object
-    COMMENT:     Only set when componentModel.isSecure is true
+    COMMENT:     Declared by the schema, but never assigned directly on this model. Whether
+    COMMENT:     the outgoing wire entry ends up as {component, parameters} or as a
+    COMMENT:     {secure: encryptedString} wrapper is a serialize-time decision made by the
+    COMMENT:     request helper (see methods.ejs), not something this class computes and
+    COMMENT:     stores on itself.
 

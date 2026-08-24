@@ -98,103 +98,20 @@
     END METHOD
     
     COMMENT: ====================================================================================
-    COMMENT: CUSTOM importFromObject() OVERRIDE
+    COMMENT: Where response parsing actually lives
     COMMENT: ====================================================================================
-    
-    COMMENT: Instantiates proper result models and updates app state automatically.
-    METHOD importFromObject(data: Object)
-        
-        PURPOSE: Parses response data, creates result model instances, and updates AppState
-        
-        PARAMETERS:
-            data: Plain object containing response data from server
-        
-        WHY: Automatically converts plain result objects to typed model instances
-             and keeps local cached data synchronized with server responses
-        
-        BEHAVIOR:
-            CREATE typedResults AS null
-            CREATE responseError AS null
-            
-            COMMENT: Check if there's an error at the response level
-            IF data has property "error" THEN
-                SET responseError TO data.error
-            END IF
-            
-            CREATE hasResultProperty AS data has property "result"
-            IF hasResultProperty AND data.result is not null THEN
-                CREATE rawResults AS data.result
-                
-                IF rawResults is an array THEN
-                    CREATE resultList AS empty array
-                    FOR EACH rawResult IN rawResults
-                        IF rawResult has property "component" AND rawResult has property "data" THEN
-                            CREATE componentName AS rawResult.component
-                            CREATE resultData AS rawResult.data
-                            CREATE typedResult AS ObjectFactory.CreateResult(
-                                componentName split by "." part 0,
-                                componentName split by "." part 1,
-                                resultData,
-                                this.core
-                            )
-                            IF typedResult is not null THEN
-                                IF responseError is not null AND typedResult.error is null THEN
-                                    SET typedResult.error TO responseError
-                                END IF
-                                ADD typedResult TO resultList
-                            END IF
-                        END IF
-                    END FOR
-                    IF resultList is not empty THEN
-                        SET typedResults TO resultList
-                    END IF
-                ELSE
-                    IF rawResults has property "component" AND rawResults has property "data" THEN
-                        CREATE componentName AS rawResults.component
-                        CREATE resultData AS rawResults.data
-                        SET typedResults TO ObjectFactory.CreateResult(
-                            componentName split by "." part 0,
-                            componentName split by "." part 1,
-                            resultData,
-                            this.core
-                        )
-                        IF typedResults is not null AND responseError is not null AND typedResults.error is null THEN
-                            SET typedResults.error TO responseError
-                        END IF
-                    END IF
-                END IF
-                
-                CREATE modifiedData AS copy of data
-                REMOVE modifiedData['result']
-                SET data TO modifiedData
-            ELSE IF hasResultProperty THEN
-                CREATE modifiedData AS copy of data
-                REMOVE modifiedData['result']
-                SET data TO modifiedData
-            END IF
-            
-            COMMENT: Call parent to handle standard properties (excluding result)
-            CALL parent.importFromObject WITH data
-            
-            COMMENT: Now set the typed results
-            IF typedResults is not null THEN
-                IF typedResults is an array THEN
-                    CALL this.setResultList WITH typedResults
-                ELSE
-                    CALL this.setResult WITH typedResults
-                END IF
-            ELSE IF hasResultProperty THEN
-                CALL this.setResult WITH null
-            END IF
-            
-            COMMENT: Update AppState if available
-            IF this.core exists AND this.core.appState exists THEN
-                IF this.resultIsList() THEN
-                    FOR EACH resultModel IN this.getResultList()
-                        CALL this.core.appState.setValueFromResult WITH resultModel
-                    END FOR
-                ELSE IF this.getResult() is not null THEN
-                    CALL this.core.appState.setValueFromResult WITH this.getResult()
-                END IF
-            END IF
-    END METHOD
+    COMMENT:
+    COMMENT: Response deliberately has NO importFromObject() override here.
+    COMMENT: Model-Generation.md's "Special Objects -> Response Model" section is explicit
+    COMMENT: that turning a raw server response into a populated Response is NOT an
+    COMMENT: importFromObject() override -- it is a distinct job (strip 'result' before the
+    COMMENT: base import so it isn't cast against a type it has no case for, build typed
+    COMMENT: result models via the object factory, propagate a response-level error down to
+    COMMENT: results that have none, then sync each into AppState) that belongs in the
+    COMMENT: response helper (the reference libraries call it HttpResponseHelper), not on
+    COMMENT: this model. See NewgroundsIO.Core.md, "Importing the response," for the full
+    COMMENT: four-step sequence and why the order is load-bearing.
+    COMMENT:
+    COMMENT: The one serialization override this class DOES keep is toObject() above --
+    COMMENT: that is format selection (single vs. list), not response-parsing logic, which
+    COMMENT: is why the guide carves it out as the sanctioned exception.
