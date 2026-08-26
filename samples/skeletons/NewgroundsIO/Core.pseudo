@@ -48,6 +48,8 @@ CLASS Core
     buildVersion: string | null
         PURPOSE: Stores the app's version number provided at initialization.
         WHY: Used to check if the app is outdated and notify the user to update.
+        NOTE: Only meaningful if using the App.getCurrentVersion/clientDeprecated
+        update-check system. Leave it null if not using that system.
     
     appState: NewgroundsIO.AppState
         PURPOSE: Stores cached data loaded from the server (medals, scoreboards, etc.)

@@ -63,12 +63,14 @@ EVERY method that takes a callback also takes a trailing "thisArg" parameter:
 
 It means: invoke the callback so its 'this' / 'self' is thisArg.
 
-KEEP IT EVEN IF YOUR LANGUAGE DOESN'T NEED IT. Languages with closures, arrow
-functions or bound method references can capture context without it - there,
-thisArg is simply optional for the caller, who passes nothing and uses a closure
-instead. That is fine. What matters is that the SIGNATURE stays the same across
-ports, so example code and developers move between platforms without every call
-site changing shape. Accept it and ignore it; don't remove it.
+This guide's examples use thisArg because that's what the oldest reference
+implementation (AS2, which has no Function.prototype.bind) needed to carry
+scope into a callback. If your target language has proper scoping - closures,
+arrow functions, bound method references - and you don't need thisArg, you
+are not obligated to carry the parameter forward just to match the signature
+shown here. Drop it, or keep it as an optional trailing parameter for callers
+who still want it; either is fine. Documenting the convention is so you
+recognize it in the guide's examples, not so every port must reproduce it.
 
 It goes on the METHOD, never in the callback's own parameter list.
 
@@ -456,7 +458,8 @@ ENCRYPTION REQUIREMENTS
 Components that modify user data (medal unlocks, score posts) support encryption
 to prevent cheating. The pseudo-code indicates this with "isSecure" property.
 
-SUPPORTED CIPHERS:
+SUPPORTED CIPHERS (prefer #1; use #2 only when AES is genuinely unreachable
+on the target platform):
 1. AES-128-CBC
    - Block cipher, 128-bit key
    - Requires initialization vector (IV)
@@ -464,7 +467,16 @@ SUPPORTED CIPHERS:
 
 2. RC4
    - Stream cipher, 128-bit key
-   - Simpler to implement on some platforms
+   - Fallback for less sophisticated platforms with no usable AES
+     implementation and no acceptable crypto-dependency footprint
+
+SUPPORTED ENCODINGS (prefer Base64; Hex is a configurable fallback):
+1. Base64 - the standard; every platform capable of running a cipher already
+   has a Base64 encoder
+2. Hex - only for platforms that genuinely can't produce/consume Base64
+   cleanly. Encoding is not purely a client-side choice: the server has to
+   know which one your app is using, so switching to Hex means updating that
+   app's encoding setting in your Newgrounds.io project, not just the client.
 
 THE EXACT BYTE LAYOUT AND A TEST VECTOR ARE IN THE DEVELOPER GUIDE, under
 Core.encryptData(). Go read it before you write any cipher code. Every wrong
@@ -472,8 +484,11 @@ choice below returns server error 201 (INVALID_ENCRYPTION), and so does a wrong
 key - so the failures are indistinguishable and you cannot debug by guessing.
 
 The short version:
-- The key is BASE64. Decode it to bytes first; for AES-128 that is 16 bytes.
-  Using the ASCII bytes of the key string is the obvious wrong turn.
+- The key is encoded, not raw text - decode it to bytes first. It's Base64
+  under the default project setting (assumed below); if the project is set
+  to Hex, the key is Hex-encoded instead, matching the ciphertext encoding.
+  For AES-128 the decoded key is 16 bytes. Using the ASCII bytes of the key
+  string is the obvious wrong turn.
 - AES: random 16-byte IV per call, CBC mode, PKCS#7 padding, then IV bytes
   FOLLOWED BY ciphertext bytes, and Base64 the concatenation AS ONE UNIT.
 - RC4: no IV, no padding. Decode the key, encrypt, Base64 the result.
