@@ -446,12 +446,14 @@ CLASS Core
             COMMENT: spending a request on it. See getPreflightError() in
             COMMENT: BaseComponent.pseudo for what is and is not decidable here.
             COMMENT:
-            COMMENT: WHY THIS MATTERS MORE THAN "SAVING A REQUEST": the gateway
-            COMMENT: limits requests per time window. A game calling
-            COMMENT: medal.unlock() on every scoring event while the player has no
-            COMMENT: session spends that budget on calls whose outcome was
-            COMMENT: knowable before they left the machine - and then a call that
-            COMMENT: COULD have succeeded gets a 429.
+            COMMENT: WHY THIS MATTERS MORE THAN "SAVING A REQUEST": a refusal
+            COMMENT: decided locally resolves instantly, with no network round
+            COMMENT: trip - the caller isn't waiting on latency for an outcome
+            COMMENT: that was already knowable. It also matters at volume: the
+            COMMENT: gateway limits requests per time window, so a game calling
+            COMMENT: medal.unlock() on every scoring event before a session
+            COMMENT: exists burns through that budget on calls that could never
+            COMMENT: succeed, leaving less room for the ones that could.
             COMMENT:
             COMMENT: THE CONTRACT, and the rule that makes this safe to add:
             COMMENT: DO NOT INVENT A NEW FAILURE SHAPE. A locally-refused call
