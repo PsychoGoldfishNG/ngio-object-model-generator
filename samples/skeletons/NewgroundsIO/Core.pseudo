@@ -464,9 +464,9 @@ CLASS Core
             COMMENT: every caller needs two code paths for one condition.
             COMMENT:
             COMMENT: REDIRECTS ARE EXEMPT: they navigate the browser rather than
-            COMMENT: exchanging JSON, so there is no response to shape - and the
-            COMMENT: one that matters (App.startSession -> Passport) is how a
-            COMMENT: session gets established in the first place.
+            COMMENT: exchanging JSON, so there is no response to shape. This is
+            COMMENT: the Loader family (Loader.loadOfficialUrl, Loader.loadMoreGames,
+            COMMENT: and similar) - the only components with redirect=true.
             CREATE isRedirect AS componentModel.redirect
 
             IF isRedirect is not true THEN
