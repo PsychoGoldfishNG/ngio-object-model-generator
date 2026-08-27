@@ -16,6 +16,37 @@ IMPORTANT: If you are using AI/LLM assistance (Claude, ChatGPT, etc.), please
 read the "AI/LLM TRANSLATION GUIDANCE" section before beginning translation.
 
 ================================================================================
+PROJECT-WIDE BUILD ORDER
+================================================================================
+
+The skeleton files are presented one class per file, and Core.pseudo is the
+class most developers reach for first - it's the hub everything else revolves
+around. Do not start there. Core calls into ObjectFactory and the generated
+models on nearly every method (building Request/Response/Execute, dispatching
+results), none of which exist yet if Core is first. Build bottom-up instead:
+
+1. Errors - no dependencies. Every class below calls into it for error codes
+   and messages.
+2. BaseObject - the foundation every model extends; depends only on Errors.
+3. BaseComponent and BaseResult - extend BaseObject, use Errors for
+   session/validation failures. Order between these two doesn't matter.
+4. Generated models (models/objects, models/components, models/results) and
+   ObjectFactory - run the model generator against the schema once the base
+   classes exist; it produces these together. See OBJECT CREATION below if
+   you are translating without a generator.
+5. SessionStatus - a small, standalone helper, but its `user` and `error`
+   properties are typed against the generated User and Error models, so it
+   needs step 4 done first.
+6. Core - depends on ObjectFactory and the generated models for nearly
+   everything. Its constructor also creates an AppState, so the two are
+   mutually referential; most languages handle that fine via a forward
+   declaration or interface, but don't expect a clean one-then-the-other
+   split between them.
+7. AppState - depends on Core, ObjectFactory, Errors, and SessionStatus.
+8. NGIO - the top-level wrapper, and the only class that touches all of the
+   above. Write it last.
+
+================================================================================
 CORE CONCEPTS
 ================================================================================
 
