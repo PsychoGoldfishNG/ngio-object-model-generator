@@ -1129,13 +1129,10 @@ CLASS HttpRequestHelper
     FUNCTION buildGatewayRequestObject(requestModel: NewgroundsIO.models.objects.Request): object
 
         PURPOSE: Convert a Request model into the plain object the gateway expects.
-        WHY: Verified against the gateway source and live against dev-www: an absent
-        key and a key holding null are functionally identical for every top-level
-        field (the gateway's input reader is isset()-based, which treats JSON null as
-        not-set). The field-inclusion rules below are a PAYLOAD-SIZE CONVENTION, not
-        a functional requirement - sending debug:false or session_id:null would not
-        break anything. Follow them anyway: it's the smaller, cleaner payload the
-        reference libraries emit, and it's what the wire captures below show.
+        WHY: An absent key and a key holding null are functionally identical for
+        every top-level field. The rules below are a PAYLOAD-SIZE CONVENTION, not a
+        functional requirement - sending debug:false or session_id:null would not
+        break anything, but the smaller payload is what the reference libraries emit.
 
         RETURNS: A plain object ready to be JSON encoded
 
@@ -1151,23 +1148,21 @@ CLASS HttpRequestHelper
 
             SET requestObject.app_id TO requestModel.app_id
 
-            COMMENT: The gateway's REAL boundary for session_id is falsy vs truthy, not
-            COMMENT: absent vs null - checked with a plain truthy test downstream, not
-            COMMENT: isset(). Null, "", false and the literal string "0" all collapse
-            COMMENT: into "no session", identically to omitting the key. A NON-EMPTY but
-            COMMENT: invalid session_id fails completely differently: a top-level error
-            COMMENT: that aborts the whole request, not the per-component "missing
-            COMMENT: session_id" you get from a falsy one. Not a concern in practice -
-            COMMENT: real session ids are long hex strings - but never construct a
-            COMMENT: synthetic/test session_id of exactly "0".
+            COMMENT: session_id's real boundary is falsy vs truthy, not absent vs null -
+            COMMENT: checked downstream with a plain truthy test. Null, "", false and
+            COMMENT: the literal string "0" all collapse into "no session", identically
+            COMMENT: to omitting the key. A NON-EMPTY but invalid session_id fails
+            COMMENT: completely differently: a top-level error that aborts the whole
+            COMMENT: request, not the per-component "missing session_id" you get from a
+            COMMENT: falsy one. Avoid a synthetic/test session_id of exactly "0" - real
+            COMMENT: session ids are long hex strings, so this is not a practical risk.
             IF requestModel.session_id is not null THEN
                 SET requestObject.session_id TO requestModel.session_id
             END IF
 
-            COMMENT: Note the test is "equals true", not "is not null" - matching the
-            COMMENT: convention above. debug:false and an omitted key reach the same
-            COMMENT: server code path either way; there is no behavioral reason to
-            COMMENT: prefer one over the other, just a smaller payload.
+            COMMENT: Note the test is "equals true", not "is not null". debug:false and
+            COMMENT: an omitted key reach the same server code path - a smaller-payload
+            COMMENT: convention, not a functional requirement.
             IF requestModel.debug equals true THEN
                 SET requestObject.debug TO true
             END IF
