@@ -820,12 +820,11 @@ CLASS Core
         COMMENT:
         COMMENT: A MISSING STATUS IS NOT A SERVER ERROR. Many platforms report no status
         COMMENT: for a failed request - a Flash movie in a browser plugin almost never
-        COMMENT: gets one - and substituting 500 maps it to SERVER_ERROR, whose message
-        COMMENT: tells the player an unexpected error occurred on the server and to
-        COMMENT: contact support. But no status usually means NO REPLY ARRIVED AT ALL:
-        COMMENT: offline, DNS failure, a blocked domain, a request that never left the
-        COMMENT: machine. Telling a player to contact support because their wifi dropped
-        COMMENT: is worse than admitting you do not know.
+        COMMENT: gets one. Do not map that to SERVER_ERROR: no status usually means NO
+        COMMENT: REPLY ARRIVED AT ALL - offline, DNS failure, a blocked domain, a request
+        COMMENT: that never left the machine - not that the server failed. Telling a
+        COMMENT: player to contact support because their wifi dropped is worse than
+        COMMENT: admitting you do not know.
         COMMENT:
         COMMENT: INVALID_RESPONSE (505) claims only what is actually known. Games
         COMMENT: branching on error.code will see 505 rather than 500 here, and that is
@@ -1082,7 +1081,7 @@ COMMENT: DECODING REQUIREMENTS
 COMMENT: ============================================================================
 COMMENT:
 COMMENT: Your JSON decoder sits on both ends of this library, and two of its properties
-COMMENT: are load-bearing. Both were real defects in a shipped library.
+COMMENT: are load-bearing.
 COMMENT:
 COMMENT: 1. REJECT TRAILING CONTENT.
 COMMENT:
