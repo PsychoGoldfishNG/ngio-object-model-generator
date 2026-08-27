@@ -219,7 +219,9 @@ CLASS NGIO
         PARAMETERS:
             appId: (required) Your app's unique identifier from Newgrounds
             encryptionKey: (required) The encryption key from Newgrounds (used to encrypt secure components)
-            buildVersion: (optional, default: null) Your app's version number in XX.XX.XXXX format
+            buildVersion: (optional, default: null) Your app's version number in XX.XX.XXXX format.
+                Leave null unless a version is set in your Newgrounds project's "Version Control"
+                settings, or App.getCurrentVersion can report the client as deprecated for no reason.
             useDebugMode: (optional, default: false) If true, API calls won't actually save to the server - useful for testing
         
         BEHAVIOR:

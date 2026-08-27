@@ -80,6 +80,11 @@
     clientDeprecated: boolean = false
         PURPOSE: Flag set to true if app version is outdated
         WHY: Developers can check this flag to prompt users to update
+        NOTE: Only meaningful once the Newgrounds project has a version set in
+        its "Version Control" settings AND core.buildVersion is set. With no
+        project version configured, leave core.buildVersion null - the server
+        compares the two, and sending a build version with nothing to compare
+        against can set this true for a deprecation that isn't real.
     
     hostApproved: boolean = true
         PURPOSE: Whether the domain hosting this app is approved in settings

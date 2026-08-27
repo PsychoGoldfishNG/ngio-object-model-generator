@@ -49,7 +49,11 @@ CLASS Core
         PURPOSE: Stores the app's version number provided at initialization.
         WHY: Used to check if the app is outdated and notify the user to update.
         NOTE: Only meaningful if using the App.getCurrentVersion/clientDeprecated
-        update-check system. Leave it null if not using that system.
+        update-check system. Leave it null if not using that system, and leave
+        it null until a version is set in the Newgrounds project's "Version
+        Control" settings - the server compares this value against that setting,
+        so sending one while the project has none can make App.getCurrentVersion
+        report the client as deprecated for no reason.
     
     appState: NewgroundsIO.AppState
         PURPOSE: Stores cached data loaded from the server (medals, scoreboards, etc.)
@@ -104,7 +108,9 @@ CLASS Core
         PARAMETERS:
             appId: (required) The unique identifier for the app (from Newgrounds)
             encryptionKey: (required) The Base64-encoded key used for encryption (from Newgrounds)
-            buildVersion: (optional, default: null) The app's version number in XX.XX.XXXX format
+            buildVersion: (optional, default: null) The app's version number in XX.XX.XXXX format.
+                Leave null unless a version is set in the Newgrounds project's "Version Control"
+                settings, or App.getCurrentVersion can report the client as deprecated for no reason.
             useDebugMode: (optional, default: false) Whether to run in test mode (components execute but don't save to server)
         
         BEHAVIOR:
