@@ -256,7 +256,7 @@ CLASS BaseComponent
     COMMENT: BaseComponent adds NO identity method of its own. A component identifies
     COMMENT: itself through the same abstract members every model overrides, inherited
     COMMENT: from BaseObject: objectName, objectType, propertyNames, requiredProperties
-    COMMENT: and castTypes. Do not invent a component-only accessor for this.
+    COMMENT: and castTypes.
     COMMENT:
     COMMENT: For components the two identity members are:
     COMMENT:

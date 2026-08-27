@@ -1126,7 +1126,7 @@ COMMENT: file, a module, private methods on Core. What matters is that they are 
 COMMENT: prepareForJson()/importFromObject() overrides on Request, Execute or Response.
 COMMENT: Those three models have no serialization overrides at all.
 COMMENT:
-COMMENT: The reference libraries name them HttpRequestHelper.buildGatewayRequestObject()
+COMMENT: This guide names them HttpRequestHelper.buildGatewayRequestObject()
 COMMENT: and HttpResponseHelper.importResponseObject(). Each has a dedicated guide page:
 COMMENT: NewgroundsIO.HttpRequestHelper.md and NewgroundsIO.HttpResponseHelper.md.
 
@@ -1138,7 +1138,7 @@ CLASS HttpRequestHelper
         WHY: An absent key and a key holding null are functionally identical for
         every top-level field. The rules below are a PAYLOAD-SIZE CONVENTION, not a
         functional requirement - sending debug:false or session_id:null would not
-        break anything, but the smaller payload is what the reference libraries emit.
+        break anything, but the smaller payload is preferred.
 
         RETURNS: A plain object ready to be JSON encoded
 

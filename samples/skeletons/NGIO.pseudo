@@ -49,7 +49,7 @@ CLASS NGIO
         WHY: Used for manual throttling ONLY on platforms with no repeating-timer
         facility, where keepAlive() has to be driven by hand. See the note at the
         bottom of keepAlive(). Where real timers exist the timer supplies the
-        spacing and this field is unused - neither reference library declares it.
+        spacing and this field is unused - a platform with real timers can omit it.
 
     keepAliveTimer: TimerHandle | null = null
         PURPOSE: Handle for the automatic keep-alive timer mechanism.
@@ -140,7 +140,7 @@ CLASS NGIO
 
     COMMENT: Every asynchronous method below has to assemble its `error` from THREE
     COMMENT: independent layers. Checking one and assuming it covers the others is the
-    COMMENT: most common defect found in the reference libraries, and it always fails
+    COMMENT: easiest mistake to make here, and it always fails
     COMMENT: the same way: a failed call is reported as a successful empty one.
     COMMENT:
     COMMENT:   1. TRANSPORT   no response object at all
@@ -407,8 +407,8 @@ CLASS NGIO
             COMMENT:     SET lastKeepAliveTime TO GET_CURRENT_TIME()
             COMMENT:
             COMMENT: This is the ONLY use for lastKeepAliveTime. On a platform with real
-            COMMENT: timers the timer already provides the spacing, and neither reference
-            COMMENT: library declares the field at all.
+            COMMENT: timers the timer already provides the spacing, and the field is not
+            COMMENT: needed at all.
     END FUNCTION
 
     FUNCTION checkSession(callback: function, thisArg: any = null)

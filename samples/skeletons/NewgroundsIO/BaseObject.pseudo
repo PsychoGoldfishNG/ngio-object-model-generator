@@ -805,10 +805,9 @@ CLASS BaseObject
     NAME-TO-CLASS RESOLUTION
     ====================
 
-    COMMENT: BaseObject does NOT resolve class names itself. Do not add a
-    COMMENT: getClassByName() hook or any per-subclass class-resolution override -
-    COMMENT: ObjectFactory owns this job completely, and a second mechanism just gives
-    COMMENT: you two places that can disagree about what "Medal" means.
+    COMMENT: BaseObject does NOT resolve class names itself - the ObjectFactory owns
+    COMMENT: this job completely. Keep it that way: a second name-to-class mechanism
+    COMMENT: just gives you two places that can disagree about what "Medal" means.
     COMMENT:
     COMMENT: Everything that needs a class from a name goes through the factory:
     COMMENT:

@@ -224,7 +224,7 @@ module.exports = {
      * looks for the "array-of-" prefix and builds each element via the factory.
      *
      * Primitive casts ("string" / "number" / "boolean") are also understood by BaseObject,
-     * but the reference libraries do not emit them: values arrive from JSON already
+     * but there is no need to emit them: values arrive from JSON already
      * correctly typed. Add them here if your language needs explicit coercion.
      *
      * @param {object} property The property definition from the schema
