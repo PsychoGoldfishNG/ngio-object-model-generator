@@ -87,15 +87,18 @@ CLASS SessionStatus
     user: NewgroundsIO.models.objects.User | null = null
         PURPOSE: The logged-in user (if status = LOGGED_IN), otherwise null
         WHY: Provides user info when needed
-        CONTENTS WHEN SET: { id, name, supporter, url }
+        WHEN SET: A NewgroundsIO.models.objects.User model instance - the same one
+            attached to the session, copied by reference. NOT a plain object built
+            here. Readable fields: id, name, supporter, url
         WHEN NULL: In all other statuses (not logged in, error, etc.)
-    
+
     error: NewgroundsIO.models.objects.Error | null = null
         PURPOSE: Error details (if status = ERROR), otherwise null
         WHY: Helps developer understand what went wrong
-        CONTENTS WHEN SET: { code, message }
-        CODE VALUES: Matches NewgroundsIO.Errors constants
-        MESSAGE: Human-readable explanation
+        WHEN SET: A NewgroundsIO.models.objects.Error model instance - the one on the
+            server response, or one from NewgroundsIO.Errors.getError() when the
+            client raises the fault. NOT a bare string or an object literal.
+            Readable fields: code (a NewgroundsIO.Errors constant), message
         WHEN NULL: In success states (LOGGED_IN) and transient states
     
     ====================
