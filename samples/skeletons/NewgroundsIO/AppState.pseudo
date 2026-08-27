@@ -265,15 +265,23 @@
                     COMMENT: Envelope success, component refusal. Report only the envelope
                     COMMENT: and the game reads the silence as "this user has no saves"
                     COMMENT: rather than "this user is not signed in".
+                    COMMENT: Every error set here is a NewgroundsIO.models.objects.Error
+                    COMMENT: model - the same type the gateway sends, and the same type
+                    COMMENT: NewgroundsIO.Errors.getError() returns. Never a bare string or
+                    COMMENT: an ad-hoc object. Its fields that matter: code (an integer,
+                    COMMENT: one of the NewgroundsIO.Errors constants) and message (a
+                    COMMENT: string). getError(code) fills both in from the code table.
                     CREATE localError AS null
 
                     IF response is null THEN
-                        SET localError TO a newly created "invalid response" error
+                        SET localError TO CALL NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE)
                     ELSE IF response.success is not true THEN
                         IF response.error is not null THEN
+                            COMMENT: Already a typed Error model - pass it straight
+                            COMMENT: through, do not copy its code/message into a new one.
                             SET localError TO response.error
                         ELSE
-                            SET localError TO a newly created error
+                            SET localError TO CALL NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE)
                         END IF
                     ELSE
                         SET localError TO CALL firstResultError(response)
@@ -312,9 +320,13 @@
                 RETURN errors
             END IF
 
-            COMMENT: Handle BOTH response shapes. A single-component request carries
-            COMMENT: `result`; a batch carries `resultList`. Reading only one of them
-            COMMENT: silently skips half the cases, and loadData produces batches.
+            COMMENT: Handle BOTH result shapes. executeQueue always sends the queue as an
+            COMMENT: execute LIST, so a response produced by loadData always carries
+            COMMENT: `resultList` - even for a single property. But this function is
+            COMMENT: public: a caller can hand it a single-component response from
+            COMMENT: executeComponent(), which carries the scalar `result` instead.
+            COMMENT: Read whichever is populated; reading only `resultList` skips that
+            COMMENT: caller silently.
             CREATE results AS the response's result list, or a one-item list holding its
                 single result, or an empty list if it has neither
 
@@ -332,7 +344,7 @@
                         APPEND {component: result's component name, error: result.error} TO errors
                     ELSE
                         APPEND {component: result's component name,
-                                error: a newly created "invalid response" error} TO errors
+                                error: CALL NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_RESPONSE)} TO errors
                     END IF
                 END IF
             END FOR
@@ -542,6 +554,21 @@
                 COMMENT: that check is not a style matter: it crashed the AS3 library with a
                 COMMENT: null dereference on a rejected Medal.unlock, and the throw aborted
                 COMMENT: this function partway, so nothing after it was applied.
+
+                COMMENT: THE THREE LIST RESULTS - CloudSave.loadSlots, Medal.getList and
+                COMMENT: ScoreBoard.getBoards - are COMPLETE SNAPSHOTS. Each returns the
+                COMMENT: app's entire set of that thing on every call: the same ids, the
+                COMMENT: same count. An empty save slot is still in the list (a SaveSlot
+                COMMENT: with url null), not an omission. So on a refresh (the ELSE branch
+                COMMENT: in each) every incoming entry matches a cached one by id and the
+                COMMENT: merge loop covers the whole list - there is nothing unmatched to
+                COMMENT: handle. importFromObject() OVERWRITES every field, so a slot
+                COMMENT: filled or cleared elsewhere, a newly unlocked medal, changed
+                COMMENT: board metadata all land, and no stale value survives. Update in
+                COMMENT: place - do NOT replace the array - or references the game holds
+                COMMENT: (getSaveSlot(2), a medal bound to a HUD) go dead. An id on one
+                COMMENT: side but not the other is out of scope here; it means the set
+                COMMENT: itself changed mid-session, which warrants a re-init.
 
                 COMMENT: === CloudSave.loadSlots results ===
                 IF objectName equals "CloudSave.loadSlots" THEN
