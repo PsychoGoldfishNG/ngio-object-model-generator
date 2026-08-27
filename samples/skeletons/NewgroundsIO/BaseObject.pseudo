@@ -302,9 +302,8 @@ CLASS BaseObject
                 COMMENT: Look the class up by its SCHEMA name, "Error", even though the
                 COMMENT: emitted class is probably called something else - most languages
                 COMMENT: already have an Error type, so the generator renames this one
-                COMMENT: (NgioError in the ActionScript ports). The factory owns that
-                COMMENT: mapping; naming the class directly here would hardcode the
-                COMMENT: wrong side of it.
+                COMMENT: (for example, NgioError). The factory owns that mapping; naming
+                COMMENT: the class directly here would hardcode the wrong side of it.
                 SET this.error TO ObjectFactory.CreateObject("Error", importObject.error, this.core)
             END IF
 

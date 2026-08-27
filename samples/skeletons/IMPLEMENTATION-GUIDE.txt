@@ -744,8 +744,8 @@ Three rules that are easy to get wrong:
 
 1. Look types up by their SCHEMA name, not the emitted class name. Where a schema
    name collides with a language built-in the generator renames the class, but the
-   lookup key does not change. Schema "Error" emits class NgioError in the
-   ActionScript ports and is still requested as CreateObject("Error").
+   lookup key does not change. Schema "Error" emits a renamed class (for example,
+   NgioError) and is still requested as CreateObject("Error").
 
 2. Match case-insensitively. Callers pass "getDateTime" for a component whose
    class is getDatetime, and both must resolve.
