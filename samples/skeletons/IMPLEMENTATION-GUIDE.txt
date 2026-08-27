@@ -709,7 +709,7 @@ IMPLEMENTATION PATTERN:
 1. Create TWO internal properties: "execute" and "executeList"
 2. Create setters: setExecute(value) and setExecuteList(array)
 3. Only ONE should be set at a time (setters clear the other)
-4. Create helpers: executeIsArray(), getExecute(), getExecuteList()
+4. Create helpers: executeIsList(), getExecute(), getExecuteList()
 5. Override toObject() to output the correct format
 
 This ensures type safety while supporting the API's flexibility.

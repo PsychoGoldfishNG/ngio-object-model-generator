@@ -30,10 +30,10 @@
     END METHOD
     
     COMMENT: Checks if using list format.
-    METHOD executeIsArray(): Boolean
-        
-        PURPOSE: Determines if this request is using the array format
-        
+    METHOD executeIsList(): Boolean
+
+        PURPOSE: Determines if this request is using the list format
+
         RETURNS: True if using list format, false if using single value
         
         BEHAVIOR:
@@ -70,7 +70,7 @@
     COMMENT: Model-Generation.md's "Special Objects -> Request Model" section states Request
     COMMENT: is the exception to needing any serialization override at all: its payload is
     COMMENT: assembled by the request helper, which reads getExecute()/getExecuteList()/
-    COMMENT: executeIsArray() directly, rather than by anything this class serializes itself.
+    COMMENT: executeIsList() directly, rather than by anything this class serializes itself.
     COMMENT: This also keeps the mixed single/array execute-serialization logic in exactly
     COMMENT: one place (the helper), instead of duplicated across a toObject() override and a
     COMMENT: prepareForJson() override that would otherwise have to stay in sync by hand.

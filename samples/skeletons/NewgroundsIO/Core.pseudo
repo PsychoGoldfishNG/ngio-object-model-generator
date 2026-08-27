@@ -1180,12 +1180,7 @@ CLASS HttpRequestHelper
             COMMENT: === Attach the execute payload ===
             COMMENT: Request holds EITHER execute OR executeList, never both - the
             COMMENT: setters clear each other. Serialize whichever one is set.
-            COMMENT:
-            COMMENT: NOTE THE NAME: this is executeIsArray(), while the matching test on
-            COMMENT: Response is resultIsList(). The two genuinely differ. Match them
-            COMMENT: rather than regularizing - shared code that probes for one by name
-            COMMENT: will miss the other.
-            IF CALL requestModel.executeIsArray() THEN
+            IF CALL requestModel.executeIsList() THEN
                 CREATE executeList AS new array
                 FOR EACH executeModel IN CALL requestModel.getExecuteList()
                     APPEND CALL buildExecuteObject(executeModel) TO executeList
