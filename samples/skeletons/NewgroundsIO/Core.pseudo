@@ -1121,7 +1121,8 @@ COMMENT: prepareForJson()/importFromObject() overrides on Request, Execute or Re
 COMMENT: Those three models have no serialization overrides at all.
 COMMENT:
 COMMENT: The reference libraries name them HttpRequestHelper.buildGatewayRequestObject()
-COMMENT: and HttpResponseHelper.importResponseObject().
+COMMENT: and HttpResponseHelper.importResponseObject(). Each has a dedicated guide page:
+COMMENT: NewgroundsIO.HttpRequestHelper.md and NewgroundsIO.HttpResponseHelper.md.
 
 CLASS HttpRequestHelper
 

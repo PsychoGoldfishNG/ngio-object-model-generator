@@ -37,13 +37,20 @@ results), none of which exist yet if Core is first. Build bottom-up instead:
 5. SessionStatus - a small, standalone helper, but its `user` and `error`
    properties are typed against the generated User and Error models, so it
    needs step 4 done first.
-6. Core - depends on ObjectFactory and the generated models for nearly
-   everything. Its constructor also creates an AppState, so the two are
-   mutually referential; most languages handle that fine via a forward
-   declaration or interface, but don't expect a clean one-then-the-other
-   split between them.
-7. AppState - depends on Core, ObjectFactory, Errors, and SessionStatus.
-8. NGIO - the top-level wrapper, and the only class that touches all of the
+6. HttpRequestHelper and HttpResponseHelper - the serialization helpers.
+   They are the request and response halves of the gateway wire format, kept
+   out of the Request/Execute/Response models (which carry no serialization
+   overrides). Included at the end of the Core skeleton; split into their own
+   files if that suits your language. They need the generated models,
+   ObjectFactory and Errors, the response helper also touches AppState, and
+   both are mutually referential with Core - build them alongside Core.
+7. Core - depends on ObjectFactory, the generated models, and the
+   serialization helpers for nearly everything. Its constructor also creates
+   an AppState, so the two are mutually referential; most languages handle
+   that fine via a forward declaration or interface, but don't expect a clean
+   one-then-the-other split between them.
+8. AppState - depends on Core, ObjectFactory, Errors, and SessionStatus.
+9. NGIO - the top-level wrapper, and the only class that touches all of the
    above. Write it last.
 
 ================================================================================
@@ -644,6 +651,8 @@ edited and which are regenerated:
 
 SCAFFOLD FILES (Convert once, then safe to edit):
 - NGIO.xxx, Core.xxx, AppState.xxx, Errors.xxx, SessionStatus.xxx
+- HttpRequestHelper / HttpResponseHelper (bundled at the end of Core.xxx;
+  move to their own files if you prefer)
 - BaseObject.xxx, BaseComponent.xxx, BaseResult.xxx (in NewgroundsIO/)
 - Templates (object.ejs, component.ejs, etc.)
 - Partials (custom code for specific objects)
