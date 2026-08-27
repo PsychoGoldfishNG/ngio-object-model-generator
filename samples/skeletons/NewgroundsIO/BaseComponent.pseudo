@@ -141,24 +141,14 @@ CLASS BaseComponent
             to nobody - satisfies require_session and fails this.
             Refused with LOGIN_REQUIRED (110).
 
-        WHY THERE ARE TWO, and the history is worth keeping because the
-        single-flag version looked perfectly reasonable:
+        WHY THERE ARE TWO: a single flag cannot carry both meanings and still be
+        enforceable. Read each one as exactly what it says, and never infer one
+        from the other - it is the schema's job to say which a component needs.
 
-        The gateway has always checked these two things separately and
-        correctly. THE SCHEMA was what conflated them. A single require_session
-        flag was used where require_login is used now, so one flag carried both
-        meanings and nothing downstream could tell them apart.
-
-        A library reading that flag as "needs a logged-in user" was matching
-        what it then meant - but App.checkSession was marked with it despite
-        needing no login at all, so enforcing it before sending WOULD HAVE MADE
-        SIGN-IN IMPOSSIBLE: the call whose job is to discover whether anyone has
-        signed in would be refused for the absence of exactly that.
-
-        The lesson for your port is not "the old libraries were careless". It is
-        that A FLAG WITH TWO MEANINGS CANNOT BE ENFORCED, and that the bug stayed
-        invisible for as long as nothing acted on it. Enforcement is what made
-        the ambiguity a real problem, and therefore what got it fixed.
+        App.checkSession needs NO login at all - its whole purpose is to discover
+        whether anyone has signed in. Gate it on a validated login and it is
+        refused for the absence of exactly the thing it was sent to establish,
+        so your library can never sign anyone in.
 
         ABSENT MEANS FALSE: a schema without require_login gates nothing, and the
         server keeps making that call. NEVER re-derive requiresLogin from

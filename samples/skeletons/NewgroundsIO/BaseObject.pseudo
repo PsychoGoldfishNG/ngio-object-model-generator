@@ -489,17 +489,16 @@ CLASS BaseObject
             RETURN objectType + "." + objectName
     END FUNCTION
 
-    COMMENT: A WARNING FROM THE REFERENCE LIBRARIES, because this looked like the
-    COMMENT: obvious design and is a trap:
+    COMMENT: A TRAP, because this looks like the obvious design:
     COMMENT:
-    COMMENT: This function used to fold parent/parentPropertyName in, so a nested
-    COMMENT: model reported its PATH ("result.App.checkSession.session") rather
-    COMMENT: than its type. Nothing ever assigned parent, so the branch never ran
-    COMMENT: and the contradiction stayed hidden for years.
+    COMMENT: Do NOT fold parent/parentPropertyName in here so a nested model
+    COMMENT: reports its PATH ("result.App.checkSession.session") instead of its
+    COMMENT: type. The importFromObject type check must compare types, never
+    COMMENT: tree position.
     COMMENT:
-    COMMENT: The moment parent WAS assigned, importFromObject broke: the libraries
+    COMMENT: A positional comparison breaks importFromObject: the libraries
     COMMENT: import a nested result.session INTO the standalone appState.session,
-    COMMENT: and a positional comparison rejects that as a type mismatch. Session
+    COMMENT: and comparing by position rejects that as a type mismatch. Session
     COMMENT: handling stops working entirely.
     COMMENT:
     COMMENT: Keep the two ideas apart. Type identity answers "may I import this?";

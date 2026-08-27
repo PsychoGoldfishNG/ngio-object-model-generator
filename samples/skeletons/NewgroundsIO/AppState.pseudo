@@ -241,9 +241,8 @@
             CALL core.executeQueue(
                 FUNCTION onComplete(response)
                     COMMENT: A request can fail at THREE independent levels, and all
-                    COMMENT: three have to be checked. Checking only the envelope - which
-                    COMMENT: is what this used to do - reports a failed load as a
-                    COMMENT: successful empty one.
+                    COMMENT: three have to be checked. Checking only the envelope
+                    COMMENT: reports a failed load as a successful empty one.
                     COMMENT:
                     COMMENT:   TRANSPORT   no response at all
                     COMMENT:   ENVELOPE    response.success is not true

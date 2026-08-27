@@ -709,9 +709,8 @@ This ensures type safety while supporting the API's flexibility.
 OBJECT CREATION
 -------------------------
 Every model instance in these skeletons is built through ObjectFactory. There is
-no second pattern to choose between, and the skeletons no longer contain the
-"IF ObjectFactory exists ... ELSE new Medal() ... END IF" branches that earlier
-revisions used.
+no second pattern to choose between - never write an
+"IF ObjectFactory exists ... ELSE new Medal() ... END IF" branch.
 
 WHY THERE IS NO CHOICE HERE
 

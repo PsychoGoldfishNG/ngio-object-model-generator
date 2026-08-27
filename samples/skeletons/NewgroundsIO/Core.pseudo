@@ -1103,8 +1103,8 @@ COMMENT:    LIBRARY CANNOT READ BACK WHAT IT JUST WROTE - and the failure only s
 COMMENT:    on the player's next launch, in data that is already saved.
 COMMENT:
 COMMENT:    Do not assume: round-trip the extremes of your platform's number range
-COMMENT:    through encode -> decode and compare. This one went unnoticed for years
-COMMENT:    because the encoder and decoder were only ever tested apart.
+COMMENT:    through encode -> decode and compare. Testing the encoder and decoder
+COMMENT:    apart will not catch this - only a round trip does.
 
 
 COMMENT: ============================================================================

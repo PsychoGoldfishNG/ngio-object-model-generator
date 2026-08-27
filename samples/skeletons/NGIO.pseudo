@@ -610,8 +610,8 @@ CLASS NGIO
                 FUNCTION onComplete(response)
 
                     COMMENT: Check the OUTER response first. The parameter is a Response,
-                    COMMENT: not a result - naming it `result` here is how this branch
-                    COMMENT: used to end up checking the wrong level entirely.
+                    COMMENT: not a result - do not name it `result` or this branch ends up
+                    COMMENT: checking the wrong level entirely.
                     IF response is null OR response.success is not true THEN
                         SET sessionStatus.status TO NewgroundsIO.SessionStatus.ERROR
                         IF response is not null AND response.error is not null THEN
@@ -1894,10 +1894,10 @@ CLASS NGIO
 
             CALL core.executeComponent(component,
                 FUNCTION onComplete(response)
-                    COMMENT: All THREE layers. A null response used to hand the caller
-                    COMMENT: (null, null) - no datetime and no reason - and only
-                    COMMENT: result.error was consulted, so a component reporting
-                    COMMENT: success:false without an error object did the same.
+                    COMMENT: Check all THREE layers. Consulting only result.error hands
+                    COMMENT: the caller (null, null) - no datetime and no reason - when the
+                    COMMENT: response is null or a component reports success:false without
+                    COMMENT: an error object. The caller must always get a reason.
                     RESOLVE error FROM response (three layers)
 
                     IF callback is null THEN
