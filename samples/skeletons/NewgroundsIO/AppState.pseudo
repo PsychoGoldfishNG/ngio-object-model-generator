@@ -551,9 +551,11 @@
                 COMMENT: A component that FAILED still reaches this function - it produces
                 COMMENT: a result model carrying an error and no payload. Every branch below
                 COMMENT: therefore checks its payload before caching or merging it. Skipping
-                COMMENT: that check is not a style matter: it crashed the AS3 library with a
-                COMMENT: null dereference on a rejected Medal.unlock, and the throw aborted
-                COMMENT: this function partway, so nothing after it was applied.
+                COMMENT: that check is not a style matter: a rejected Medal.unlock has no
+                COMMENT: medal, so reading resultObject.medal.id throws, and if that
+                COMMENT: exception escapes this function nothing after it runs - the session
+                COMMENT: bookkeeping at the end, and in a batched request every remaining
+                COMMENT: result.
 
                 COMMENT: THE THREE LIST RESULTS - CloudSave.loadSlots, Medal.getList and
                 COMMENT: ScoreBoard.getBoards - are COMPLETE SNAPSHOTS. Each returns the
