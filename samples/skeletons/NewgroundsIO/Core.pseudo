@@ -58,6 +58,12 @@ CLASS Core
     appState: NewgroundsIO.AppState
         PURPOSE: Stores cached data loaded from the server (medals, scoreboards, etc.)
         WHY: Instead of contacting the server repeatedly, we cache the data locally for fast access.
+
+    medalUnlockQueue: NewgroundsIO.MedalUnlockQueue
+        PURPOSE: Buffers medal unlocks that were requested but never confirmed, and retries them
+        WHY: Owned HERE because the buffer is per App ID and Core is the per-app instance. A
+        static singleton would be wrong the moment two Cores run for two different projects.
+        NGIO reaches this to drive the retry cadence. See MedalUnlockQueue.pseudo.
     
     ====================
     PUBLIC PROPERTIES
@@ -139,6 +145,9 @@ CLASS Core
             
             COMMENT: Create a new AppState instance
             SET this.appState TO new NewgroundsIO.AppState(this)
+
+            COMMENT: Create the medal unlock queue, scoped to this app by this Core's appId
+            SET this.medalUnlockQueue TO new NewgroundsIO.MedalUnlockQueue(this)
             
     END CONSTRUCTOR
     

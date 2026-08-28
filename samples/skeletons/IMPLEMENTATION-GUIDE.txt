@@ -101,8 +101,8 @@ EVERY method that takes a callback also takes a trailing "thisArg" parameter:
 
 It means: invoke the callback so its 'this' / 'self' is thisArg.
 
-This guide's examples use thisArg because that's what the oldest reference
-implementation (AS2, which has no Function.prototype.bind) needed to carry
+This guide's examples use thisArg because that's what a language like
+ActionScript 2 (which has no Function.prototype.bind) needs to carry
 scope into a callback. If your target language has proper scoping - closures,
 arrow functions, bound method references - and you don't need thisArg, you
 are not obligated to carry the parameter forward just to match the signature

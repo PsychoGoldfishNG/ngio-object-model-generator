@@ -13,6 +13,13 @@
         WHY: Before loading data, you may want to check if the slot has data
         
         BEHAVIOR:
+            COMMENT: url describes the CLOUD copy, and a local-only slot has none because
+            COMMENT: there is nothing to fetch. Checking url alone would report a save made
+            COMMENT: while offline as an empty slot, so when this slot is describing the
+            COMMENT: local copy, its recorded size is what says whether data is there.
+            IF this.source is "local" THEN
+                RETURN this.size > 0
+            END IF
             RETURN this.url is not null
     END METHOD
     
@@ -34,9 +41,20 @@
             COMMENT: their save. See BaseObject.assertNotForeign.
             CALL this.assertNotForeign("clearData()", "Slot numbers are per-app, so this would erase THIS app's slot " + this.id + " instead.")
 
+            COMMENT: Dual-clear, local first. A cleared local copy with an unreachable
+            COMMENT: cloud still counts as cleared - see saveDataRaw for the full rule.
+            CREATE localOk AS false
+            IF this.core is not null AND this.core.appState is not null THEN
+                SET localOk TO this.core.appState.clearLocalSlotData(this.id)
+            END IF
+
             COMMENT: Call CloudSave.clearSlot via the core wrapper
             IF this.core is not null THEN
-                CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, callback, thisArg)
+                CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk })
+            ELSE
+                COMMENT: Nothing to send, so the local leg decides the outcome on its own.
+                CALL callback WITH context thisArg
+                    PASSING null, (localOk ? null : NewgroundsIO.Errors.getError(0, "No core, and the local clear failed."))
             END IF
     END METHOD
 
@@ -62,6 +80,20 @@
         Prepare for both cases - some URLs may already have the protocol.
         
         BEHAVIOR:
+            COMMENT: Consult `source`, do NOT work freshness out again here. It is the record
+            COMMENT: of which copy won the merge, and the same property a game reads to draw
+            COMMENT: its cloud badge, so the row's badge and the copy this returns cannot
+            COMMENT: disagree. Recomputing freshness independently is how they drift apart.
+            IF this.source is "local" AND this.core is not null AND this.core.appState is not null THEN
+                CREATE localData AS this.core.appState.readLocalSlotData(this.id)
+                IF localData is not null THEN
+                    SET this.error TO null
+                    CALL callback WITH context thisArg
+                        PASSING localData
+                    RETURN
+                END IF
+            END IF
+
             COMMENT: Check if URL exists and is not empty
             IF this.url is null OR this.url is empty THEN
                 COMMENT: No URL stored - call callback with null
@@ -93,12 +125,35 @@
                 CALL LOAD_URL_ASYNC(loadUrl, FUNCTION onLoadComplete(data: String)
                     COMMENT: Load succeeded - clear any previous error
                     SET this.error TO null
+
+                    COMMENT: Write-through cache, so this save is still readable next time the
+                    COMMENT: cloud is not. Stamp it with THIS SLOT'S datetime, never the current
+                    COMMENT: time: stamping it now would make the cached copy look newer than the
+                    COMMENT: cloud copy it was just taken from, and the next merge would flip the
+                    COMMENT: slot to local for no reason at all.
+                    IF this.core is not null AND this.core.appState is not null THEN
+                        CALL this.core.appState.writeLocalSlotData(this.id, data, this.datetime)
+                    END IF
+
                     CALL callback WITH context thisArg
                         PASSING data
                 END FUNCTION, FUNCTION onLoadError(error)
                     COMMENT: Load failed. Reuse Core's status-to-error mapping instead of a
                     COMMENT: hardcoded INVALID_RESPONSE, so a 404, a 503, a rate limit and a
                     COMMENT: dead connection are told apart rather than reported identically.
+                    COMMENT: The cloud was the fresher copy, but the fetch itself failed (the
+                    COMMENT: network dropped between listing and loading). Degrade to whatever
+                    COMMENT: local copy exists rather than failing the whole load.
+                    IF this.core is not null AND this.core.appState is not null THEN
+                        CREATE cachedData AS this.core.appState.readLocalSlotData(this.id)
+                        IF cachedData is not null THEN
+                            SET this.error TO null
+                            CALL callback WITH context thisArg
+                                PASSING cachedData
+                            RETURN
+                        END IF
+                    END IF
+
                     SET this.error TO NewgroundsIO.Errors.getError(
                         Core.errorCodeForHttpStatus(httpStatus),
                         Core.describeHttpStatus(httpStatus) + " (" + error.message + ")"
@@ -176,9 +231,22 @@
             COMMENT: call that would silently overwrite the player's own save.
             CALL this.assertNotForeign("saveDataRaw()", "Slot numbers are per-app, so this would overwrite THIS app's slot " + this.id + " instead.")
 
+            COMMENT: Dual-write, local FIRST and then the cloud. A save that only reached
+            COMMENT: local storage is still a save: telling the player it was lost when it is
+            COMMENT: sitting on their machine is worse than reporting success and flagging it.
+            COMMENT: It reaches the cloud on their next explicit save. Sync is PASSIVE - never
+            COMMENT: auto-push a fresher local copy on its own.
+            CREATE localOk AS false
+            IF this.core is not null AND this.core.appState is not null THEN
+                SET localOk TO this.core.appState.writeLocalSlotData(this.id, data)
+            END IF
+
             COMMENT: Call CloudSave.setData via the core wrapper
             IF this.core is not null THEN
-                CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, callback, thisArg)
+                CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk })
+            ELSE
+                CALL callback WITH context thisArg
+                    PASSING null, (localOk ? null : NewgroundsIO.Errors.getError(0, "No core, and the local write failed."))
             END IF
     END METHOD
 
@@ -223,6 +291,52 @@
     END METHOD
     
     COMMENT: ====================================================================================
+    COMMENT: Shared completion handler for saveDataRaw() and clearData().
+    METHOD onWriteComplete(response: Response, callbackParams: Object)
+
+        PURPOSE: Resolves the outcome of a cloud write and reports it to the developer
+
+        PARAMETERS:
+            response: The gateway response for CloudSave.setData or CloudSave.clearSlot
+            callbackParams: Holds the developer's callback, their thisArg, and whether the local leg succeeded
+
+        WHY: Both components return the same slot payload and follow the same partial-success
+        rule, so both share one handler. localOk travels through callbackParams rather than
+        living on the model, so two writes in flight cannot read each other's result.
+
+        BEHAVIOR:
+            COMMENT: A write can fail at either of two levels and BOTH have to be checked.
+            COMMENT: The gateway returns HTTP success for a component that failed, so trusting
+            COMMENT: the outer flag alone reports every rejected write as a success.
+            CREATE error AS null
+            IF response is null OR response.success is not true THEN
+                COMMENT: Transport, or the request envelope itself.
+                SET error TO response.error OR NewgroundsIO.Errors.getError(505)
+            ELSE
+                CREATE result AS response.getResult()
+                IF result is null OR result.success is not true THEN
+                    COMMENT: The request went through, but the component was rejected.
+                    SET error TO result.error OR NewgroundsIO.Errors.getError(505)
+                END IF
+            END IF
+
+            IF error is null THEN
+                COMMENT: The cloud accepted it, so the cloud copy is canonical again.
+                SET this.source TO "cloud"
+            ELSE IF callbackParams.localOk is true THEN
+                COMMENT: Partial success. The write exists locally and nowhere else, so report
+                COMMENT: success and flag it, rather than telling the player a save they still
+                COMMENT: have was lost. Fail only when NEITHER leg landed.
+                SET this.source TO "local"
+                SET error TO null
+            END IF
+
+            IF callbackParams.callback is not null THEN
+                CALL callbackParams.callback WITH context callbackParams.thisArg
+                    PASSING result, error
+            END IF
+    END METHOD
+
     COMMENT: SESSION MANAGEMENT METHOD
     COMMENT: ====================================================================================
     
@@ -238,4 +352,11 @@
             SET this.timestamp TO 0
             SET this.size TO 0
             SET this.url TO null
+
+            COMMENT: Deliberately do NOT reset source. Everything above is cloud state,
+            COMMENT: owned by the server and meaningless once the session ends. The local
+            COMMENT: copy is not session-scoped: it survives sign-out, which is much of the
+            COMMENT: point of having it. Resetting source to "cloud" would also claim this
+            COMMENT: slot describes a cloud copy that was just wiped, which is the opposite
+            COMMENT: of the truth when the local mirror is the only copy left.
     END METHOD

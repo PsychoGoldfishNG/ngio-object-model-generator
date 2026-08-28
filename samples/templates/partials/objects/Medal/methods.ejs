@@ -21,36 +21,30 @@
             COMMENT: See BaseObject.assertNotForeign.
             CALL this.assertNotForeign("unlock()", "The gateway would reject this medal id against this app.")
 
-            COMMENT: Call the Medal.unlock component via core
+            COMMENT: Send this through the core's medal unlock queue, NOT straight to the
+            COMMENT: component. The queue records the id before the request goes out and keeps
+            COMMENT: it until the gateway rules on it, so an unlock survives a dropped
+            COMMENT: connection or a tab closed mid-request. It sends immediately, so nothing
+            COMMENT: is delayed by going through it. See MedalUnlockQueue.
             IF this.core is not null THEN
-                CALL this.core.callComponent("Medal.unlock", { id: this.id }, FUNCTION onComplete(response)
+                CALL this.core.medalUnlockQueue.unlock([this.id], FUNCTION onComplete(outcomes)
                     CREATE result AS null
                     CREATE error AS null
 
-                    COMMENT: A rejected unlock surfaces at either of TWO levels, and both
-                    COMMENT: must be checked. The gateway returns a successful RESPONSE for a
-                    COMMENT: component that failed, so trusting the outer flag alone reports
-                    COMMENT: every rejected unlock as a success.
-                    IF response is null OR response.success is not true THEN
-                        COMMENT: Level 1 - the request itself failed
-                        IF response is not null AND response.error is not null THEN
-                            SET error TO response.error
-                        ELSE
-                            SET error TO a newly created error
-                        END IF
-                    ELSE
-                        SET result TO response.getResult()
+                    COMMENT: One id in, one outcome back. The queue has already resolved the
+                    COMMENT: two failure levels described below and adjudicated the id.
+                    CREATE outcome AS outcomes[0]
 
-                        COMMENT: Level 2 - the request worked, the component did not
-                        IF result is null THEN
-                            SET error TO a newly created "invalid response" error
-                        ELSE IF result.success is not true THEN
-                            IF result.error is not null THEN
-                                SET error TO result.error
-                            ELSE
-                                SET error TO a newly created error
-                            END IF
-                        END IF
+                    COMMENT: A rejected unlock surfaces at either of TWO levels, and both must
+                    COMMENT: be checked. The gateway returns a successful RESPONSE for a
+                    COMMENT: component that failed, so trusting the outer flag alone reports
+                    COMMENT: every rejected unlock as a success. The queue does that check
+                    COMMENT: (see MedalUnlockQueue.adjudicate) and reports the result here.
+                    IF outcome is null THEN
+                        SET error TO a newly created "invalid response" error
+                    ELSE
+                        SET result TO outcome.medal
+                        SET error TO outcome.error
                     END IF
 
                     COMMENT: Only mark this unlocked if the server actually accepted it.

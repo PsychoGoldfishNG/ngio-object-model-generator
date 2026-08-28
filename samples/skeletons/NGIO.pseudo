@@ -34,6 +34,12 @@ CLASS NGIO
         PURPOSE: How often to keep active user sessions alive by "pinging" the server.
         WHY: Sessions can expire if the user is inactive. This periodic ping tells the server
         "hey, this user is still here" and resets the expiration timer. 300 seconds = 5 minutes.
+
+    MEDAL_UNLOCK_RETRY_TIME = 30
+        PURPOSE: How often to re-send medal unlocks that were never confirmed.
+        WHY: A medal the player already earned must not be lost because the connection dropped
+        mid-request. 30 seconds recovers quickly at effectively no cost, since a pass with an
+        empty buffer sends nothing at all.
     
     ====================
     PRIVATE STATIC PROPERTIES
@@ -57,7 +63,14 @@ CLASS NGIO
         every KEEP_ALIVE_TIME seconds to prevent session timeouts. Only needed for authenticated
         sessions (guest sessions don't expire).
         NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
-    
+
+    medalUnlockRetryTimer: TimerHandle | null = null
+        PURPOSE: Handle for the automatic medal unlock retry timer.
+        WHY: A medal unlock whose response never arrived stays buffered until the gateway rules
+        on it. This drives the pass that re-sends those, every MEDAL_UNLOCK_RETRY_TIME seconds.
+        The work itself happens in MedalUnlockQueue; this class only owns the cadence.
+        NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
+
     ====================
     UI COMPONENT REGISTRATION SLOTS
     ====================
@@ -246,6 +259,9 @@ CLASS NGIO
             
             COMMENT: Start the keep-alive timer if supported by platform
             CALL startKeepAliveTimer()
+
+            COMMENT: Start the medal unlock retry timer if supported by platform
+            CALL startMedalUnlockRetryTimer()
     END FUNCTION
     
     FUNCTION hasSession(): boolean
@@ -1866,6 +1882,43 @@ CLASS NGIO
             COMMENT: This prevents active user sessions from expiring due to inactivity
             IF platform_supports_timers THEN
                 SET keepAliveTimer TO START_REPEATING_TIMER(keepAlive, KEEP_ALIVE_TIME)
+            END IF
+    END FUNCTION
+
+    FUNCTION retryPendingMedalUnlocks()
+
+        PURPOSE: Re-sends any medal unlock that was requested but never confirmed.
+
+        WHY PUBLIC: Same reason keepAlive() is. On a platform with no repeating-timer facility
+        this can be pumped from the game's main loop instead. It is also safe to call by hand,
+        for instance on an application-level "back online" event.
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+
+            COMMENT: One line, deliberately. ALL of the behavior lives in the queue: what is
+            COMMENT: still pending, what is already in flight, and what the gateway has ruled
+            COMMENT: on. This class owns the cadence and nothing else. See MedalUnlockQueue.
+            CALL core.medalUnlockQueue.retryPending()
+    END FUNCTION
+
+    FUNCTION startMedalUnlockRetryTimer()
+
+        PURPOSE: Sets up an automatic timer that retries unconfirmed medal unlocks.
+        NOTE: Implementation varies by platform. See IMPLEMENTATION-GUIDE.txt for timer patterns.
+        Same shape as startKeepAliveTimer() above, and the same platform caveat: if your platform
+        has no timers, leave this out and have developers call retryPendingMedalUnlocks() from
+        their game loop.
+
+        BEHAVIOR:
+            IF medalUnlockRetryTimer is not null THEN
+                RETURN
+            END IF
+
+            IF platform_supports_timers THEN
+                SET medalUnlockRetryTimer TO START_REPEATING_TIMER(retryPendingMedalUnlocks, MEDAL_UNLOCK_RETRY_TIME)
             END IF
     END FUNCTION
 

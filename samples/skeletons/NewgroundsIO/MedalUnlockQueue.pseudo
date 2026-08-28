@@ -1,0 +1,274 @@
+CLASS MedalUnlockQueue
+    DESCRIPTION: Durable buffer of medal unlocks that were requested but never confirmed, plus the background pass that retries them
+    NAMESPACE: NewgroundsIO
+    NOTE: This is a hand-written class that does NOT extend BaseObject
+
+    PURPOSE: A medal unlock is a single request, and a request can go missing. The connection
+    drops partway through, the server is down, or the player closes the tab before the response
+    comes back. In every one of those cases the player has already earned the medal.
+
+    WHY NOT AN IN-MEMORY QUEUE?: The thing that lost the request is usually the same thing that
+    ended the page. So ids are written to STORAGE before the request goes out, and cleared only
+    once the gateway has actually ruled on them.
+
+    OWNERSHIP: Core creates one of these in its constructor, the same way it creates AppState.
+    That is what scopes the buffer correctly: the pending set belongs to one App ID, and Core is
+    the per-app instance, so a static singleton would be wrong the moment two Cores run for two
+    different projects.
+
+    CADENCE: NGIO owns the retry timer and nothing else, exactly as it does for keepAlive(): it
+    holds the timer, and the work happens down here. See NGIO.retryPendingMedalUnlocks() and
+    NGIO.startMedalUnlockRetryTimer().
+
+    DEPENDENCIES: The generated models, Errors, and Core (which it uses to send each unlock).
+
+    ====================
+    PROPERTIES
+    ====================
+
+    PRIVATE core: Core
+        PURPOSE: The Core instance this queue belongs to
+        WHY: Used to send each Medal.unlock, and to scope the storage key by App ID
+
+    PRIVATE storageKey: String
+        PURPOSE: A unique key used to avoid naming collisions when saving the pending id list
+        WHY: Storage keys MUST contain the App ID. Apps hosted on the same host share a storage
+        space, so an unqualified key collides across every game using this library there. Same
+        reasoning as AppState.sessionStorageKey.
+        DEFAULT: "ngio-pending-medal-unlocks-for-" + core.appId
+
+    PRIVATE inFlight: Set of Integer
+        PURPOSE: The ids currently out on a live request, foreground or retry
+        WHY: Lets a background pass skip anything already being sent instead of firing a
+        duplicate request for the same id
+        DEFAULT: Empty
+        NOTE: In memory only. This describes right now, not something that has to survive a
+        reload, so unlike the pending list it is deliberately NOT persisted.
+
+    ====================
+    CONSTRUCTOR
+    ====================
+
+    FUNCTION constructor(core: Core)
+        PARAMETERS:
+            core: (required) The Core instance that owns this queue
+
+        BEHAVIOR:
+            SET this.core TO core
+            SET this.storageKey TO "ngio-pending-medal-unlocks-for-" + core.appId
+            SET this.inFlight TO an empty set
+    END FUNCTION
+
+    ====================
+    PUBLIC METHODS
+    ====================
+
+    FUNCTION getPendingIds(): Array of Integer
+        PURPOSE: Lists the medal ids currently recorded as requested but not yet ruled on
+
+        RETURNS: An array or list of medal ids, empty when nothing is pending
+
+        BEHAVIOR:
+            TRY
+                CREATE raw AS STORAGE_GET(this.storageKey)
+                IF raw is null OR raw is empty THEN
+                    RETURN an empty list
+                END IF
+
+                CREATE parsed AS JSON_DECODE(raw)
+                IF parsed is not a list THEN
+                    RETURN an empty list
+                END IF
+
+                RETURN only the entries of parsed that are numbers
+            CATCH
+                COMMENT: Unparseable stored data is treated as ABSENT, not fatal. Corrupt local
+                COMMENT: state must degrade to "nothing pending", never crash an unlock.
+                RETURN an empty list
+            END TRY
+    END FUNCTION
+
+    FUNCTION unlock(ids: Array of Integer, callback: Function, thisArg: Object)
+        PURPOSE: Unlocks one or more medals, recording each id before it is sent
+
+        PARAMETERS:
+            ids: (required) The medal ids to unlock
+            callback: Function to call once every id has come back, as callback(outcomes)
+            thisArg: Context to use when calling the callback
+
+        CALLBACK PARAMETERS:
+            outcomes: One entry per id, each holding id, the unlocked medal (or null), and an
+                      error (or null). The error is the only reliable success signal.
+
+        BEHAVIOR:
+            CREATE unique AS ids with duplicates removed
+            IF unique is empty THEN
+                CALL callback WITH context thisArg PASSING an empty list
+                RETURN
+            END IF
+
+            COMMENT: Record every id as pending BEFORE sending anything. It might look as
+            COMMENT: though a medal that fails against a healthy gateway should never have been
+            COMMENT: buffered at all - do NOT restructure it that way. Writing before the send
+            COMMENT: is what makes a crash or reload mid-request survivable. An id that fails
+            COMMENT: against a healthy gateway sits here for a few milliseconds, costing nothing.
+            CALL this.addPending(unique)
+
+            CREATE outcomes AS an empty list
+            CREATE remaining AS the length of unique
+
+            FOR EACH id IN unique
+                ADD id TO this.inFlight
+
+                COMMENT: One request per medal, NOT one batch. The gateway rules on each medal
+                COMMENT: separately, and Core's component queue is shared with the game, so a
+                COMMENT: background pass must never drain it.
+                CALL this.core.callComponent("Medal.unlock", { id: id }, FUNCTION onComplete(response)
+                    REMOVE id FROM this.inFlight
+
+                    CREATE outcome AS this.adjudicate(id, response)
+                    IF outcome.adjudicated is true THEN
+                        COMMENT: The gateway ruled on this medal. Its fate is settled and
+                        COMMENT: retrying cannot change it, so drop it whether the answer was
+                        COMMENT: yes or no.
+                        CALL this.removePending(id)
+                    END IF
+
+                    ADD { id: id, medal: outcome.medal, error: outcome.error } TO outcomes
+                    SET remaining TO remaining - 1
+                    IF remaining is 0 AND callback is defined THEN
+                        CALL callback WITH context thisArg PASSING outcomes
+                    END IF
+                END FUNCTION, this)
+            END FOR
+
+        NOTE: A fresh unlock ALWAYS sends immediately. Nothing here waits on the retry pass.
+        The background pass exists only to recover requests an earlier attempt never got
+        confirmation for.
+    END FUNCTION
+
+    FUNCTION retryPending()
+        PURPOSE: Re-sends everything still in the pending list
+
+        BEHAVIOR:
+            TRY
+                CREATE pending AS this.getPendingIds() minus anything in this.inFlight
+                IF pending is empty THEN
+                    RETURN
+                END IF
+                CALL this.unlock(pending, null, null)
+            CATCH
+                COMMENT: This NEVER throws and never reports a failure. A pass that cannot reach
+                COMMENT: the gateway is exactly the case it exists to tolerate, and one bad pass
+                COMMENT: must not stop later ones from running.
+            END TRY
+
+        NOTE: Safe to call by hand, for instance on an application-level "back online" event.
+    END FUNCTION
+
+    ====================
+    PRIVATE METHODS
+    ====================
+
+    FUNCTION adjudicate(id: Integer, response: Response): Object
+        PURPOSE: Decides whether the gateway actually ruled on this specific medal
+
+        RETURNS: An object holding id, medal, error, and adjudicated
+
+        WHY: The buffer exists to survive connectivity failures, and NOTHING else. So the
+        question to ask of every outcome is not "did this succeed?" but "has the gateway ruled
+        on this specific medal?" If it has, retrying cannot change the answer.
+
+        COMMENT: ------------------------------------------------------------------------
+        COMMENT: What came back                              | Ruled on? | Action
+        COMMENT: ------------------------------------------------------------------------
+        COMMENT: No response at all                          | No        | KEEP
+        COMMENT: A response, but success is not true         | No        | KEEP
+        COMMENT: A per-medal result that succeeded           | Yes       | DROP
+        COMMENT: A per-medal failure on 102/104/110/111      | No        | KEEP
+        COMMENT: A per-medal failure on anything else (202)  | Yes       | DROP
+        COMMENT: ------------------------------------------------------------------------
+
+        BEHAVIOR:
+            COMMENT: Nothing reached the gateway, or nothing came back.
+            IF response is null OR response has no getResult method THEN
+                RETURN { id: id, medal: null, error: an error, adjudicated: false }
+            END IF
+
+            COMMENT: The envelope was rejected before this medal was considered.
+            IF response.success is not true THEN
+                RETURN { id: id, medal: null, error: response.error OR an error, adjudicated: false }
+            END IF
+
+            CREATE result AS response.getResult()
+            IF result is null THEN
+                RETURN { id: id, medal: null, error: an "invalid response" error, adjudicated: false }
+            END IF
+
+            IF result.success is true THEN
+                RETURN { id: id, medal: result.medal, error: null, adjudicated: true }
+            END IF
+
+            CREATE error AS result.error OR an "invalid response" error
+            CREATE code AS error.code
+
+            COMMENT: Session-class codes mean the call was blocked on identity before the medal
+            COMMENT: was looked at, so it is NOT adjudicated.
+            IF code is 102 OR code is 104 OR code is 110 OR code is 111 THEN
+                RETURN { id: id, medal: null, error: error, adjudicated: false }
+            END IF
+
+            COMMENT: Anything else means the gateway looked at this medal and rejected it, 202
+            COMMENT: (INVALID_MEDAL_ID) above all. A medal id that no longer exists, or was
+            COMMENT: mistyped, or was removed from the game is dropped on the first response
+            COMMENT: that reaches the gateway and never retries again.
+            RETURN { id: id, medal: null, error: error, adjudicated: true }
+
+        NOTE: The session-class row is NOT an exception to the rule. Medal.unlock requires a
+        login, so an unlock attempted while signed out is refused LOCALLY by
+        BaseComponent.getPreflightError() and never sent, with code 102 or 110. That refusal is
+        deliberately built to be indistinguishable from a server refusal, so you cannot tell
+        where it came from. You do not need to: discriminating on the error CLASS puts the local
+        refusal in the keep set for free, which is the right outcome. A player who earns a medal
+        as a guest and signs in later should still get it.
+
+        NOTE: With this rule there is no retry cap, no attempt counter, and no maximum age, and
+        none of them are needed. Nothing can retry indefinitely except a genuine connectivity
+        failure, which is exactly what should.
+    END FUNCTION
+
+    FUNCTION addPending(ids: Array of Integer)
+        PURPOSE: Adds ids to the stored pending list
+
+        BEHAVIOR:
+            CREATE current AS the set of this.getPendingIds()
+            ADD every id in ids TO current
+            CALL this.write(current)
+    END FUNCTION
+
+    FUNCTION removePending(id: Integer)
+        PURPOSE: Drops one id from the stored pending list
+
+        BEHAVIOR:
+            CREATE current AS the set of this.getPendingIds()
+            IF id is not in current THEN
+                RETURN
+            END IF
+            REMOVE id FROM current
+            CALL this.write(current)
+    END FUNCTION
+
+    FUNCTION write(ids: Set of Integer)
+        PURPOSE: Persists the pending list
+
+        BEHAVIOR:
+            TRY
+                CALL STORAGE_SET(this.storageKey, JSON_ENCODE(ids as a list))
+            CATCH
+                COMMENT: Best-effort durability, never fatal. Quota limits, private browsing,
+                COMMENT: and storage disabled by the user are all real, and none of them should
+                COMMENT: turn an unlock into an error.
+            END TRY
+    END FUNCTION
+
+END CLASS

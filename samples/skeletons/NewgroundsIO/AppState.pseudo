@@ -38,6 +38,13 @@
     core: NewgroundsIO.Core
         PURPOSE: Reference to the Core instance
         WHY: Need Core to queue components and execute requests
+
+    localSaveSlots: LocalSaveSlotStore
+        PURPOSE: The local mirror of this app's save slots
+        WHY: A save slot is intended to be stored on the cloud, with a local fallback protecting
+        it from network loss and server outages. See SAVE SLOT LOCAL FALLBACK at the end of this
+        file. Keep this PRIVATE: the SaveSlot model goes through readLocalSlotData(),
+        writeLocalSlotData() and clearLocalSlotData() instead, which keeps the merge in one place.
     
     ====================
     PUBLIC PROPERTIES
@@ -574,27 +581,50 @@
 
                 COMMENT: === CloudSave.loadSlots results ===
                 IF objectName equals "CloudSave.loadSlots" THEN
-                    COMMENT: No payload means the call failed. Caching null and marking the
+                    COMMENT: Reconcile the cloud's list against the local mirror. This produces
+                    COMMENT: the slot list AND sets each slot's `source`. A missing payload means
+                    COMMENT: the call failed, which is the offline or signed-out case the local
+                    COMMENT: fallback exists for, so it is reconciled like any other rather than
+                    COMMENT: dropped. See SAVE SLOT LOCAL FALLBACK at the end of this file.
+                    CREATE reconciled AS this.reconcileSaveSlots(resultObject.slots)
+
+                    COMMENT: Nothing came from either copy. Caching nothing and marking the
                     COMMENT: property loaded would make hasLoaded('saveSlots') answer true for
                     COMMENT: data that never arrived.
-                    IF resultObject.slots is null THEN
+                    IF reconciled is empty THEN
                         RETURN
                     END IF
 
                     IF this.saveSlots is null THEN
                         COMMENT: First time loading save slots
-                        SET this.saveSlots TO resultObject.slots
+                        SET this.saveSlots TO reconciled
                         CALL markLoaded('saveSlots')
                     ELSE
                         COMMENT: Update existing save slots with new data
-                        FOR EACH newSlot IN resultObject.slots
+                        FOR EACH newSlot IN reconciled
                             FOR EACH existingSlot IN this.saveSlots
                                 COMMENT: Find matching slot by ID and update it
                                 IF existingSlot.id equals newSlot.id THEN
                                     CALL existingSlot.importFromObject(newSlot)
+
+                                    COMMENT: `source` is not a schema property, so
+                                    COMMENT: importFromObject does NOT carry it across. Copy it
+                                    COMMENT: explicitly, or the cached slot keeps the badge from
+                                    COMMENT: the previous listing.
+                                    SET existingSlot.source TO newSlot.source
                                 END IF
                             END FOR
                         END FOR
+
+                        COMMENT: Add any id the cache has never seen, then sort by id. A first
+                        COMMENT: listing made while offline holds only the ids that exist
+                        COMMENT: locally, so the cloud's ids arrive later and must not be lost.
+                        FOR EACH newSlot IN reconciled
+                            IF no slot in this.saveSlots has id equal to newSlot.id THEN
+                                ADD newSlot TO this.saveSlots
+                            END IF
+                        END FOR
+                        SORT this.saveSlots BY id
                     END IF
                 END IF
             
@@ -838,6 +868,273 @@
         BEHAVIOR:
             CALL onSessionCleared()
             CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
+    END FUNCTION
+
+    ====================
+    SAVE SLOT LOCAL FALLBACK
+    ====================
+
+    COMMENT: A save slot is intended to be stored on the cloud, with a local fallback protecting
+    COMMENT: it from network loss and server outages. The cloud copy is the primary one, the
+    COMMENT: local copy is a safety net, and each slot's `source` property says which of the two
+    COMMENT: is currently being described.
+    COMMENT:
+    COMMENT: This belongs here rather than in a UI component. AppState is already the save slot
+    COMMENT: cache and already merges incoming slots by id, so choosing between two copies is
+    COMMENT: that same job with one more source. Build it into a component instead and two
+    COMMENT: components each keep their own cache and can disagree, while a game that uses the
+    COMMENT: library without those components gets no resilience at all.
+    COMMENT:
+    COMMENT: There is NO setting to turn this on or off. Choosing the newer of two copies is safe
+    COMMENT: on its own, and a flag would mean most games never get the protection, which is the
+    COMMENT: whole point of having it in the library.
+
+    FUNCTION reconcileSaveSlots(cloudSlots: Array of SaveSlot): Array of SaveSlot
+
+        PURPOSE: Builds the slot list from both copies, newest wins, recording the decision
+
+        PARAMETERS:
+            cloudSlots: (required) The slots the gateway returned, or null if the call failed
+
+        RETURNS: The reconciled slot list, ordered by id, each with its `source` set
+
+        BEHAVIOR:
+            CREATE registry AS this.localSaveSlots.getRegistry()
+
+            COMMENT: Build across the FULL slot id range - every id the cloud returned plus every
+            COMMENT: id present locally. A slot saved while offline exists locally and nowhere
+            COMMENT: else, and still belongs in the list.
+            CREATE ids AS every id in cloudSlots plus every id in registry, deduplicated and sorted
+
+            CREATE merged AS an empty list
+            FOR EACH id IN ids
+                CREATE cloud AS the slot in cloudSlots with this id, or null
+                CREATE local AS registry[id], or null
+
+                IF local is null THEN
+                    IF cloud is not null THEN
+                        SET cloud.source TO "cloud"
+                        ADD cloud TO merged
+                    END IF
+                ELSE
+                    COMMENT: Compare by ISO 8601 datetime and take the newer copy. The CLOUD
+                    COMMENT: wins ties, since a save that round-tripped is the more complete
+                    COMMENT: state, and it wins an unparseable local datetime too.
+                    CREATE localTime AS PARSE_DATETIME(local.datetime)
+                    CREATE cloudTime AS PARSE_DATETIME(cloud.datetime), or negative infinity if cloud is null
+
+                    IF cloud is not null AND localTime is not greater than cloudTime THEN
+                        SET cloud.source TO "cloud"
+                        ADD cloud TO merged
+                    ELSE
+                        ADD this.buildLocalSlot(id, local) TO merged
+                    END IF
+                END IF
+            END FOR
+
+            RETURN merged
+
+        NOTE: RECORD THE DECISION AND HAVE LOADING CONSULT IT. `source` is that record, and it is
+        the same property a game reads to draw its cloud badge, so there is only one answer and a
+        row's badge cannot disagree with the copy a load returns. If loading recomputed freshness
+        for itself the two calculations could differ, and a row would show a cloud badge while the
+        load quietly read the local copy.
+
+        NOTE: SYNC IS PASSIVE. Never push a fresher local copy to the cloud on its own. It gets
+        there on the player's next explicit save, and nowhere else.
+    END FUNCTION
+
+    FUNCTION buildLocalSlot(id: Integer, entry: Object): SaveSlot
+
+        PURPOSE: Builds a SaveSlot describing the local copy
+
+        BEHAVIOR:
+            COMMENT: Built through the object factory, which is why this lives here and not in
+            COMMENT: the store: building models needs core, and that is AppState's job.
+            CREATE slot AS OBJECT_FACTORY.createObject("SaveSlot", {
+                id: id,
+                size: entry.size,
+                datetime: entry.datetime,
+                timestamp: entry.datetime as a unix timestamp, or 0 if it will not parse,
+                url: null
+            }, this.core)
+
+            SET slot.source TO "local"
+            RETURN slot
+
+        NOTE: A local-only slot carries NO url. There is nothing to fetch, and inventing one
+        would send loadDataRaw() after a file that does not exist. This is the one place the
+        parallel between the local store and the cloud API genuinely breaks down.
+    END FUNCTION
+
+    FUNCTION readLocalSlotData(id: Integer): String
+        PURPOSE: Reads one slot's locally mirrored save data
+        RETURNS: The stored data, or null if this slot has no local copy
+        WHY: Called by SaveSlot.loadDataRaw()
+
+        BEHAVIOR:
+            RETURN this.localSaveSlots.getPayload(id)
+    END FUNCTION
+
+    FUNCTION writeLocalSlotData(id: Integer, data: String, datetime: String): Boolean
+        PURPOSE: Mirrors one slot's save data locally
+        RETURNS: True if the write landed, false if it did not
+        WHY: Called by SaveSlot.saveDataRaw() for the local leg of a dual write, and by
+        SaveSlot.loadDataRaw() for its write-through cache
+
+        PARAMETERS:
+            datetime: Optional. Defaults to now. Pass the CLOUD's datetime when caching a cloud
+                      load, or the cached copy looks newer than the copy it came from.
+
+        BEHAVIOR:
+            RETURN this.localSaveSlots.writeEntry(id, data, datetime)
+    END FUNCTION
+
+    FUNCTION clearLocalSlotData(id: Integer): Boolean
+        PURPOSE: Drops one slot's local copy
+        RETURNS: True if it was dropped, false if the write failed
+        WHY: Called by SaveSlot.clearData()
+
+        BEHAVIOR:
+            RETURN this.localSaveSlots.deleteEntry(id)
+    END FUNCTION
+
+END CLASS
+
+COMMENT: ============================================================================
+COMMENT: LocalSaveSlotStore is written here, at the end of AppState, because it is
+COMMENT: private to AppState and has no public surface of its own. If a separate file
+COMMENT: is more idiomatic in your language, split it out - just keep it private.
+COMMENT: ============================================================================
+
+CLASS LocalSaveSlotStore
+    DESCRIPTION: The local mirror of one app's save slots
+    NAMESPACE: NewgroundsIO
+    NOTE: Private to AppState, which constructs it and is its only caller
+
+    PURPOSE: Owns the local copy and NOTHING else: keys, App ID scoping, the registry and payload
+    split, serialization, corrupt data handling, and datetime stamping. It knows nothing about
+    the cloud, about merging, or about which copy is newer. AppState decides all of that.
+
+    SHAPE: Mirror the cloud API's DATA shape, not its TRANSPORT. Everything here is synchronous,
+    and it returns plain slot data rather than model instances, because building models goes
+    through the object factory and needs core. Do NOT give it fake response envelopes or
+    callbacks to make it look more like a gateway call than it is.
+
+    ====================
+    PROPERTIES
+    ====================
+
+    PRIVATE appId: String
+        PURPOSE: Scopes every storage key
+        WHY: Storage keys MUST contain the App ID, exactly as AppState.sessionStorageKey does.
+        Apps on the same host share a storage space, so an unqualified key collides across every
+        game using this library there.
+
+    ====================
+    METHODS
+    ====================
+
+    FUNCTION registryKey(): String
+        BEHAVIOR:
+            RETURN "ngio-local-save-slots-for-" + this.appId + ":registry"
+    END FUNCTION
+
+    FUNCTION payloadKey(id: Integer): String
+        BEHAVIOR:
+            RETURN "ngio-local-save-slots-for-" + this.appId + ":slot:" + id
+    END FUNCTION
+
+    FUNCTION getRegistry(): Map of Integer to Object
+
+        PURPOSE: Every locally mirrored slot's metadata, keyed by slot id
+
+        WHY TWO KEYS: The registry (small, metadata only) and the payloads (the save data,
+        potentially large) live under SEPARATE keys, one payload key per slot. This mirrors the
+        gateway's own split between CloudSave.loadSlots, which returns metadata for every slot,
+        and CloudSave.loadSlot, which returns one slot's data. It means writing one slot's
+        payload never rewrites every other slot's metadata.
+
+        BEHAVIOR:
+            TRY
+                CREATE raw AS STORAGE_GET(this.registryKey())
+                IF raw is null OR raw is empty THEN
+                    RETURN an empty map
+                END IF
+                CREATE parsed AS JSON_DECODE(raw)
+                IF parsed is not a map THEN
+                    RETURN an empty map
+                END IF
+                RETURN parsed
+            CATCH
+                COMMENT: Unparseable stored data is treated as ABSENT, not fatal. A corrupt
+                COMMENT: registry reads as an empty one and the app carries on against the cloud.
+                RETURN an empty map
+            END TRY
+    END FUNCTION
+
+    FUNCTION getPayload(id: Integer): String
+        PURPOSE: The raw save data for one slot, or null if there is no local copy
+
+        BEHAVIOR:
+            TRY
+                RETURN STORAGE_GET(this.payloadKey(id))
+            CATCH
+                RETURN null
+            END TRY
+    END FUNCTION
+
+    FUNCTION writeEntry(id: Integer, data: String, datetime: String): Boolean
+
+        PURPOSE: Mirrors one slot locally, stamped so the merge can compare it against the cloud
+
+        PARAMETERS:
+            datetime: Optional, defaults to now. A fresh save wants now; a write-through cache of
+                      a cloud load passes the CLOUD's datetime instead, so caching a slot never
+                      makes the local copy look newer than the copy it came from.
+
+        RETURNS: True if the write landed, false if it did not
+
+        BEHAVIOR:
+            IF datetime is not provided THEN
+                SET datetime TO the current time in ISO 8601 format
+            END IF
+
+            TRY
+                COMMENT: Write the PAYLOAD BEFORE THE REGISTRY. If the payload write fails,
+                COMMENT: usually on quota because it is the larger of the two, the registry is not
+                COMMENT: left claiming a slot holds data that was never stored.
+                CALL STORAGE_SET(this.payloadKey(id), data)
+
+                CREATE registry AS this.getRegistry()
+                SET registry[id] TO { size: length of data, datetime: datetime, hasData: true }
+                CALL STORAGE_SET(this.registryKey(), JSON_ENCODE(registry))
+                RETURN true
+            CATCH
+                COMMENT: Report a failed write, do NOT throw. Quota limits, private browsing, and
+                COMMENT: storage disabled by the user are all real, and a failed local write is a
+                COMMENT: leg the caller weighs against the cloud leg rather than an error.
+                RETURN false
+            END TRY
+    END FUNCTION
+
+    FUNCTION deleteEntry(id: Integer): Boolean
+        PURPOSE: Drops one slot's local copy
+        RETURNS: True if it was dropped, false if the write failed
+
+        BEHAVIOR:
+            TRY
+                CREATE registry AS this.getRegistry()
+                REMOVE id FROM registry
+                CALL STORAGE_SET(this.registryKey(), JSON_ENCODE(registry))
+                CALL STORAGE_REMOVE(this.payloadKey(id))
+                RETURN true
+            CATCH
+                RETURN false
+            END TRY
+
+        NOTE: Registry first here. The payload is the larger write, and an orphaned payload with
+        no registry entry reads as absent anyway.
     END FUNCTION
 
 END CLASS
