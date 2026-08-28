@@ -1,0 +1,16 @@
+# Line endings: LF in the repository AND in the working tree.
+#
+# Without this, core.autocrlf=true checks text files out as CRLF on Windows
+# while storing them as LF. Nothing breaks in git, but a plain `diff` between
+# samples/skeletons/ here and the copies in NewgroundsIO-TS/codegen/skeletons/
+# or the wiki's codegen/ reports every line as changed, which reads as drift
+# that is not there. This repo is the source those copies are generated from,
+# so it is the one that most needs stable line endings.
+#
+# Note: later rules override earlier ones, so this wildcard must stay first.
+* text=auto eol=lf
+
+# Binary assets are never line-ending converted.
+*.png binary
+*.mp3 binary
+*.otf binary
