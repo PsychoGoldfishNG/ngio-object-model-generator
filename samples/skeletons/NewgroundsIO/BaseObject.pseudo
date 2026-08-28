@@ -648,7 +648,11 @@ CLASS BaseObject
         
         PURPOSE: Get a list of all validation errors
         WHY: Provides detailed error information instead of just true/false
-        
+        WHY: Returns plain strings, not Error models, on purpose. Every entry is the
+             same MISSING_PARAMETER condition, so a typed model per entry adds a
+             structure with nothing branchable in it. This is a developer-facing
+             report; a caller needing one branchable typed error uses getPreflightError().
+
         RETURNS: Array of error message strings (empty array if no errors)
         
         BEHAVIOR:
