@@ -49,7 +49,18 @@ CLASS NGIO
         PURPOSE: Tracks the last time we called checkSession on the server.
         WHY: We use this to implement the throttle - we compare the current time to this
         value to avoid checking too frequently. See CHECKSESSION_THROTTLE_TIME.
-    
+        NOTE: endSession() sets this back to null, so the next checkSession() can start a
+        fresh session straight away.
+
+    sessionStartPending: boolean = false
+        PURPOSE: True while an App.startSession request is out and hasn't been answered.
+        WHY: Two starts out at once produce two sessions, and the later answer replaces the
+        earlier one. If Passport was already opened on the earlier session, the player signs
+        in on a session the app no longer holds, and the sign-in is never seen. The throttle
+        can't prevent this by itself: a start that takes longer than
+        CHECKSESSION_THROTTLE_TIME lets the next poll through. checkSession() answers locally
+        while this is true. See startNewSession().
+
     lastKeepAliveTime: Timestamp | null = null
         PURPOSE: Tracks the last time we sent a keep-alive ping to the server.
         WHY: Used for manual throttling ONLY on platforms with no repeating-timer
@@ -464,42 +475,23 @@ CLASS NGIO
                 RETURN
             END IF
             
-            COMMENT: Throttle check - don't contact server too frequently
-            COMMENT: This prevents flooding the server with repeated requests
+            COMMENT: Answer from local state, without contacting the server, when either:
             COMMENT:
-            COMMENT: WARNING - EVERY BRANCH BELOW ANSWERS FROM LOCAL STATE AND RETURNS.
-            COMMENT: None of them start a new session, because starting one means
-            COMMENT: reaching the server. That is correct for throttling repeat polls,
-            COMMENT: but it has a consequence worth documenting for game developers:
+            COMMENT:   1. A session start is still out (sessionStartPending). A second
+            COMMENT:      App.startSession would replace the first session, and Passport may
+            COMMENT:      already be open on it. This check comes first and ignores the
+            COMMENT:      throttle, because a start can take longer than the throttle window.
             COMMENT:
-            COMMENT:     A caller that runs endSession() and then immediately
-            COMMENT:     checkSession() gets NO SESSION and a misleading UNVERIFIED.
-            COMMENT:
-            COMMENT: The local session was just cleared, and the throttle is still warm
-            COMMENT: from whatever call preceded it, so this block reports on a session
-            COMMENT: that no longer exists instead of requesting a fresh one. Anything
-            COMMENT: that must genuinely re-establish a session has to wait out
-            COMMENT: CHECKSESSION_THROTTLE_TIME first.
-            COMMENT:
-            COMMENT: Document it; do not work around it. Suppressing the throttle here
-            COMMENT: would reintroduce the race it exists to prevent.
-            IF lastCheckSessionTime is set AND
-               (CURRENT_TIME - lastCheckSessionTime) < CHECKSESSION_THROTTLE_TIME THEN
-                COMMENT: if the user was logging in during the last check, assume they are still doing so
-                IF core.appState.passportIsOpen is true THEN
-                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_PASSPORT
-                COMMENT: if we haven't verified the session id yet, set the status to unverified
-                ELSE IF core.appState.session.verified is not true THEN
-                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNVERIFIED
-                COMMENT: otherwise, we should have a valid session, but the user isn't logged in yet
-                ELSE
-                    SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
-                END IF
-                CALL callback WITH context thisArg PASSING sessionStatus
+            COMMENT:   2. The throttle is warm. This keeps a game that polls every frame from
+            COMMENT:      flooding the server.
+            IF sessionStartPending is true OR
+               (lastCheckSessionTime is set AND
+                (CURRENT_TIME - lastCheckSessionTime) < CHECKSESSION_THROTTLE_TIME) THEN
+                CALL reportLocalSessionStatus(sessionStatus, callback, thisArg)
                 RETURN
             END IF
-            
-            COMMENT: Update timestamp now to prevent multiple requests from racing
+
+            COMMENT: Update timestamp now; the throttle limits how often the server is polled
             SET lastCheckSessionTime TO GET_CURRENT_TIME()
             
             COMMENT: If we don't have any session yet, we need to create one on the server.
@@ -516,8 +508,24 @@ CLASS NGIO
             IF checkSessionComponent is null THEN
                 THROW error "Could not create App.checkSession component"
             END IF
-            CALL core.executeComponent(checkSessionComponent, 
+
+            COMMENT: Remember which session this check is about
+            SET sentSessionId TO core.appState.session.id
+
+            CALL core.executeComponent(checkSessionComponent,
                 FUNCTION onComplete(response)
+                    COMMENT: If the session was cleared or replaced while this check was in
+                    COMMENT: flight (the player signed out, and maybe a new session has
+                    COMMENT: already started), this answer describes a session the app no
+                    COMMENT: longer holds. AppState has already declined to cache it (see
+                    COMMENT: AppState.isStaleSessionResult). Don't act on it either: an
+                    COMMENT: EXPIRED_SESSION here would discard the NEW session. Report the
+                    COMMENT: current state instead.
+                    IF core.appState.session.id is not equal to sentSessionId THEN
+                        CALL reportLocalSessionStatus(sessionStatus, callback, thisArg)
+                        RETURN
+                    END IF
+
                     COMMENT: verify the overall response is good
                     IF response is not null AND response.success is true THEN
                         SET result TO CALL response.getResult()
@@ -600,6 +608,32 @@ CLASS NGIO
             )
     END FUNCTION
 
+    FUNCTION reportLocalSessionStatus(sessionStatus: NewgroundsIO.SessionStatus, callback: function|null, thisArg: any = null)
+
+        PURPOSE: Report the session status from local state, without contacting the server.
+        WHY: checkSession() answers this way in three cases - while the throttle is warm, while
+        a session start is still out, and when a check comes back for a session that was
+        cleared or replaced while it was in flight. All three must report the same way.
+
+        PARAMETERS:
+            sessionStatus: The SessionStatus object the caller is filling in
+            callback: The caller's callback - this procedure fires it
+            thisArg: Context for the callback
+
+        BEHAVIOR:
+            COMMENT: if the user was logging in during the last check, assume they are still doing so
+            IF core.appState.passportIsOpen is true THEN
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.WAITING_FOR_PASSPORT
+            COMMENT: if we haven't verified the session id yet, set the status to unverified
+            ELSE IF core.appState.session.verified is not true THEN
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.UNVERIFIED
+            COMMENT: otherwise, we should have a valid session, but the user isn't logged in yet
+            ELSE
+                SET sessionStatus.status TO NewgroundsIO.SessionStatus.NOT_LOGGED_IN
+            END IF
+            CALL callback WITH context thisArg PASSING sessionStatus
+    END FUNCTION
+
     FUNCTION startNewSession(sessionStatus: NewgroundsIO.SessionStatus, callback: function|null, thisArg: any = null)
 
         PURPOSE: Obtain a brand new session from the server and report the outcome.
@@ -624,8 +658,17 @@ CLASS NGIO
                 THROW error "Could not create App.startSession component"
             END IF
 
+            COMMENT: checkSession() answers locally until this start is answered. See
+            COMMENT: sessionStartPending.
+            SET sessionStartPending TO true
+
             CALL core.executeComponent(startSessionComponent,
                 FUNCTION onComplete(response)
+
+                    COMMENT: Clear the flag FIRST, on every path - success, failure, or no
+                    COMMENT: response at all. A flag left set would make every later
+                    COMMENT: checkSession() answer locally forever.
+                    SET sessionStartPending TO false
 
                     COMMENT: Check the OUTER response first. The parameter is a Response,
                     COMMENT: not a result - do not name it `result` or this branch ends up
@@ -706,6 +749,13 @@ CLASS NGIO
             COMMENT: This provides immediate feedback to the user
             CALL core.appState.clearSession()
 
+            COMMENT: Reset the throttle, so the next checkSession() starts a fresh session
+            COMMENT: straight away instead of reporting on the one just cleared. This is
+            COMMENT: safe: a check still in flight for the old session can't overwrite the
+            COMMENT: new one (see AppState.isStaleSessionResult), and the next call re-arms
+            COMMENT: the throttle as usual.
+            SET lastCheckSessionTime TO null
+
         COMMENT: WHAT THIS METHOD DOES AND DOES NOT TELL YOU. Three properties of the
         COMMENT: design above are easy to misread. All three are intentional, and all
         COMMENT: three belong in your library's own docs:
@@ -722,13 +772,8 @@ CLASS NGIO
         COMMENT:
         COMMENT:   3. The request DOES reach the server, and the server does invalidate
         COMMENT:      the session id - confirmed behavior, not an assumption. Re-offering
-        COMMENT:      an ended id returns not-logged-in. Do not treat endSession as a
-        COMMENT:      client-side-only operation.
-        COMMENT:
-        COMMENT: DO NOT CALL checkSession() IMMEDIATELY AFTERWARDS - the throttle window
-        COMMENT: is still warm, so it answers locally on the session just cleared and
-        COMMENT: yields no session plus a misleading UNVERIFIED. See the warning in
-        COMMENT: checkSession above.
+        COMMENT:      an ended id gets EXPIRED_SESSION (104), the same as an expired one.
+        COMMENT:      Do not treat endSession as a client-side-only operation.
     END FUNCTION
     
     COMMENT: ==================== APP CONFIGURATION & METADATA ====================

@@ -617,6 +617,14 @@ Sessions link users to your app. Critical points:
    - Set true after App.checkSession or App.startSession succeeds
    - Prevents using unvalidated sessions
 
+5. ONE SESSION AT A TIME
+   - Never send a second App.startSession while one is unanswered: the later
+     answer replaces the session Passport may already be open on
+   - A session request answered after its session was cleared or replaced must
+     not be cached: it would put the old session back. Remember the session id
+     each request went out with, and compare it on the way back
+     (AppState.isStaleSessionResult)
+
 
 ================================================================================
 MODEL GENERATION

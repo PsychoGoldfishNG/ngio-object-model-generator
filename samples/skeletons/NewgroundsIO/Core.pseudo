@@ -650,9 +650,18 @@ CLASS Core
             SET requestModel.app_id TO this.appId
             SET requestModel.debug TO this.useDebugMode
             
+            COMMENT: Remember which session this request is about. Read it NOW, while the
+            COMMENT: request is being built, not when the response arrives: the player can
+            COMMENT: sign out while it is in flight. The response import uses it to keep a
+            COMMENT: late session result from overwriting a newer session.
+            CREATE sentSessionId AS null
+            IF this.appState is not null AND this.appState.session is not null THEN
+                SET sentSessionId TO this.appState.session.id
+            END IF
+
             COMMENT: Add session ID if available
-            IF this.appState is not null AND this.appState.session is not null AND this.appState.session.id is not null THEN
-                SET requestModel.session_id TO this.appState.session.id
+            IF sentSessionId is not null THEN
+                SET requestModel.session_id TO sentSessionId
             END IF
             
             COMMENT: Add components to the request using mixed-type handling
@@ -896,7 +905,7 @@ CLASS Core
                 COMMENT: override at all, which is why the whole job lives in a helper.
                 IF jsonObject is not null THEN
                     TRY
-                        CALL HttpResponseHelper.importResponseObject(responseModel, jsonObject)
+                        CALL HttpResponseHelper.importResponseObject(responseModel, jsonObject, sentSessionId)
                     CATCH importError
                         COMMENT: Importing JSON into model failed
                         LOG_ERROR("IMPORT ERROR: Error importing into Response model with object: "+ JSON_ENCODE(jsonObject)+ " :: " + importError.message)
@@ -1250,10 +1259,17 @@ END CLASS
 
 CLASS HttpResponseHelper
 
-    FUNCTION importResponseObject(responseModel: NewgroundsIO.models.objects.Response, jsonObject: object)
+    FUNCTION importResponseObject(responseModel: NewgroundsIO.models.objects.Response, jsonObject: object, sentSessionId: string|null)
 
         PURPOSE: Populate a Response model from the gateway's decoded reply.
         WHY: This is more than one importFromObject() call, and THE ORDER IS LOAD-BEARING.
+
+        PARAMETERS:
+            responseModel: The Response to populate
+            jsonObject: The decoded gateway reply
+            sentSessionId: The session id the request carried, or null if it carried none.
+                Passed through to buildResultModel(), which uses it to keep a late session
+                result out of AppState.
 
         COMMENT: Why this cannot be an importFromObject() override on Response:
         COMMENT: step 1 has to happen BEFORE the base import runs, and step 4 has to
@@ -1284,7 +1300,7 @@ CLASS HttpResponseHelper
                 IF rawResult is array THEN
                     CREATE resultList AS new array
                     FOR EACH rawEntry IN rawResult
-                        CREATE resultModel AS CALL buildResultModel(rawEntry, responseModel.core)
+                        CREATE resultModel AS CALL buildResultModel(rawEntry, responseModel.core, sentSessionId)
                         COMMENT: An unrecognized component name yields null from the
                         COMMENT: factory. Skip that entry rather than failing the whole
                         COMMENT: response - a gateway that gained a component your build
@@ -1295,7 +1311,7 @@ CLASS HttpResponseHelper
                     END FOR
                     CALL responseModel.setResultList(resultList)
                 ELSE
-                    CREATE resultModel AS CALL buildResultModel(rawResult, responseModel.core)
+                    CREATE resultModel AS CALL buildResultModel(rawResult, responseModel.core, sentSessionId)
                     IF resultModel is not null THEN
                         CALL responseModel.setResult(resultModel)
                     END IF
@@ -1319,7 +1335,7 @@ CLASS HttpResponseHelper
             END IF
     END FUNCTION
 
-    FUNCTION buildResultModel(rawEntry: object, core: NewgroundsIO.Core): NewgroundsIO.BaseResult | null
+    FUNCTION buildResultModel(rawEntry: object, core: NewgroundsIO.Core, sentSessionId: string|null): NewgroundsIO.BaseResult | null
 
         PURPOSE: Turn one raw result entry into its typed result model.
         WHY: Results are typed per component, so the component name selects the class.
@@ -1361,8 +1377,14 @@ CLASS HttpResponseHelper
             COMMENT: through here, not because any model overrides importFromObject.
             COMMENT: Skip it and cached medals, scoreboards and save slots silently
             COMMENT: never refresh: every call succeeds, every cached value goes stale.
+            COMMENT:
+            COMMENT: The one exception is a session result for a session the app no longer
+            COMMENT: holds. It is still returned to the caller, but caching it would put the
+            COMMENT: old session back. See AppState.isStaleSessionResult().
             IF core is not null AND core.appState is not null THEN
-                CALL core.appState.setValueFromResult(resultModel)
+                IF CALL core.appState.isStaleSessionResult(resultModel, sentSessionId) is false THEN
+                    CALL core.appState.setValueFromResult(resultModel)
+                END IF
             END IF
 
             RETURN resultModel
