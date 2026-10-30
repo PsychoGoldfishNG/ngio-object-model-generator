@@ -883,12 +883,19 @@
     FUNCTION clearSession()
         
         PURPOSE: Completely clear the current session (used when logging out)
-        WHY: When user logs out, we need to remove all session data
-        
+        WHY: When user logs out, nothing that described them may survive. The
+             next player on the same device would otherwise see their medal
+             unlocks, and a sign-out while Passport was open would leave
+             passportIsOpen true, so openPassport() refuses to open it again.
+
         BEHAVIOR:
-            COMMENT: Clear session-specific data from the session object
-            CALL session.clearSessionData()
-            
+            COMMENT: Reset the session object and all session-scoped cached data
+            CALL onSessionCleared()
+
+            COMMENT: Drop any error left over from the old session, so a fresh
+            COMMENT: session isn't immediately judged by the old one's failure
+            SET session.error TO null
+
             COMMENT: Also remove the saved session from persistent storage
             COMMENT: So next time they open the app, they won't be auto-logged-in
             CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
@@ -897,11 +904,11 @@
     FUNCTION invalidateSession()
 
         PURPOSE: Discard an invalid or expired session from memory and storage
-        WHY: Re-using a dead session id causes repeated EXPIRED_SESSION failures
+        WHY: Re-using a dead session id causes repeated EXPIRED_SESSION failures.
+             Same reset as clearSession(); kept separate because the reason differs.
 
         BEHAVIOR:
-            CALL onSessionCleared()
-            CALL CLEAR_FROM_PERSISTENT_STORAGE(sessionStorageKey)
+            CALL clearSession()
     END FUNCTION
 
     ====================
