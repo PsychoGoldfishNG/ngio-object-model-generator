@@ -487,13 +487,15 @@
 
     FUNCTION isStaleSessionResult(resultObject: NewgroundsIO.BaseResult, sentSessionId: string|null) RETURNS boolean
 
-        PURPOSE: Tells the response import whether a session result arrived for a session the
-        app no longer holds.
-        EXPLANATION: A check sent just before the player signs out can come back after the
-        sign-out, and even after a fresh session has started. Its result still carries the OLD
-        session. Writing it in through setValueFromResult() would put the old session back,
-        replacing the new one. The response import calls this for every result and skips
-        setValueFromResult() when it returns true. The result itself still reaches the caller.
+        PURPOSE: Tells the response import whether a result arrived for a session the app no
+        longer holds.
+        EXPLANATION: A request sent just before the player signs out can come back after the
+        sign-out, and even after a fresh session has started. A session result still carries
+        the OLD session, and writing it in through setValueFromResult() would put the old
+        session back, replacing the new one. A medal or save slot result describes the OLD
+        player, and writing it in would show their unlocks and saves to whoever is playing now.
+        The response import calls this for every result and skips setValueFromResult() when it
+        returns true. The result itself still reaches the caller.
 
         PARAMETERS:
             resultObject: A result model that extends BaseResult.
@@ -502,21 +504,30 @@
         RETURNS: true if the result must not be cached, false otherwise.
 
         BEHAVIOR:
-            COMMENT: Only session results are affected. Everything else is cached as usual.
-            IF resultObject.objectName is not "App.checkSession" AND
-               resultObject.objectName is not "App.startSession" THEN
-                RETURN false
-            END IF
-
             COMMENT: Treat an empty id the same as no id, on both sides
             SET currentId TO session.id, or null if it is empty
             SET sentId TO sentSessionId, or null if it is empty
 
             COMMENT: Compare against the id the request went OUT with, not an id in the
             COMMENT: result. That way the check never depends on what the server echoes back.
-            COMMENT: A start is sent with no id, so it is current only while there is still
-            COMMENT: no session; a second start's answer is stale once the first has landed.
-            RETURN currentId is not equal to sentId
+
+            IF resultObject.objectName is "App.checkSession" OR "App.startSession" THEN
+                COMMENT: A start is sent with no id, so it is current only while there is still
+                COMMENT: no session; a second start's answer is stale once the first has landed.
+                RETURN currentId is not equal to sentId
+            END IF
+
+            IF resultObject.objectName is one of "Medal.getList", "Medal.getMedalScore",
+               "Medal.unlock", "CloudSave.loadSlots", "CloudSave.loadSlot", "CloudSave.setData",
+               "CloudSave.clearSlot" THEN
+                COMMENT: These describe the signed-in player. One sent with NO session describes
+                COMMENT: nobody (a medal list loaded before any session existed, say), so a
+                COMMENT: session starting while it was in flight doesn't make it wrong.
+                RETURN sentId is not null AND currentId is not equal to sentId
+            END IF
+
+            COMMENT: Everything else describes the app, not a player, and is cached as usual.
+            RETURN false
     END FUNCTION
 
     FUNCTION setValueFromResult(resultObject: NewgroundsIO.BaseResult)

@@ -27,6 +27,11 @@
             COMMENT: connection or a tab closed mid-request. It sends immediately, so nothing
             COMMENT: is delayed by going through it. See MedalUnlockQueue.
             IF this.core is not null THEN
+                COMMENT: Remember which session this unlock is for. If the player signs out
+                COMMENT: before the answer arrives, the unlocked flag would describe them,
+                COMMENT: not whoever is playing now.
+                CREATE sentSessionId AS this.core.appState.session.id
+
                 CALL this.core.medalUnlockQueue.unlock([this.id], FUNCTION onComplete(outcomes)
                     CREATE result AS null
                     CREATE error AS null
@@ -50,8 +55,9 @@
                     COMMENT: Only mark this unlocked if the server actually accepted it.
                     COMMENT: Setting it on any response leaves the medal permanently showing
                     COMMENT: as earned, and nothing later corrects it - a rejected unlock
-                    COMMENT: returns no medal object to overwrite the flag.
-                    IF error is null THEN
+                    COMMENT: returns no medal object to overwrite the flag. And only if the
+                    COMMENT: session it was sent for is still the current one.
+                    IF error is null AND this.core.appState.session.id equals sentSessionId THEN
                         SET this.unlocked TO true
                     END IF
 

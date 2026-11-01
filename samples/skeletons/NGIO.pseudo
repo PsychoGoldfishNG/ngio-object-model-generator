@@ -42,9 +42,27 @@ CLASS NGIO
         empty buffer sends nothing at all.
     
     ====================
+    PUBLIC STATIC PROPERTIES
+    ====================
+
+    keepGuestMedalUnlocks: boolean = true
+        PURPOSE: Whether a medal unlock attempted while nobody is signed in is kept and sent
+        once a player signs in.
+        WHY: The usual case wants it: a player earns a medal, then signs in, and gets it. A game
+        that hands out its own reward to signed-out players can set this to false so no medal
+        follows later. See MedalUnlockQueue.keepGuestUnlocks.
+        BEHAVIOR (setter):
+            STORE value
+            IF core is set THEN
+                SET core.medalUnlockQueue.keepGuestUnlocks TO value
+            END IF
+        NOTE: init() copies it to the new queue too, so it works set before OR after init().
+        A language without static setters can offer a setter method instead.
+
+    ====================
     PRIVATE STATIC PROPERTIES
     ====================
-    
+
     lastCheckSessionTime: Timestamp | null = null
         PURPOSE: Tracks the last time we called checkSession on the server.
         WHY: We use this to implement the throttle - we compare the current time to this
@@ -258,7 +276,8 @@ CLASS NGIO
             COMMENT: Create the Core instance with the provided settings.
             COMMENT: Core handles all the low-level network communication, encryption, and state management.
             SET core TO new NewgroundsIO.Core(appId, encryptionKey, buildVersion, useDebugMode)
-            
+            SET core.medalUnlockQueue.keepGuestUnlocks TO keepGuestMedalUnlocks
+
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.
             CREATE logViewComponent AS CALL ObjectFactory.CreateComponent("App", "logView", null, core)

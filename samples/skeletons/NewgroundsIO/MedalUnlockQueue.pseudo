@@ -26,12 +26,23 @@ CLASS MedalUnlockQueue
     PROPERTIES
     ====================
 
+    PUBLIC keepGuestUnlocks: Boolean
+        PURPOSE: Whether an unlock attempted while nobody is signed in is kept and sent once a
+        player signs in
+        WHY: The usual case wants it: a player earns a medal before signing in, signs in, and
+        gets it. Some games hand out their own reward to signed-out players and must never see
+        a medal follow later. When false, a signed-out unlock is never recorded, and guest
+        entries already stored are dropped by the next retry pass instead of sent.
+        DEFAULT: true
+        NOTE: NGIO exposes this as NGIO.keepGuestMedalUnlocks.
+
     PRIVATE core: Core
         PURPOSE: The Core instance this queue belongs to
-        WHY: Used to send each Medal.unlock, and to scope the storage key by App ID
+        WHY: Used to send each Medal.unlock, to read who is signed in, and to scope the storage
+        key by App ID
 
     PRIVATE storageKey: String
-        PURPOSE: A unique key used to avoid naming collisions when saving the pending id list
+        PURPOSE: A unique key used to avoid naming collisions when saving the pending list
         WHY: Storage keys MUST contain the App ID. Apps hosted on the same host share a storage
         space, so an unqualified key collides across every game using this library there. Same
         reasoning as AppState.sessionStorageKey.
@@ -44,6 +55,22 @@ CLASS MedalUnlockQueue
         DEFAULT: Empty
         NOTE: In memory only. This describes right now, not something that has to survive a
         reload, so unlike the pending list it is deliberately NOT persisted.
+
+    ====================
+    WHOSE UNLOCK IS IT
+    ====================
+
+    COMMENT: The buffer lives in local storage, so on a shared device (family PC, school lab,
+    COMMENT: expo kiosk) it outlives the player who filled it. With plain ids, a medal player A
+    COMMENT: earned offline would be sent the next time ANYONE signed in, and player B would get
+    COMMENT: it. So every stored entry is { id: Integer, user: Integer or null }, where user is
+    COMMENT: the id of the player who earned it, or null if nobody was signed in.
+    COMMENT:
+    COMMENT:   - A player's entry is sent only while that player is signed in. Signing out does
+    COMMENT:     not drop it; it waits for them.
+    COMMENT:   - A guest entry (user null) is sent for whoever is signed in, and settled for them.
+    COMMENT:   - When the gateway rules on an id for a player, drop that player's entry for the
+    COMMENT:     id AND any guest entry for it. Leave other players' entries alone.
 
     ====================
     CONSTRUCTOR
@@ -64,28 +91,13 @@ CLASS MedalUnlockQueue
     ====================
 
     FUNCTION getPendingIds(): Array of Integer
-        PURPOSE: Lists the medal ids currently recorded as requested but not yet ruled on
+        PURPOSE: Lists the medal ids currently recorded as requested but not yet ruled on, for
+        any player
 
-        RETURNS: An array or list of medal ids, empty when nothing is pending
+        RETURNS: An array or list of medal ids without duplicates, empty when nothing is pending
 
         BEHAVIOR:
-            TRY
-                CREATE raw AS STORAGE_GET(this.storageKey)
-                IF raw is null OR raw is empty THEN
-                    RETURN an empty list
-                END IF
-
-                CREATE parsed AS JSON_DECODE(raw)
-                IF parsed is not a list THEN
-                    RETURN an empty list
-                END IF
-
-                RETURN only the entries of parsed that are numbers
-            CATCH
-                COMMENT: Unparseable stored data is treated as ABSENT, not fatal. Corrupt local
-                COMMENT: state must degrade to "nothing pending", never crash an unlock.
-                RETURN an empty list
-            END TRY
+            RETURN the id of each entry in this.readEntries(), with duplicates removed
     END FUNCTION
 
     FUNCTION unlock(ids: Array of Integer, callback: Function, thisArg: Object)
@@ -107,40 +119,18 @@ CLASS MedalUnlockQueue
                 RETURN
             END IF
 
+            CREATE user AS this.currentUserId()
+
             COMMENT: Record every id as pending BEFORE sending anything. It might look as
             COMMENT: though a medal that fails against a healthy gateway should never have been
             COMMENT: buffered at all - do NOT restructure it that way. Writing before the send
             COMMENT: is what makes a crash or reload mid-request survivable. An id that fails
             COMMENT: against a healthy gateway sits here for a few milliseconds, costing nothing.
-            CALL this.addPending(unique)
+            IF user is not null OR this.keepGuestUnlocks is true THEN
+                CALL this.addPending(unique, user)
+            END IF
 
-            CREATE outcomes AS an empty list
-            CREATE remaining AS the length of unique
-
-            FOR EACH id IN unique
-                ADD id TO this.inFlight
-
-                COMMENT: One request per medal, NOT one batch. The gateway rules on each medal
-                COMMENT: separately, and Core's component queue is shared with the game, so a
-                COMMENT: background pass must never drain it.
-                CALL this.core.callComponent("Medal.unlock", { id: id }, FUNCTION onComplete(response)
-                    REMOVE id FROM this.inFlight
-
-                    CREATE outcome AS this.adjudicate(id, response)
-                    IF outcome.adjudicated is true THEN
-                        COMMENT: The gateway ruled on this medal. Its fate is settled and
-                        COMMENT: retrying cannot change it, so drop it whether the answer was
-                        COMMENT: yes or no.
-                        CALL this.removePending(id)
-                    END IF
-
-                    ADD { id: id, medal: outcome.medal, error: outcome.error } TO outcomes
-                    SET remaining TO remaining - 1
-                    IF remaining is 0 AND callback is defined THEN
-                        CALL callback WITH context thisArg PASSING outcomes
-                    END IF
-                END FUNCTION, this)
-            END FOR
+            CALL this.send(unique, user, callback, thisArg)
 
         NOTE: A fresh unlock ALWAYS sends immediately. Nothing here waits on the retry pass.
         The background pass exists only to recover requests an earlier attempt never got
@@ -148,15 +138,28 @@ CLASS MedalUnlockQueue
     END FUNCTION
 
     FUNCTION retryPending()
-        PURPOSE: Re-sends everything still in the pending list
+        PURPOSE: Re-sends what is still pending for whoever is signed in now: their own entries
+        and any guest entries. Another player's entries wait until that player signs in again.
 
         BEHAVIOR:
             TRY
-                CREATE pending AS this.getPendingIds() minus anything in this.inFlight
+                CREATE entries AS this.readEntries()
+
+                IF this.keepGuestUnlocks is false AND any entry in entries has user null THEN
+                    REMOVE every entry with user null FROM entries
+                    CALL this.write(entries)
+                END IF
+
+                CREATE user AS this.currentUserId()
+                CREATE pending AS the ids of the entries whose user is null OR equals user,
+                    with duplicates removed, minus anything in this.inFlight
                 IF pending is empty THEN
                     RETURN
                 END IF
-                CALL this.unlock(pending, null, null)
+
+                COMMENT: send(), not unlock(): these are already recorded, and must not be
+                COMMENT: recorded again under whoever happens to be signed in now.
+                CALL this.send(pending, user, null, null)
             CATCH
                 COMMENT: This NEVER throws and never reports a failure. A pass that cannot reach
                 COMMENT: the gateway is exactly the case it exists to tolerate, and one bad pass
@@ -169,6 +172,83 @@ CLASS MedalUnlockQueue
     ====================
     PRIVATE METHODS
     ====================
+
+    FUNCTION send(ids: Array of Integer, user: Integer or null, callback: Function, thisArg: Object)
+        PURPOSE: Sends one Medal.unlock per id on behalf of user, and settles the buffer as each
+        comes back
+
+        BEHAVIOR:
+            CREATE outcomes AS an empty list
+            CREATE remaining AS the length of ids
+
+            FOR EACH id IN ids
+                ADD id TO this.inFlight
+
+                COMMENT: One request per medal, NOT one batch. The gateway rules on each medal
+                COMMENT: separately, and Core's component queue is shared with the game, so a
+                COMMENT: background pass must never drain it.
+                CALL this.core.callComponent("Medal.unlock", { id: id }, FUNCTION onComplete(response)
+                    REMOVE id FROM this.inFlight
+
+                    CREATE outcome AS this.adjudicate(id, response)
+                    IF outcome.adjudicated is true THEN
+                        COMMENT: The gateway ruled on this medal for this player. Its fate is
+                        COMMENT: settled and retrying cannot change it, so drop it whether the
+                        COMMENT: answer was yes or no.
+                        CALL this.removePending(id, user)
+                    END IF
+
+                    ADD { id: id, medal: outcome.medal, error: outcome.error } TO outcomes
+                    SET remaining TO remaining - 1
+                    IF remaining is 0 AND callback is defined THEN
+                        CALL callback WITH context thisArg PASSING outcomes
+                    END IF
+                END FUNCTION, this)
+            END FOR
+    END FUNCTION
+
+    FUNCTION currentUserId(): Integer or null
+        PURPOSE: The signed-in player's user id, or null when nobody is signed in
+
+        BEHAVIOR:
+            IF this.core.appState.session.user is null THEN
+                RETURN null
+            END IF
+            RETURN this.core.appState.session.user.id
+    END FUNCTION
+
+    FUNCTION readEntries(): Array of { id: Integer, user: Integer or null }
+        PURPOSE: Reads the stored pending entries
+
+        BEHAVIOR:
+            TRY
+                CREATE raw AS STORAGE_GET(this.storageKey)
+                IF raw is null OR raw is empty THEN
+                    RETURN an empty list
+                END IF
+
+                CREATE parsed AS JSON_DECODE(raw)
+                IF parsed is not a list THEN
+                    RETURN an empty list
+                END IF
+
+                CREATE entries AS an empty list
+                FOR EACH item IN parsed
+                    IF item is a number THEN
+                        COMMENT: A bare id is an entry from before entries recorded their
+                        COMMENT: player. Read it as a guest entry rather than lose it.
+                        ADD { id: item, user: null } TO entries
+                    ELSE IF item is an object AND item.id is a number THEN
+                        ADD { id: item.id, user: item.user if it is a number, otherwise null } TO entries
+                    END IF
+                END FOR
+                RETURN entries
+            CATCH
+                COMMENT: Unparseable stored data is treated as ABSENT, not fatal. Corrupt local
+                COMMENT: state must degrade to "nothing pending", never crash an unlock.
+                RETURN an empty list
+            END TRY
+    END FUNCTION
 
     FUNCTION adjudicate(id: Integer, response: Response): Object
         PURPOSE: Decides whether the gateway actually ruled on this specific medal
@@ -230,40 +310,47 @@ CLASS MedalUnlockQueue
         deliberately built to be indistinguishable from a server refusal, so you cannot tell
         where it came from. You do not need to: discriminating on the error CLASS puts the local
         refusal in the keep set for free, which is the right outcome. A player who earns a medal
-        as a guest and signs in later should still get it.
+        as a guest and signs in later should still get it, unless keepGuestUnlocks is false.
 
         NOTE: With this rule there is no retry cap, no attempt counter, and no maximum age, and
         none of them are needed. Nothing can retry indefinitely except a genuine connectivity
         failure, which is exactly what should.
     END FUNCTION
 
-    FUNCTION addPending(ids: Array of Integer)
-        PURPOSE: Adds ids to the stored pending list
+    FUNCTION addPending(ids: Array of Integer, user: Integer or null)
+        PURPOSE: Records ids as pending, owned by user
 
         BEHAVIOR:
-            CREATE current AS the set of this.getPendingIds()
-            ADD every id in ids TO current
-            CALL this.write(current)
+            CREATE entries AS this.readEntries()
+            FOR EACH id IN ids
+                IF entries has no entry with this id AND this user THEN
+                    ADD { id: id, user: user } TO entries
+                END IF
+            END FOR
+            CALL this.write(entries)
     END FUNCTION
 
-    FUNCTION removePending(id: Integer)
-        PURPOSE: Drops one id from the stored pending list
+    FUNCTION removePending(id: Integer, user: Integer or null)
+        PURPOSE: Drops the entries for id owned by user, and any guest entry for id
+
+        WHY: A guest unlock sent after a sign-in is settled for that player. Other players'
+        entries for the same id still wait for them.
 
         BEHAVIOR:
-            CREATE current AS the set of this.getPendingIds()
-            IF id is not in current THEN
+            CREATE entries AS this.readEntries()
+            CREATE kept AS the entries that do NOT have this id with user null or equal to user
+            IF kept has as many entries as entries THEN
                 RETURN
             END IF
-            REMOVE id FROM current
-            CALL this.write(current)
+            CALL this.write(kept)
     END FUNCTION
 
-    FUNCTION write(ids: Set of Integer)
-        PURPOSE: Persists the pending list
+    FUNCTION write(entries: Array of { id: Integer, user: Integer or null })
+        PURPOSE: Persists the pending list, always as entries, never as bare ids
 
         BEHAVIOR:
             TRY
-                CALL STORAGE_SET(this.storageKey, JSON_ENCODE(ids as a list))
+                CALL STORAGE_SET(this.storageKey, JSON_ENCODE(entries))
             CATCH
                 COMMENT: Best-effort durability, never fatal. Quota limits, private browsing,
                 COMMENT: and storage disabled by the user are all real, and none of them should
