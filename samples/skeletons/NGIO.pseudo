@@ -59,6 +59,21 @@ CLASS NGIO
         NOTE: init() copies it to the new queue too, so it works set before OR after init().
         A language without static setters can offer a setter method instead.
 
+    holdGuestMedalUnlocks: boolean = false
+        PURPOSE: Whether medals unlocked while nobody is signed in wait for the game to claim
+        or discard them, instead of going to whoever signs in next.
+        WHY: On a shared device the next player to sign in may not be the one who earned them.
+        With this on, a game can ask the player whether those medals are theirs, using
+        getGuestMedalUnlocks(), claimGuestMedalUnlocks() and discardGuestMedalUnlocks(). See
+        MedalUnlockQueue.holdGuestUnlocks.
+        BEHAVIOR (setter):
+            STORE value
+            IF core is set THEN
+                SET core.medalUnlockQueue.holdGuestUnlocks TO value
+            END IF
+        NOTE: init() copies it to the new queue too, so it works set before OR after init().
+        A language without static setters can offer a setter method instead.
+
     offerGuestSaves: boolean = true
         PURPOSE: Whether a save made while nobody is signed in becomes the local copy of whoever
         signs in next.
@@ -290,6 +305,7 @@ CLASS NGIO
             COMMENT: Core handles all the low-level network communication, encryption, and state management.
             SET core TO new NewgroundsIO.Core(appId, encryptionKey, buildVersion, useDebugMode)
             SET core.medalUnlockQueue.keepGuestUnlocks TO keepGuestMedalUnlocks
+            SET core.medalUnlockQueue.holdGuestUnlocks TO holdGuestMedalUnlocks
             SET core.appState.offerGuestSaves TO offerGuestSaves
 
             COMMENT: Create a logView component - this tells the server we viewed this app.
@@ -1990,6 +2006,47 @@ CLASS NGIO
             COMMENT: still pending, what is already in flight, and what the gateway has ruled
             COMMENT: on. This class owns the cadence and nothing else. See MedalUnlockQueue.
             CALL core.medalUnlockQueue.retryPending()
+    END FUNCTION
+
+    FUNCTION getGuestMedalUnlocks(): Array of Integer
+
+        PURPOSE: Lists the ids of medals unlocked while nobody was signed in, still waiting to
+        be sent or discarded. Only useful with holdGuestMedalUnlocks on; otherwise they go to
+        the next player who signs in on their own.
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+            RETURN core.medalUnlockQueue.getGuestIds()
+    END FUNCTION
+
+    FUNCTION claimGuestMedalUnlocks(ids: Array of Integer, callback: Function, thisArg: Object)
+
+        PURPOSE: Sends guest medal unlocks for the signed-in player. One that can't be sent yet
+        is kept as theirs and retried. Does nothing when nobody is signed in.
+
+        PARAMETERS:
+            ids: (required) The medal ids to claim
+            callback: Function to call once every claimed id has come back, as callback(outcomes)
+            thisArg: Context to use when calling the callback
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+            CALL core.medalUnlockQueue.claimGuestUnlocks(ids, callback, thisArg)
+    END FUNCTION
+
+    FUNCTION discardGuestMedalUnlocks(ids: Array of Integer)
+
+        PURPOSE: Drops guest medal unlocks without sending them.
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+            CALL core.medalUnlockQueue.discardGuestUnlocks(ids)
     END FUNCTION
 
     FUNCTION startMedalUnlockRetryTimer()

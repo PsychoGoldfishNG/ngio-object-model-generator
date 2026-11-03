@@ -36,6 +36,16 @@ CLASS MedalUnlockQueue
         DEFAULT: true
         NOTE: NGIO exposes this as NGIO.keepGuestMedalUnlocks.
 
+    PUBLIC holdGuestUnlocks: Boolean
+        PURPOSE: Whether guest entries wait for the game to claim or discard them, instead of
+        going to whoever signs in next
+        WHY: On a shared device the next player to sign in may not be the one who earned the
+        medal. With this on, the game can ask the player whether the medals are theirs, then
+        call claimGuestUnlocks() or discardGuestUnlocks() with the answer.
+        DEFAULT: false
+        NOTE: Has no effect while keepGuestUnlocks is false, since no guest entry is kept then.
+        NGIO exposes this as NGIO.holdGuestMedalUnlocks.
+
     PRIVATE core: Core
         PURPOSE: The Core instance this queue belongs to
         WHY: Used to send each Medal.unlock, to read who is signed in, and to scope the storage
@@ -69,6 +79,7 @@ CLASS MedalUnlockQueue
     COMMENT:   - A player's entry is sent only while that player is signed in. Signing out does
     COMMENT:     not drop it; it waits for them.
     COMMENT:   - A guest entry (user null) is sent for whoever is signed in, and settled for them.
+    COMMENT:     With holdGuestUnlocks on, it waits for claimGuestUnlocks() instead.
     COMMENT:   - When the gateway rules on an id for a player, drop that player's entry for the
     COMMENT:     id AND any guest entry for it. Leave other players' entries alone.
 
@@ -98,6 +109,72 @@ CLASS MedalUnlockQueue
 
         BEHAVIOR:
             RETURN the id of each entry in this.readEntries(), with duplicates removed
+    END FUNCTION
+
+    FUNCTION getGuestIds(): Array of Integer
+        PURPOSE: Lists the medal ids recorded while nobody was signed in, and not yet sent or
+        discarded
+
+        RETURNS: An array or list of medal ids without duplicates, empty when there are none
+
+        BEHAVIOR:
+            RETURN the id of each entry in this.readEntries() whose user is null, with
+                duplicates removed
+    END FUNCTION
+
+    FUNCTION claimGuestUnlocks(ids: Array of Integer, callback: Function, thisArg: Object)
+        PURPOSE: Hands guest entries to the signed-in player and sends them
+
+        PARAMETERS:
+            ids: (required) The medal ids to claim. Ids with no guest entry are ignored.
+            callback: Function to call once every claimed id has come back, as callback(outcomes)
+            thisArg: Context to use when calling the callback
+
+        CALLBACK PARAMETERS:
+            outcomes: The same shape unlock() reports, one entry per id that was sent
+
+        BEHAVIOR:
+            CREATE user AS this.currentUserId()
+            CREATE entries AS this.readEntries()
+            CREATE claimed AS the ids in ids, with duplicates removed, that have an entry in
+                entries whose user is null
+
+            IF user is null OR claimed is empty THEN
+                CALL callback WITH context thisArg PASSING an empty list
+                RETURN
+            END IF
+
+            COMMENT: Re-own each claimed entry BEFORE sending it, for the same reason unlock()
+            COMMENT: records before sending. One that can't be sent yet then waits for this
+            COMMENT: player like any of their own, and the retry pass sends it despite the hold.
+            REMOVE every entry with user null and an id in claimed FROM entries
+            FOR EACH id IN claimed
+                IF entries has no entry with this id AND this user THEN
+                    ADD { id: id, user: user } TO entries
+                END IF
+            END FOR
+            CALL this.write(entries)
+
+            CREATE toSend AS claimed minus anything in this.inFlight
+            IF toSend is empty THEN
+                CALL callback WITH context thisArg PASSING an empty list
+                RETURN
+            END IF
+            CALL this.send(toSend, user, callback, thisArg)
+    END FUNCTION
+
+    FUNCTION discardGuestUnlocks(ids: Array of Integer)
+        PURPOSE: Drops guest entries for these ids without sending them
+
+        BEHAVIOR:
+            CREATE entries AS this.readEntries()
+            CREATE kept AS the entries that do NOT have user null and an id in ids
+            IF kept has as many entries as entries THEN
+                RETURN
+            END IF
+            CALL this.write(kept)
+
+        NOTE: Players' own entries are never touched, even for the same id.
     END FUNCTION
 
     FUNCTION unlock(ids: Array of Integer, callback: Function, thisArg: Object)
@@ -140,6 +217,7 @@ CLASS MedalUnlockQueue
     FUNCTION retryPending()
         PURPOSE: Re-sends what is still pending for whoever is signed in now: their own entries
         and any guest entries. Another player's entries wait until that player signs in again.
+        With holdGuestUnlocks on, guest entries wait for claimGuestUnlocks() instead.
 
         BEHAVIOR:
             TRY
@@ -151,8 +229,9 @@ CLASS MedalUnlockQueue
                 END IF
 
                 CREATE user AS this.currentUserId()
-                CREATE pending AS the ids of the entries whose user is null OR equals user,
-                    with duplicates removed, minus anything in this.inFlight
+                CREATE pending AS the ids of the entries whose user equals user, plus those
+                    whose user is null when this.holdGuestUnlocks is false, with duplicates
+                    removed, minus anything in this.inFlight
                 IF pending is empty THEN
                     RETURN
                 END IF
