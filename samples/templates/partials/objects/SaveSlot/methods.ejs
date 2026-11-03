@@ -80,10 +80,15 @@
         Prepare for both cases - some URLs may already have the protocol.
         
         BEHAVIOR:
+            COMMENT: A slot loaded from another app never touches the local copies: it isn't
+            COMMENT: this app's, so caching it would put another app's save in this app's
+            COMMENT: local copy of the same slot number.
+            CREATE useLocal AS this.core is not null AND this.core.appState is not null AND this.isForeign() is false
+
             COMMENT: Whose copy this load is for. A fetch that finishes after the player
             COMMENT: changed must not be cached as, or fall back to, the next player's copy.
             CREATE owner AS null
-            IF this.core is not null AND this.core.appState is not null THEN
+            IF useLocal THEN
                 SET owner TO this.core.appState.getLocalSlotOwner()
             END IF
 
@@ -92,7 +97,7 @@
             COMMENT: its cloud badge, so the row's badge and the copy this returns cannot
             COMMENT: disagree. Recomputing freshness independently is how they drift apart.
             COMMENT: A conflict loads the newer, local copy until the game picks one.
-            IF (this.source is "local" OR this.source is "conflict") AND this.core is not null AND this.core.appState is not null THEN
+            IF (this.source is "local" OR this.source is "conflict") AND useLocal THEN
                 CREATE localData AS this.core.appState.readLocalSlotData(this.id)
                 IF localData is not null THEN
                     SET this.error TO null
@@ -139,7 +144,7 @@
                     COMMENT: time: stamping it now would make the cached copy look newer than the
                     COMMENT: cloud copy it was just taken from, and the next merge would flip the
                     COMMENT: slot to local for no reason at all.
-                    IF this.core is not null AND this.core.appState is not null AND this.core.appState.getLocalSlotOwner() equals owner THEN
+                    IF useLocal AND this.core.appState.getLocalSlotOwner() equals owner THEN
                         CALL this.core.appState.writeLocalSlotData(this.id, data, this.datetime)
                     END IF
 
@@ -152,7 +157,7 @@
                     COMMENT: The cloud was the fresher copy, but the fetch itself failed (the
                     COMMENT: network dropped between listing and loading). Degrade to whatever
                     COMMENT: local copy exists rather than failing the whole load.
-                    IF this.core is not null AND this.core.appState is not null AND this.core.appState.getLocalSlotOwner() equals owner THEN
+                    IF useLocal AND this.core.appState.getLocalSlotOwner() equals owner THEN
                         CREATE cachedData AS this.core.appState.readLocalSlotData(this.id)
                         IF cachedData is not null THEN
                             SET this.error TO null
@@ -299,7 +304,7 @@
         shows the player the other copy, so they can choose between the two.
 
         BEHAVIOR:
-            IF this.core is null OR this.core.appState is null OR this.id is null THEN
+            IF this.core is null OR this.core.appState is null OR this.id is null OR this.isForeign() THEN
                 RETURN null
             END IF
             RETURN this.core.appState.getLocalSlotEntry(this.id)
