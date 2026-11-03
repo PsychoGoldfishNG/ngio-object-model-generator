@@ -412,8 +412,18 @@ CLASS NGIO
             
             COMMENT: Actually open the URL with the passport URL
             TRY
-                OPEN_URL(core.appState.session.passport_url, target)
-                
+                CREATE opened AS OPEN_URL(core.appState.session.passport_url, target)
+
+                COMMENT: If the platform can tell the window didn't open (a browser's window.open()
+                COMMENT: returns null when a popup blocker stops it), stop here WITHOUT setting
+                COMMENT: passportIsOpen. Setting it for a blocked window refuses every later try
+                COMMENT: and leaves the game waiting for a login that can't happen. A platform
+                COMMENT: that can't tell treats the window as opened.
+                IF opened is false THEN
+                    LOG_WARNING("Cannot open passport - the window was blocked")
+                    RETURN false
+                END IF
+
                 COMMENT: Mark that we've opened the passport so checkSession() knows to expect login activity
                 SET core.appState.passportIsOpen TO true
                 
