@@ -59,6 +59,19 @@ CLASS NGIO
         NOTE: init() copies it to the new queue too, so it works set before OR after init().
         A language without static setters can offer a setter method instead.
 
+    offerGuestSaves: boolean = true
+        PURPOSE: Whether a save made while nobody is signed in becomes the local copy of whoever
+        signs in next.
+        WHY: The usual case wants it: a player makes progress, then signs in, and keeps it. A
+        game on shared machines can set this to false so guest saves never reach a signed-in
+        player. See AppState.offerGuestSaves.
+        BEHAVIOR (setter):
+            STORE value
+            IF core is set THEN
+                SET core.appState.offerGuestSaves TO value
+            END IF
+        NOTE: init() copies it to the new AppState too, so it works set before OR after init().
+
     ====================
     PRIVATE STATIC PROPERTIES
     ====================
@@ -277,6 +290,7 @@ CLASS NGIO
             COMMENT: Core handles all the low-level network communication, encryption, and state management.
             SET core TO new NewgroundsIO.Core(appId, encryptionKey, buildVersion, useDebugMode)
             SET core.medalUnlockQueue.keepGuestUnlocks TO keepGuestMedalUnlocks
+            SET core.appState.offerGuestSaves TO offerGuestSaves
 
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.

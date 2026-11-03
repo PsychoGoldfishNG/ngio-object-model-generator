@@ -4,7 +4,7 @@
     COMMENT: ====================================================================================
 
     PUBLIC source: String
-        PURPOSE: Names which copy of this slot you are currently looking at, "cloud" or "local"
+        PURPOSE: Names which copy of this slot you are currently looking at, "cloud" or "local", or "conflict" when both copies hold a save and the local one is newer
         WHY: A save slot is intended to be stored on the cloud, with a local fallback protecting it from network loss and server outages. Either copy can be the one being described, and a game needs to know which so it can show players whether a save has reached the cloud yet
         DEFAULT: "cloud"
 
@@ -15,6 +15,9 @@
         COMMENT:
         COMMENT: AppState sets this to "local" when the locally mirrored copy is fresher
         COMMENT: and wins the merge, and saveDataRaw()/clearData() set it when a write
-        COMMENT: reaches local storage but not the cloud. It is deliberately NOT reset by
-        COMMENT: clearSessionData(): the local copy is not session-scoped and survives
-        COMMENT: sign-out. See AppState's save slot local fallback.
+        COMMENT: reaches local storage but not the cloud. AppState sets it to "conflict"
+        COMMENT: when the local copy is newer but the cloud holds a save too: the slot's
+        COMMENT: fields then describe the cloud copy, getLocalCopy() describes the local
+        COMMENT: one, and loading returns the local copy until keepLocal() or keepCloud().
+        COMMENT: clearSessionData() resets it to "cloud", since the local copy belongs to
+        COMMENT: the player who signed out. See AppState's save slot local fallback.

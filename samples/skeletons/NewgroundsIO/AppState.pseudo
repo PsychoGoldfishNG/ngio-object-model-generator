@@ -54,7 +54,15 @@
         PURPOSE: Flag indicating whether Passport login window is currently open
         WHY: NGIO.checkSession() uses this flag to decide if it should wait
         before checking the server (user is probably still logging in)
-    
+
+    offerGuestSaves: boolean = true
+        PURPOSE: Whether a save made while nobody was signed in (a guest save) becomes the local
+        copy of whoever signs in next
+        WHY: Some games want a player to keep progress they made before signing in. Others, on
+        shared machines, want guest saves kept away from players entirely. When false, guest
+        saves stay guest-only and are still there the next time nobody is signed in. Set through
+        NGIO.offerGuestSaves. See SAVE SLOT LOCAL FALLBACK.
+
     ====================
     READONLY PROPERTIES
     ====================
@@ -940,6 +948,21 @@
     COMMENT: There is NO setting to turn this on or off. Choosing the newer of two copies is safe
     COMMENT: on its own, and a flag would mean most games never get the protection, which is the
     COMMENT: whole point of having it in the library.
+    COMMENT:
+    COMMENT: Local copies belong to whoever wrote them: the signed-in user, or a guest when nobody
+    COMMENT: is signed in. Every read and write goes through the current owner, so on a shared
+    COMMENT: machine one player's local copy never reaches another.
+
+    FUNCTION getLocalSlotOwner(): Integer
+        PURPOSE: Who local slot copies currently belong to
+        RETURNS: The signed-in user's id, or null for a guest
+
+        BEHAVIOR:
+            IF this.session.user is not null THEN
+                RETURN this.session.user.id
+            END IF
+            RETURN null
+    END FUNCTION
 
     FUNCTION reconcileSaveSlots(cloudSlots: Array of SaveSlot): Array of SaveSlot
 
@@ -951,7 +974,11 @@
         RETURNS: The reconciled slot list, ordered by id, each with its `source` set
 
         BEHAVIOR:
-            CREATE registry AS this.localSaveSlots.getRegistry()
+            CREATE owner AS this.getLocalSlotOwner()
+            IF owner is not null AND this.offerGuestSaves is true THEN
+                CALL this.adoptGuestSaves(owner)
+            END IF
+            CREATE registry AS this.localSaveSlots.getRegistry(owner)
 
             COMMENT: Build across the FULL slot id range - every id the cloud returned plus every
             COMMENT: id present locally. A slot saved while offline exists locally and nowhere
@@ -978,6 +1005,14 @@
                     IF cloud is not null AND localTime is not greater than cloudTime THEN
                         SET cloud.source TO "cloud"
                         ADD cloud TO merged
+                    ELSE IF cloud is not null AND cloud.url is not null AND cloud.url is not empty THEN
+                        COMMENT: The local copy is newer, but the cloud holds a save too, so
+                        COMMENT: either choice loses one of them. Never decide this for the
+                        COMMENT: player: mark the conflict and let the game ask. The slot keeps
+                        COMMENT: the cloud's fields, and loading it returns the local copy until
+                        COMMENT: the game calls keepLocal() or keepCloud().
+                        SET cloud.source TO "conflict"
+                        ADD cloud TO merged
                     ELSE
                         ADD this.buildLocalSlot(id, local) TO merged
                     END IF
@@ -993,7 +1028,38 @@
         load quietly read the local copy.
 
         NOTE: SYNC IS PASSIVE. Never push a fresher local copy to the cloud on its own. It gets
-        there on the player's next explicit save, and nowhere else.
+        there on the player's next explicit save, or when the game resolves a conflict with
+        SaveSlot.keepLocal(), and nowhere else.
+    END FUNCTION
+
+    FUNCTION adoptGuestSaves(owner: Integer)
+
+        PURPOSE: Moves guest copies into the signed-in player's own local copies
+
+        PARAMETERS:
+            owner: (required) The signed-in user's id
+
+        WHY: A guest copy goes to whoever signs in next, and ONLY to them. Once it has been
+        offered it is removed from the guest copies, so the player after them never gets it too.
+
+        BEHAVIOR:
+            CREATE guestRegistry AS this.localSaveSlots.getRegistry(null)
+            FOR EACH id, guest IN guestRegistry
+                CREATE payload AS this.localSaveSlots.getPayload(id, null)
+                IF payload is not null THEN
+                    CREATE own AS this.localSaveSlots.getRegistry(owner)[id], or null
+                    COMMENT: The guest copy replaces the player's own only if it is newer.
+                    COMMENT: Otherwise it is simply dropped below.
+                    IF own is null OR PARSE_DATETIME(guest.datetime) is greater than PARSE_DATETIME(own.datetime) THEN
+                        IF this.localSaveSlots.writeEntry(id, payload, owner, guest.datetime) is false THEN
+                            COMMENT: Keep the guest copy if it can't be moved, rather than
+                            COMMENT: losing it.
+                            CONTINUE
+                        END IF
+                    END IF
+                END IF
+                CALL this.localSaveSlots.deleteEntry(id, null)
+            END FOR
     END FUNCTION
 
     FUNCTION buildLocalSlot(id: Integer, entry: Object): SaveSlot
@@ -1020,35 +1086,50 @@
     END FUNCTION
 
     FUNCTION readLocalSlotData(id: Integer): String
-        PURPOSE: Reads one slot's locally mirrored save data
+        PURPOSE: Reads the current owner's local copy of one slot
         RETURNS: The stored data, or null if this slot has no local copy
-        WHY: Called by SaveSlot.loadDataRaw()
+        WHY: Called by SaveSlot.loadDataRaw() and SaveSlot.keepLocal()
 
         BEHAVIOR:
-            RETURN this.localSaveSlots.getPayload(id)
+            RETURN this.localSaveSlots.getPayload(id, this.getLocalSlotOwner())
+    END FUNCTION
+
+    FUNCTION getLocalSlotEntry(id: Integer): Object
+        PURPOSE: Describes the current owner's local copy of one slot
+        RETURNS: An object with that copy's size and datetime, or null if there is none
+        WHY: Called by SaveSlot.getLocalCopy(), so a game can show the player both copies of a
+        slot in conflict
+
+        BEHAVIOR:
+            CREATE entry AS this.localSaveSlots.getRegistry(this.getLocalSlotOwner())[id], or null
+            IF entry is null THEN
+                RETURN null
+            END IF
+            RETURN { size: entry.size, datetime: entry.datetime }
     END FUNCTION
 
     FUNCTION writeLocalSlotData(id: Integer, data: String, datetime: String): Boolean
-        PURPOSE: Mirrors one slot's save data locally
+        PURPOSE: Mirrors one slot's save data locally, for the current owner
         RETURNS: True if the write landed, false if it did not
-        WHY: Called by SaveSlot.saveDataRaw() for the local leg of a dual write, and by
-        SaveSlot.loadDataRaw() for its write-through cache
+        WHY: Called by SaveSlot.saveDataRaw() for the local leg of a dual write, by
+        SaveSlot.loadDataRaw() for its write-through cache, and by SaveSlot.onWriteComplete() to
+        re-stamp a save the cloud accepted
 
         PARAMETERS:
             datetime: Optional. Defaults to now. Pass the CLOUD's datetime when caching a cloud
                       load, or the cached copy looks newer than the copy it came from.
 
         BEHAVIOR:
-            RETURN this.localSaveSlots.writeEntry(id, data, datetime)
+            RETURN this.localSaveSlots.writeEntry(id, data, this.getLocalSlotOwner(), datetime)
     END FUNCTION
 
     FUNCTION clearLocalSlotData(id: Integer): Boolean
-        PURPOSE: Drops one slot's local copy
+        PURPOSE: Drops the current owner's local copy of one slot
         RETURNS: True if it was dropped, false if the write failed
-        WHY: Called by SaveSlot.clearData()
+        WHY: Called by SaveSlot.clearData() and SaveSlot.keepCloud()
 
         BEHAVIOR:
-            RETURN this.localSaveSlots.deleteEntry(id)
+            RETURN this.localSaveSlots.deleteEntry(id, this.getLocalSlotOwner())
     END FUNCTION
 
 END CLASS
@@ -1064,9 +1145,14 @@ CLASS LocalSaveSlotStore
     NAMESPACE: NewgroundsIO
     NOTE: Private to AppState, which constructs it and is its only caller
 
-    PURPOSE: Owns the local copy and NOTHING else: keys, App ID scoping, the registry and payload
-    split, serialization, corrupt data handling, and datetime stamping. It knows nothing about
-    the cloud, about merging, or about which copy is newer. AppState decides all of that.
+    PURPOSE: Owns the local copy and NOTHING else: keys, App ID and owner scoping, the registry
+    and payload split, serialization, corrupt data handling, and datetime stamping. It knows
+    nothing about the cloud, about merging, or about which copy is newer. AppState decides all
+    of that.
+
+    OWNERS: Every method takes an `owner`: the id of the user the copy belongs to, or null for a
+    guest. Each owner gets its own keys, so one player's save never overwrites or shows up as
+    another's. Guest keys are the unscoped ones.
 
     SHAPE: Mirror the cloud API's DATA shape, not its TRANSPORT. Everything here is synchronous,
     and it returns plain slot data rather than model instances, because building models goes
@@ -1087,17 +1173,26 @@ CLASS LocalSaveSlotStore
     METHODS
     ====================
 
-    FUNCTION registryKey(): String
+    FUNCTION keyPrefix(owner: Integer): String
         BEHAVIOR:
-            RETURN "ngio-local-save-slots-for-" + this.appId + ":registry"
+            CREATE prefix AS "ngio-local-save-slots-for-" + this.appId
+            IF owner is not null THEN
+                SET prefix TO prefix + ":user:" + owner
+            END IF
+            RETURN prefix
     END FUNCTION
 
-    FUNCTION payloadKey(id: Integer): String
+    FUNCTION registryKey(owner: Integer): String
         BEHAVIOR:
-            RETURN "ngio-local-save-slots-for-" + this.appId + ":slot:" + id
+            RETURN this.keyPrefix(owner) + ":registry"
     END FUNCTION
 
-    FUNCTION getRegistry(): Map of Integer to Object
+    FUNCTION payloadKey(id: Integer, owner: Integer): String
+        BEHAVIOR:
+            RETURN this.keyPrefix(owner) + ":slot:" + id
+    END FUNCTION
+
+    FUNCTION getRegistry(owner: Integer): Map of Integer to Object
 
         PURPOSE: Every locally mirrored slot's metadata, keyed by slot id
 
@@ -1109,7 +1204,7 @@ CLASS LocalSaveSlotStore
 
         BEHAVIOR:
             TRY
-                CREATE raw AS STORAGE_GET(this.registryKey())
+                CREATE raw AS STORAGE_GET(this.registryKey(owner))
                 IF raw is null OR raw is empty THEN
                     RETURN an empty map
                 END IF
@@ -1125,18 +1220,18 @@ CLASS LocalSaveSlotStore
             END TRY
     END FUNCTION
 
-    FUNCTION getPayload(id: Integer): String
+    FUNCTION getPayload(id: Integer, owner: Integer): String
         PURPOSE: The raw save data for one slot, or null if there is no local copy
 
         BEHAVIOR:
             TRY
-                RETURN STORAGE_GET(this.payloadKey(id))
+                RETURN STORAGE_GET(this.payloadKey(id, owner))
             CATCH
                 RETURN null
             END TRY
     END FUNCTION
 
-    FUNCTION writeEntry(id: Integer, data: String, datetime: String): Boolean
+    FUNCTION writeEntry(id: Integer, data: String, owner: Integer, datetime: String): Boolean
 
         PURPOSE: Mirrors one slot locally, stamped so the merge can compare it against the cloud
 
@@ -1156,11 +1251,11 @@ CLASS LocalSaveSlotStore
                 COMMENT: Write the PAYLOAD BEFORE THE REGISTRY. If the payload write fails,
                 COMMENT: usually on quota because it is the larger of the two, the registry is not
                 COMMENT: left claiming a slot holds data that was never stored.
-                CALL STORAGE_SET(this.payloadKey(id), data)
+                CALL STORAGE_SET(this.payloadKey(id, owner), data)
 
-                CREATE registry AS this.getRegistry()
+                CREATE registry AS this.getRegistry(owner)
                 SET registry[id] TO { size: length of data, datetime: datetime, hasData: true }
-                CALL STORAGE_SET(this.registryKey(), JSON_ENCODE(registry))
+                CALL STORAGE_SET(this.registryKey(owner), JSON_ENCODE(registry))
                 RETURN true
             CATCH
                 COMMENT: Report a failed write, do NOT throw. Quota limits, private browsing, and
@@ -1170,16 +1265,16 @@ CLASS LocalSaveSlotStore
             END TRY
     END FUNCTION
 
-    FUNCTION deleteEntry(id: Integer): Boolean
+    FUNCTION deleteEntry(id: Integer, owner: Integer): Boolean
         PURPOSE: Drops one slot's local copy
         RETURNS: True if it was dropped, false if the write failed
 
         BEHAVIOR:
             TRY
-                CREATE registry AS this.getRegistry()
+                CREATE registry AS this.getRegistry(owner)
                 REMOVE id FROM registry
-                CALL STORAGE_SET(this.registryKey(), JSON_ENCODE(registry))
-                CALL STORAGE_REMOVE(this.payloadKey(id))
+                CALL STORAGE_SET(this.registryKey(owner), JSON_ENCODE(registry))
+                CALL STORAGE_REMOVE(this.payloadKey(id, owner))
                 RETURN true
             CATCH
                 RETURN false

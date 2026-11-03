@@ -50,7 +50,7 @@
 
             COMMENT: Call CloudSave.clearSlot via the core wrapper
             IF this.core is not null THEN
-                CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk })
+                CALL this.core.callComponent("CloudSave.clearSlot", { id: this.id }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk, data: null, owner: this.core.appState.getLocalSlotOwner() })
             ELSE
                 COMMENT: Nothing to send, so the local leg decides the outcome on its own.
                 CALL callback WITH context thisArg
@@ -80,11 +80,19 @@
         Prepare for both cases - some URLs may already have the protocol.
         
         BEHAVIOR:
+            COMMENT: Whose copy this load is for. A fetch that finishes after the player
+            COMMENT: changed must not be cached as, or fall back to, the next player's copy.
+            CREATE owner AS null
+            IF this.core is not null AND this.core.appState is not null THEN
+                SET owner TO this.core.appState.getLocalSlotOwner()
+            END IF
+
             COMMENT: Consult `source`, do NOT work freshness out again here. It is the record
             COMMENT: of which copy won the merge, and the same property a game reads to draw
             COMMENT: its cloud badge, so the row's badge and the copy this returns cannot
             COMMENT: disagree. Recomputing freshness independently is how they drift apart.
-            IF this.source is "local" AND this.core is not null AND this.core.appState is not null THEN
+            COMMENT: A conflict loads the newer, local copy until the game picks one.
+            IF (this.source is "local" OR this.source is "conflict") AND this.core is not null AND this.core.appState is not null THEN
                 CREATE localData AS this.core.appState.readLocalSlotData(this.id)
                 IF localData is not null THEN
                     SET this.error TO null
@@ -131,7 +139,7 @@
                     COMMENT: time: stamping it now would make the cached copy look newer than the
                     COMMENT: cloud copy it was just taken from, and the next merge would flip the
                     COMMENT: slot to local for no reason at all.
-                    IF this.core is not null AND this.core.appState is not null THEN
+                    IF this.core is not null AND this.core.appState is not null AND this.core.appState.getLocalSlotOwner() equals owner THEN
                         CALL this.core.appState.writeLocalSlotData(this.id, data, this.datetime)
                     END IF
 
@@ -144,7 +152,7 @@
                     COMMENT: The cloud was the fresher copy, but the fetch itself failed (the
                     COMMENT: network dropped between listing and loading). Degrade to whatever
                     COMMENT: local copy exists rather than failing the whole load.
-                    IF this.core is not null AND this.core.appState is not null THEN
+                    IF this.core is not null AND this.core.appState is not null AND this.core.appState.getLocalSlotOwner() equals owner THEN
                         CREATE cachedData AS this.core.appState.readLocalSlotData(this.id)
                         IF cachedData is not null THEN
                             SET this.error TO null
@@ -243,7 +251,7 @@
 
             COMMENT: Call CloudSave.setData via the core wrapper
             IF this.core is not null THEN
-                CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk })
+                CALL this.core.callComponent("CloudSave.setData", { id: this.id, data: data }, this.onWriteComplete, this, { callback: callback, thisArg: thisArg, localOk: localOk, data: data, owner: this.core.appState.getLocalSlotOwner() })
             ELSE
                 CALL callback WITH context thisArg
                     PASSING null, (localOk ? null : NewgroundsIO.Errors.getError(0, "No core, and the local write failed."))
@@ -272,6 +280,77 @@
             CALL this.saveDataRaw WITH jsonString, callback, thisArg
     END METHOD
 
+    COMMENT: ====================================================================================
+    COMMENT: CONFLICTS
+    COMMENT: A slot is in conflict when both copies hold a save and the local one is newer,
+    COMMENT: usually a save made while offline. Either choice loses one of them, so the library
+    COMMENT: NEVER decides and never shows UI of its own. The game asks the player, then calls
+    COMMENT: keepLocal() or keepCloud().
+    COMMENT: ====================================================================================
+
+    COMMENT: Describes this slot's local copy.
+    METHOD getLocalCopy(): Object
+
+        PURPOSE: Returns the size and datetime of the current player's local copy of this slot
+
+        RETURNS: An object with size and datetime, or null if there is no local copy
+
+        WHY: A slot in conflict describes its CLOUD copy in its own fields. This is how a game
+        shows the player the other copy, so they can choose between the two.
+
+        BEHAVIOR:
+            IF this.core is null OR this.core.appState is null OR this.id is null THEN
+                RETURN null
+            END IF
+            RETURN this.core.appState.getLocalSlotEntry(this.id)
+    END METHOD
+
+    COMMENT: Resolves a conflict in favour of the local copy.
+    METHOD keepLocal(callback: Function, thisArg: Object)
+
+        PURPOSE: Saves the local copy to the cloud, replacing the cloud copy
+
+        PARAMETERS:
+            callback: Function to call when saving is complete, the same as saveDataRaw()'s
+            thisArg: Context to use when calling the callback
+
+        BEHAVIOR:
+            CREATE localData AS null
+            IF this.source is "conflict" AND this.core is not null AND this.core.appState is not null THEN
+                SET localData TO this.core.appState.readLocalSlotData(this.id)
+            END IF
+
+            IF localData is null THEN
+                COMMENT: Not in conflict, or the local copy is gone. Change nothing.
+                CALL callback WITH context thisArg
+                    PASSING null, NewgroundsIO.Errors.getError(0, "This save slot has no conflict to resolve.")
+                RETURN
+            END IF
+
+            COMMENT: An ordinary save. It follows every rule saveDataRaw() does, including
+            COMMENT: counting a local-only write as a success when the cloud can't be reached.
+            CALL this.saveDataRaw WITH localData, callback, thisArg
+    END METHOD
+
+    COMMENT: Resolves a conflict in favour of the cloud copy.
+    METHOD keepCloud(): Boolean
+
+        PURPOSE: Drops the local copy, keeping the cloud copy. Nothing is sent.
+
+        RETURNS: True if the local copy was dropped. False, changing nothing, if this slot is
+        not in conflict or the drop failed.
+
+        BEHAVIOR:
+            IF this.source is not "conflict" OR this.core is null OR this.core.appState is null THEN
+                RETURN false
+            END IF
+            IF this.core.appState.clearLocalSlotData(this.id) is false THEN
+                RETURN false
+            END IF
+            SET this.source TO "cloud"
+            RETURN true
+    END METHOD
+
     COMMENT: Returns a string representation of this save slot.
     METHOD toString(): String
         
@@ -298,7 +377,7 @@
 
         PARAMETERS:
             response: The gateway response for CloudSave.setData or CloudSave.clearSlot
-            callbackParams: Holds the developer's callback, their thisArg, and whether the local leg succeeded
+            callbackParams: Holds the developer's callback, their thisArg, whether the local leg succeeded, the data a save wrote (null for a clear), and the local slot owner at the time of the write
 
         WHY: Both components return the same slot payload and follow the same partial-success
         rule, so both share one handler. localOk travels through callbackParams rather than
@@ -323,6 +402,17 @@
             IF error is null THEN
                 COMMENT: The cloud accepted it, so the cloud copy is canonical again.
                 SET this.source TO "cloud"
+
+                COMMENT: Stamp the local copy with the cloud's own datetime. It was stamped
+                COMMENT: with this device's clock, which can run ahead of the server's, and a
+                COMMENT: copy that only LOOKS newer would be reported as a conflict on the next
+                COMMENT: load. Skip it for a clear (no data), when the reply carries no
+                COMMENT: datetime, or when the player changed while the write was out.
+                IF callbackParams.data is not null AND result.slot is not null AND result.slot.datetime is not null THEN
+                    IF this.core.appState.getLocalSlotOwner() equals callbackParams.owner THEN
+                        CALL this.core.appState.writeLocalSlotData(this.id, callbackParams.data, result.slot.datetime)
+                    END IF
+                END IF
             ELSE IF callbackParams.localOk is true THEN
                 COMMENT: Partial success. The write exists locally and nowhere else, so report
                 COMMENT: success and flag it, rather than telling the player a save they still
@@ -353,10 +443,9 @@
             SET this.size TO 0
             SET this.url TO null
 
-            COMMENT: Deliberately do NOT reset source. Everything above is cloud state,
-            COMMENT: owned by the server and meaningless once the session ends. The local
-            COMMENT: copy is not session-scoped: it survives sign-out, which is much of the
-            COMMENT: point of having it. Resetting source to "cloud" would also claim this
-            COMMENT: slot describes a cloud copy that was just wiped, which is the opposite
-            COMMENT: of the truth when the local mirror is the only copy left.
+            COMMENT: Reset source too. The local copy this slot may have been describing
+            COMMENT: belongs to the player who just signed out, and it stays in their own
+            COMMENT: local copies for when they come back. The next merge works out the
+            COMMENT: new owner's source.
+            SET this.source TO "cloud"
     END METHOD
