@@ -68,6 +68,13 @@
         saves stay guest-only and are still there the next time nobody is signed in. Set through
         NGIO.offerGuestSaves. See SAVE SLOT LOCAL FALLBACK.
 
+    saveSlotCount: Integer = 3
+        PURPOSE: How many save slots this app has: 3 for every app, or 10 for one using the
+        supporter expansion
+        WHY: Used only when no slot list comes back from the gateway (nobody signed in, or
+        offline), so the player still has empty slots to save into. Set through
+        NGIO.saveSlotCount. See mergeWithoutCloudList().
+
     ====================
     READONLY PROPERTIES
     ====================
@@ -996,11 +1003,44 @@
         a sign-out every cached slot has been emptied, and the new owner's local copies are listed
         as they are.
 
+        The empty slots: the gateway only lists slots for a signed-in player who can reach it, so
+        without them a guest, or a player who starts offline, has only the slots this device
+        already holds a copy of, and nowhere to make a first save. Each describes the empty local
+        copy, since nothing is known about the cloud's. A slot list that comes back later is
+        merged into these same slots by id.
+
         BEHAVIOR:
             IF this.saveSlots is null THEN
                 CALL this.applySlotList(null)
             ELSE
                 CALL this.applySlotList(every slot in this.saveSlots whose source is not "local")
+            END IF
+
+            COMMENT: An empty slot for every id up to saveSlotCount that has none yet.
+            CREATE added AS empty Array
+            FOR id FROM 1 TO this.saveSlotCount
+                IF this.saveSlots is null OR no slot in this.saveSlots has id equal to id THEN
+                    CREATE slot AS OBJECT_FACTORY.createObject("SaveSlot", {
+                        id: id,
+                        size: 0,
+                        datetime: null,
+                        timestamp: 0,
+                        url: null
+                    }, this.core)
+                    SET slot.source TO "local"
+                    ADD slot TO added
+                END IF
+            END FOR
+
+            IF added is empty THEN
+                RETURN
+            END IF
+            IF this.saveSlots is null THEN
+                SET this.saveSlots TO added
+                CALL this.markLoaded("saveSlots")
+            ELSE
+                ADD every slot in added TO this.saveSlots
+                SORT this.saveSlots BY id
             END IF
     END FUNCTION
 

@@ -87,6 +87,19 @@ CLASS NGIO
             END IF
         NOTE: init() copies it to the new AppState too, so it works set before OR after init().
 
+    saveSlotCount: Integer = 3
+        PURPOSE: How many save slots this game has. Every game gets 3, and a game using the
+        supporter expansion gets 10.
+        WHY: When the slot list can't be loaded (nobody signed in, or offline), this many slots
+        are still listed, so the player has somewhere to save. A slot list from the gateway
+        always takes over once it loads. See AppState.saveSlotCount.
+        BEHAVIOR (setter):
+            STORE value
+            IF core is set THEN
+                SET core.appState.saveSlotCount TO value
+            END IF
+        NOTE: init() copies it to the new AppState too, so it works set before OR after init().
+
     ====================
     PRIVATE STATIC PROPERTIES
     ====================
@@ -307,6 +320,7 @@ CLASS NGIO
             SET core.medalUnlockQueue.keepGuestUnlocks TO keepGuestMedalUnlocks
             SET core.medalUnlockQueue.holdGuestUnlocks TO holdGuestMedalUnlocks
             SET core.appState.offerGuestSaves TO offerGuestSaves
+            SET core.appState.saveSlotCount TO saveSlotCount
 
             COMMENT: Create a logView component - this tells the server we viewed this app.
             COMMENT: This tracks view counts, which is useful for analytics.
