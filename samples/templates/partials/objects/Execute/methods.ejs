@@ -62,6 +62,9 @@
     COMMENT:               THROW error "Core is required for encrypting secure components"
     COMMENT:           END IF
     COMMENT:           CREATE encryptedObject AS executeModel.core.encryptObject(requestObject)
+    COMMENT:           IF encryptedObject is null THEN
+    COMMENT:               THROW error "A secure component couldn't be encrypted, so the request wasn't sent."
+    COMMENT:           END IF
     COMMENT:           RETURN { secure: encryptedObject }
     COMMENT:       END IF
     COMMENT:       RETURN requestObject

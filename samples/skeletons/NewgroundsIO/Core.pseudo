@@ -684,7 +684,20 @@ CLASS Core
             COMMENT: serialization, not model behavior, and the gateway's rules are not a
             COMMENT: straight property dump - see buildGatewayRequestObject() below. Request
             COMMENT: and Execute have NO prepareForJson() or importFromObject() overrides.
-            CREATE plainObject AS CALL HttpRequestHelper.buildGatewayRequestObject(requestModel)
+            TRY
+                CREATE plainObject AS CALL HttpRequestHelper.buildGatewayRequestObject(requestModel)
+            CATCH serializeError
+                COMMENT: A secure component couldn't be encrypted. Send nothing, and report it
+                COMMENT: the way a dropped connection is reported: an error on the response and
+                COMMENT: no results. Nothing reached the gateway, so nothing may read this as the
+                COMMENT: gateway ruling on a component. MedalUnlockQueue keeps the unlock and
+                COMMENT: retries it, and a save keeps its local copy.
+                CREATE failedResponse AS new NewgroundsIO.models.objects.Response()
+                SET failedResponse.core TO this
+                SET failedResponse.error TO NewgroundsIO.Errors.getError(NewgroundsIO.Errors.INVALID_ENCRYPTION, serializeError.message)
+                CALL callback WITH context thisArg PASSING failedResponse
+                RETURN
+            END TRY
             COMMENT: Encode as JSON string for transmission
             CREATE requestString AS JSON_ENCODE(plainObject)
             
@@ -1243,6 +1256,13 @@ CLASS HttpRequestHelper
                 END IF
 
                 CREATE encryptedString AS CALL executeModel.core.encryptObject(plainExecute)
+
+                COMMENT: Never send { secure: null }. The gateway can't read it, and its reply
+                COMMENT: ("Missing required component") points nowhere near the cause.
+                COMMENT: sendRequest() catches this and fails the request.
+                IF encryptedString is null THEN
+                    THROW error "A secure component couldn't be encrypted, so the request wasn't sent." + (the reason, if the platform gives one)
+                END IF
 
                 COMMENT: The encrypted form carries ONLY `secure` - no component name,
                 COMMENT: no parameters. That is the whole point of the wrapper.
