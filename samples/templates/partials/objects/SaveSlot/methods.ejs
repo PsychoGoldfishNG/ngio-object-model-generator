@@ -422,7 +422,12 @@
                 COMMENT: Partial success. The write exists locally and nowhere else, so report
                 COMMENT: success and flag it, rather than telling the player a save they still
                 COMMENT: have was lost. Fail only when NEITHER leg landed.
-                SET this.source TO "local"
+                COMMENT: Describe the local copy, so the slot shows the save just made. Leave it
+                COMMENT: alone if the player changed while the write was out: the current local
+                COMMENT: copy is not theirs.
+                IF this.core.appState.getLocalSlotOwner() equals callbackParams.owner THEN
+                    CALL this.describeLocalCopy()
+                END IF
                 SET error TO null
             END IF
 
@@ -430,6 +435,32 @@
                 CALL callbackParams.callback WITH context callbackParams.thisArg
                     PASSING result, error
             END IF
+    END METHOD
+
+    COMMENT: Points this model at the local copy after a write that landed nowhere else.
+    METHOD describeLocalCopy()
+
+        PURPOSE: Makes the model describe the local copy, the way the next slot list merge would
+
+        WHY: Without it the model keeps describing the slot as it stood before the write. A
+        first save made offline would still report no data, and a clear would still report the
+        old save, until the next merge. After a clear there is no local copy, so the slot reads
+        as empty.
+
+        BEHAVIOR:
+            CREATE entry AS this.getLocalCopy()
+            IF entry is null THEN
+                SET this.size TO 0
+                SET this.datetime TO null
+                SET this.timestamp TO 0
+            ELSE
+                SET this.size TO entry.size
+                SET this.datetime TO entry.datetime
+                SET this.timestamp TO entry.datetime as a unix timestamp, or 0 if it will not parse
+            END IF
+            COMMENT: No url: a local copy has nothing to fetch.
+            SET this.url TO null
+            SET this.source TO "local"
     END METHOD
 
     COMMENT: SESSION MANAGEMENT METHOD
