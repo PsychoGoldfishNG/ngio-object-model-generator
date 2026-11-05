@@ -66,6 +66,34 @@ CLASS MedalUnlockQueue
         NOTE: In memory only. This describes right now, not something that has to survive a
         reload, so unlike the pending list it is deliberately NOT persisted.
 
+    PRIVATE retryListeners: Array of { listener: Function, thisArg: Object }
+        PURPOSE: Everything that asked to hear about retry passes
+        WHY: Retries run on a timer, with nobody waiting on a callback. Without this, a game
+        has no way to learn that a medal earned while the connection was down has now unlocked.
+        DEFAULT: Empty
+
+    ====================
+    OUTCOME STATUS
+    ====================
+
+    COMMENT: Every outcome this class reports carries a status: where the attempt left the
+    COMMENT: medal. Callers need it because "error is not null" covers three very different
+    COMMENT: situations: the gateway refused the medal for good, the medal is still buffered and
+    COMMENT: will be sent again, or it was never kept. Define these as constants, under the
+    COMMENT: name MedalUnlockStatus, in whatever form the language favors.
+    COMMENT:
+    COMMENT:   UNLOCKED = "unlocked"  The gateway unlocked it.
+    COMMENT:   REJECTED = "rejected"  The gateway ruled on this medal and refused it (202 above
+    COMMENT:                          all). It is not retried.
+    COMMENT:   PENDING  = "pending"   Not ruled on yet, and still buffered: a retry pass will
+    COMMENT:                          send it again.
+    COMMENT:   HELD     = "held"      Earned while nobody was signed in, and buffered until the
+    COMMENT:                          game claims or discards it (holdGuestUnlocks).
+    COMMENT:   DROPPED  = "dropped"   Not ruled on, and not buffered either: a guest unlock with
+    COMMENT:                          keepGuestUnlocks off. Nothing will send it again.
+    COMMENT:
+    COMMENT: error is null exactly when status is UNLOCKED.
+
     ====================
     WHOSE UNLOCK IS IT
     ====================
@@ -95,6 +123,7 @@ CLASS MedalUnlockQueue
             SET this.core TO core
             SET this.storageKey TO "ngio-pending-medal-unlocks-for-" + core.appId
             SET this.inFlight TO an empty set
+            SET this.retryListeners TO an empty list
     END FUNCTION
 
     ====================
@@ -186,8 +215,9 @@ CLASS MedalUnlockQueue
             thisArg: Context to use when calling the callback
 
         CALLBACK PARAMETERS:
-            outcomes: One entry per id, each holding id, the unlocked medal (or null), and an
-                      error (or null). The error is the only reliable success signal.
+            outcomes: One entry per id, each holding id, the unlocked medal (or null), an error
+                      (or null), and a status (see OUTCOME STATUS). error is null exactly when
+                      status is UNLOCKED.
 
         BEHAVIOR:
             CREATE unique AS ids with duplicates removed
@@ -214,12 +244,22 @@ CLASS MedalUnlockQueue
         confirmation for.
     END FUNCTION
 
-    FUNCTION retryPending()
+    FUNCTION retryPending(callback: Function, thisArg: Object)
         PURPOSE: Re-sends what is still pending for whoever is signed in now: their own entries
         and any guest entries. Another player's entries wait until that player signs in again.
         With holdGuestUnlocks on, guest entries wait for claimGuestUnlocks() instead.
 
+        PARAMETERS:
+            callback: (optional) Function to call once this pass is done, as callback(outcomes)
+            thisArg: Context to use when calling the callback
+
+        CALLBACK PARAMETERS:
+            outcomes: The same shape unlock() reports, one entry per id sent. An empty list when
+                      nothing was waiting.
+
         BEHAVIOR:
+            CREATE pending AS an empty list
+            CREATE user AS null
             TRY
                 CREATE entries AS this.readEntries()
 
@@ -228,24 +268,62 @@ CLASS MedalUnlockQueue
                     CALL this.write(entries)
                 END IF
 
-                CREATE user AS this.currentUserId()
-                CREATE pending AS the ids of the entries whose user equals user, plus those
+                SET user TO this.currentUserId()
+                SET pending TO the ids of the entries whose user equals user, plus those
                     whose user is null when this.holdGuestUnlocks is false, with duplicates
                     removed, minus anything in this.inFlight
-                IF pending is empty THEN
-                    RETURN
-                END IF
-
-                COMMENT: send(), not unlock(): these are already recorded, and must not be
-                COMMENT: recorded again under whoever happens to be signed in now.
-                CALL this.send(pending, user, null, null)
             CATCH
                 COMMENT: This NEVER throws and never reports a failure. A pass that cannot reach
                 COMMENT: the gateway is exactly the case it exists to tolerate, and one bad pass
                 COMMENT: must not stop later ones from running.
+                SET pending TO an empty list
             END TRY
 
+            IF pending is empty THEN
+                CALL callback WITH context thisArg PASSING an empty list
+                RETURN
+            END IF
+
+            COMMENT: send(), not unlock(): these are already recorded, and must not be
+            COMMENT: recorded again under whoever happens to be signed in now.
+            CALL this.send(pending, user, FUNCTION onPassComplete(outcomes)
+                CALL callback WITH context thisArg PASSING outcomes
+                COMMENT: Loop over a COPY, so a listener that removes itself mid-loop does not
+                COMMENT: make the next one get skipped.
+                FOR EACH { listener, thisArg } IN a copy of this.retryListeners
+                    CALL listener WITH context thisArg PASSING outcomes
+                END FOR
+            END FUNCTION, null)
+
         NOTE: Safe to call by hand, for instance on an application-level "back online" event.
+        NOTE: Listeners hear only passes that sent something. A pass with nothing waiting is
+        not news.
+    END FUNCTION
+
+    FUNCTION addRetryListener(listener: Function, thisArg: Object)
+        PURPOSE: Asks to hear about every retry pass that sends anything, as listener(outcomes),
+        whether the timer or the game started it
+
+        PARAMETERS:
+            listener: (required) Function to call with each pass's outcomes
+            thisArg: Context to use when calling it
+
+        BEHAVIOR:
+            IF this.retryListeners already has an entry with this listener and this thisArg THEN
+                RETURN
+            END IF
+            ADD { listener: listener, thisArg: thisArg } TO this.retryListeners
+
+        NOTE: This is how a game hears that a medal earned while the connection was down has
+        now unlocked: look for outcomes whose status is UNLOCKED. NGIO exposes this as
+        NGIO.addMedalRetryListener().
+    END FUNCTION
+
+    FUNCTION removeRetryListener(listener: Function, thisArg: Object)
+        PURPOSE: Stops a listener added with addRetryListener(), matched by listener and thisArg
+
+        BEHAVIOR:
+            REMOVE the entry with this listener and this thisArg FROM this.retryListeners, if any
     END FUNCTION
 
     ====================
@@ -277,13 +355,39 @@ CLASS MedalUnlockQueue
                         CALL this.removePending(id, user)
                     END IF
 
-                    ADD { id: id, medal: outcome.medal, error: outcome.error } TO outcomes
+                    ADD { id: id, medal: outcome.medal, error: outcome.error,
+                        status: this.statusFor(outcome, user) } TO outcomes
                     SET remaining TO remaining - 1
                     IF remaining is 0 AND callback is defined THEN
                         CALL callback WITH context thisArg PASSING outcomes
                     END IF
                 END FUNCTION, this)
             END FOR
+    END FUNCTION
+
+    FUNCTION statusFor(outcome: Object, user: Integer or null): String
+        PURPOSE: Decides where an answered attempt left the medal. See OUTCOME STATUS.
+
+        BEHAVIOR:
+            IF outcome.adjudicated is true THEN
+                IF outcome.error is null THEN
+                    RETURN UNLOCKED
+                END IF
+                RETURN REJECTED
+            END IF
+
+            COMMENT: Not ruled on, so the answer is whatever the buffer still holds. A guest
+            COMMENT: entry counts as well as one for user: a retry pass sends guest entries for
+            COMMENT: whoever is signed in, and they stay stored as guest entries until ruled on.
+            CREATE entry AS the first entry in this.readEntries() with this outcome's id and
+                a user that is null or equal to user
+            IF there is no such entry THEN
+                RETURN DROPPED
+            END IF
+            IF entry.user is null AND user is null AND this.holdGuestUnlocks is true THEN
+                RETURN HELD
+            END IF
+            RETURN PENDING
     END FUNCTION
 
     FUNCTION currentUserId(): Integer or null

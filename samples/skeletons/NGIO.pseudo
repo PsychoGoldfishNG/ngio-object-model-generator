@@ -2003,13 +2003,21 @@ CLASS NGIO
             END IF
     END FUNCTION
 
-    FUNCTION retryPendingMedalUnlocks()
+    FUNCTION retryPendingMedalUnlocks(callback: Function, thisArg: Object)
 
         PURPOSE: Re-sends any medal unlock that was requested but never confirmed.
 
         WHY PUBLIC: Same reason keepAlive() is. On a platform with no repeating-timer facility
         this can be pumped from the game's main loop instead. It is also safe to call by hand,
         for instance on an application-level "back online" event.
+
+        PARAMETERS:
+            callback: (optional) Function to call with this pass's outcomes, as callback(outcomes)
+            thisArg: Context to use when calling the callback
+
+        CALLBACK PARAMETERS:
+            outcomes: One per medal sent, each with a status (see MedalUnlockQueue, OUTCOME
+                      STATUS). An empty list when nothing was waiting.
 
         BEHAVIOR:
             IF core is null THEN
@@ -2019,7 +2027,35 @@ CLASS NGIO
             COMMENT: One line, deliberately. ALL of the behavior lives in the queue: what is
             COMMENT: still pending, what is already in flight, and what the gateway has ruled
             COMMENT: on. This class owns the cadence and nothing else. See MedalUnlockQueue.
-            CALL core.medalUnlockQueue.retryPending()
+            CALL core.medalUnlockQueue.retryPending(callback, thisArg)
+    END FUNCTION
+
+    FUNCTION addMedalRetryListener(listener: Function, thisArg: Object)
+
+        PURPOSE: Calls listener(outcomes) after every retry pass that sent anything, including
+        the ones the retry timer runs
+
+        WHY: The timer's passes have no caller waiting on them. This is how a game hears that a
+        medal earned while the connection was down has now unlocked: look for outcomes whose
+        status is UNLOCKED, and refresh whatever shows the player's medals.
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+            CALL core.medalUnlockQueue.addRetryListener(listener, thisArg)
+    END FUNCTION
+
+    FUNCTION removeMedalRetryListener(listener: Function, thisArg: Object)
+
+        PURPOSE: Stops a listener added with addMedalRetryListener(), matched by listener and
+        thisArg
+
+        BEHAVIOR:
+            IF core is null THEN
+                THROW an error
+            END IF
+            CALL core.medalUnlockQueue.removeRetryListener(listener, thisArg)
     END FUNCTION
 
     FUNCTION getGuestMedalUnlocks(): Array of Integer
